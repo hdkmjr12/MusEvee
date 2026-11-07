@@ -155,4 +155,93 @@ class TrackMetadata {
     final safeBase = cleaned.isEmpty ? 'SpotMeta_Track' : cleaned;
     return '$safeBase.mp3';
   }
+
+  /// Normalizes a single title or artist string (lowercase, macron/accent folding,
+  /// Katakana->Hiragana unification, noise-tag removal, and punctuation stripping)
+  /// for smart duplicate detection across local folders and playlists.
+  static String normalizeTrackSegment(String raw, {bool stripFeat = false}) {
+    if (raw.trim().isEmpty) return '';
+    var s = raw.toLowerCase().trim();
+
+    // Fold macrons & common Latin diacritics
+    const diacritics = <String, String>{
+      'ā': 'a',
+      'ī': 'i',
+      'ū': 'u',
+      'ē': 'e',
+      'ō': 'o',
+      'â': 'a',
+      'î': 'i',
+      'û': 'u',
+      'ê': 'e',
+      'ô': 'o',
+      'á': 'a',
+      'é': 'e',
+      'í': 'i',
+      'ó': 'o',
+      'ú': 'u',
+      'ä': 'a',
+      'ë': 'e',
+      'ï': 'i',
+      'ö': 'o',
+      'ü': 'u',
+    };
+    diacritics.forEach((k, v) {
+      s = s.replaceAll(k, v);
+    });
+
+    // Unify Katakana -> Hiragana so e.g. さユり == さゆり == サユリ
+    final sb = StringBuffer();
+    for (final rune in s.runes) {
+      if (rune >= 0x30A1 && rune <= 0x30F6) {
+        sb.writeCharCode(rune - 0x60);
+      } else {
+        sb.writeCharCode(rune);
+      }
+    }
+    s = sb.toString();
+
+    // Remove video/audio noise suffixes while keeping real remix/live qualifiers
+    s = s.replaceAll(
+      RegExp(
+        r'[\(\[\{]\s*(?:official\s*(?:music\s*)?(?:video|audio|mv|lyric\s*video)|lyric\s*video|lyrics?|audio|mv|hd|hq|remastered(?:\s*\d{2,4})?)\s*[\)\]\}]',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+    s = s.replaceAll(
+      RegExp(r'\b(?:official\s+music\s+video|official\s+video|official\s+audio)\b'),
+      ' ',
+    );
+
+    if (stripFeat) {
+      s = s.replaceAll(
+        RegExp(r'[\(\[\{]?\b(?:feat\.?|ft\.?|featuring|cv\.?)\b.*$'),
+        ' ',
+      );
+      final primarySplit = s.split(RegExp(r'[,&/×;]'));
+      if (primarySplit.isNotEmpty && primarySplit.first.trim().isNotEmpty) {
+        s = primarySplit.first;
+      }
+    }
+
+    // Fold Romaji long vowels on pure ASCII words
+    if (RegExp(r'^[a-z0-9\s\-\x27]+$').hasMatch(s)) {
+      s = s
+          .replaceAll('ou', 'o')
+          .replaceAll('uu', 'u')
+          .replaceAll('oo', 'o');
+    }
+
+    s = s.replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), '');
+    return s;
+  }
+
+  /// Builds a canonical track identity `artist::title` for smart deduplication.
+  static String normalizeTrackIdentity(String title, [String artist = '']) {
+    final normTitle = normalizeTrackSegment(title, stripFeat: true);
+    final normArtist = normalizeTrackSegment(artist, stripFeat: true);
+    if (normArtist.isEmpty) return normTitle;
+    return '$normArtist::$normTitle';
+  }
 }

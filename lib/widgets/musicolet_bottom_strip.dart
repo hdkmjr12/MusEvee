@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 /// 0: Queue (`=♪`)
 /// 1: Now Playing (`▶` in circle)
 /// 2: Folders (`📁`)
-/// 3: Albums (`💿`)
-/// 4: Artists (`👤`)
-/// 5: Downloader (`⬇` Cloud Download)
-/// 6: Download Queue & History (`📋`)
-/// 7: Search Lokal (`🔍`)
+/// 3: Playlists (`♫` — Albums & Artists merged into user playlists)
+/// 4: Downloader (`⬇` Cloud Download)
+/// 5: Download Queue & History (`📋`)
+/// 6: Search Lokal (`🔍`)
 class MusicoletBottomStrip extends StatelessWidget {
+  static const int downloadHistoryTabIndex = 5;
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
   final int activeDownloadBadgeCount;
@@ -40,14 +40,9 @@ class MusicoletBottomStrip extends StatelessWidget {
       activeIcon: Icons.folder_rounded,
     ),
     (
-      tooltip: 'Albums (Koleksi Album)',
-      icon: Icons.album_outlined,
-      activeIcon: Icons.album_rounded,
-    ),
-    (
-      tooltip: 'Artists (Daftar Artis)',
-      icon: Icons.person_outline_rounded,
-      activeIcon: Icons.person_rounded,
+      tooltip: 'Playlists (Daftar Putar)',
+      icon: Icons.library_music_outlined,
+      activeIcon: Icons.library_music_rounded,
     ),
     (
       tooltip: 'Downloader (Cari & Unduh Lagu)',
@@ -86,7 +81,8 @@ class MusicoletBottomStrip extends StatelessWidget {
             children: List.generate(_tabs.length, (idx) {
               final tab = _tabs[idx];
               final isSelected = idx == selectedIndex;
-              final showBadge = idx == 6 && activeDownloadBadgeCount > 0;
+              final showBadge = idx == downloadHistoryTabIndex &&
+                  activeDownloadBadgeCount > 0;
 
               Widget iconWidget = Icon(
                 isSelected ? tab.activeIcon : tab.icon,

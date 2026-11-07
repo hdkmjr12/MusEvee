@@ -13,6 +13,7 @@ import '../widgets/musevee_logo.dart';
 import '../widgets/musicolet_bottom_strip.dart';
 import '../widgets/musicolet_mini_player.dart';
 import '../widgets/now_playing_view.dart';
+import '../widgets/pressable_scale.dart';
 import '../widgets/queue_history_view.dart';
 import '../widgets/search_result_tile.dart';
 import '../widgets/track_preview_sheet.dart';
@@ -32,8 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Musicolet Tab Indices
   static const int _tabNowPlaying = 1;
   static const int _tabFolders = 2;
-  static const int _tabDownloader = 5;
-  static const int _tabDownloadHistory = 6;
+  static const int _tabDownloader = 4;
+  static const int _tabDownloadHistory = 5;
 
   // Dark Musicolet Surface Palette
   static const Color _bgCanvas = Color(0xFF0E1014);
@@ -126,6 +127,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     args is Map ? (args['sessionId'] as num?)?.toInt() : null,
                 path: args is Map ? args['path']?.toString() : null,
               );
+          break;
+
+        case 'onMediaNotificationAction':
+          final args = call.arguments;
+          if (args is Map) {
+            final action = args['action']?.toString() ?? '';
+            final posMs = (args['positionMs'] as num?)?.toInt() ?? 0;
+            context.read<LocalMusicProvider>().handleMediaNotificationAction(
+                  action: action,
+                  positionMs: posMs,
+                );
+          }
           break;
       }
     });
@@ -545,8 +558,9 @@ class _HomeScreenState extends State<HomeScreen> {
           body: Column(
             children: [
               Expanded(
-                child: IndexedStack(
+                child: AnimatedIndexedStack(
                   index: _selectedTabIndex,
+                  duration: const Duration(milliseconds: 180),
                   children: [
                     // 0: Queue (`=♪`)
                     PlaybackQueueView(
@@ -573,24 +587,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                     ),
 
-                    // 3: Albums (`💿`)
-                    LocalAlbumsView(
+                    // 3: Playlists (`musicevee_playlists_v1.json`)
+                    LocalPlaylistsView(
                       onOpenNowPlaying: () =>
                           setState(() => _selectedTabIndex = _tabNowPlaying),
                       onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                     ),
 
-                    // 4: Artists (`👤`)
-                    LocalArtistsView(
-                      onOpenNowPlaying: () =>
-                          setState(() => _selectedTabIndex = _tabNowPlaying),
-                      onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
-                    ),
-
-                    // 5: Downloader (`⬇` Cloud Download — Smart Omnibox)
+                    // 4: Downloader (`⬇` Cloud Download — Smart Omnibox)
                     _buildSearchAndDownloadTab(provider),
 
-                    // 6: Download Queue & History (`📋`)
+                    // 5: Download Queue & History (`📋`)
                     QueueHistoryView(
                       provider: provider,
                       onMoveFolder: _showMoveFolderSheet,
@@ -604,7 +611,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                     ),
 
-                    // 7: Search Lokal (`🔍`)
+                    // 6: Search Lokal (`🔍`)
                     LocalSearchView(
                       onOpenNowPlaying: () =>
                           setState(() => _selectedTabIndex = _tabNowPlaying),

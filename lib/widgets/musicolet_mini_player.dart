@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/local_music_provider.dart';
+import 'pressable_scale.dart';
 
 class MusicoletMiniPlayer extends StatelessWidget {
   final VoidCallback onTapOpenNowPlaying;
@@ -102,37 +103,47 @@ class MusicoletMiniPlayer extends StatelessWidget {
                           ),
 
                           // Transport Controls
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Sebelumnya',
-                            onPressed: localProvider.playPrevious,
-                            icon: const Icon(
-                              Icons.skip_previous_rounded,
-                              color: Colors.white70,
-                              size: 22,
+                          PressableScale(
+                            child: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Sebelumnya',
+                              onPressed: localProvider.playPrevious,
+                              icon: const Icon(
+                                Icons.skip_previous_rounded,
+                                color: Colors.white70,
+                                size: 22,
+                              ),
                             ),
                           ),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            tooltip:
-                                localProvider.isPlaying ? 'Jeda' : 'Putar',
-                            onPressed: localProvider.togglePlayPause,
-                            icon: Icon(
-                              localProvider.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 27,
+                          PressableScale(
+                            child: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip:
+                                  localProvider.isPlaying ? 'Jeda' : 'Putar',
+                              onPressed: localProvider.togglePlayPause,
+                              icon: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 180),
+                                child: Icon(
+                                  localProvider.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  key: ValueKey<bool>(localProvider.isPlaying),
+                                  color: Colors.white,
+                                  size: 27,
+                                ),
+                              ),
                             ),
                           ),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Berikutnya',
-                            onPressed: localProvider.playNext,
-                            icon: const Icon(
-                              Icons.skip_next_rounded,
-                              color: Colors.white70,
-                              size: 22,
+                          PressableScale(
+                            child: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Berikutnya',
+                              onPressed: localProvider.playNext,
+                              icon: const Icon(
+                                Icons.skip_next_rounded,
+                                color: Colors.white70,
+                                size: 22,
+                              ),
                             ),
                           ),
                         ],

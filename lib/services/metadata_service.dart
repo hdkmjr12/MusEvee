@@ -159,9 +159,10 @@ class MetadataService {
           final data = _ensureMap(state?['data']);
           final entity = _ensureMap(data?['entity']);
 
-          if (entity != null) {
-            final name =
-                (entity['title'] ?? entity['name'] ?? '').toString().trim();
+            if (entity != null) {
+            final name = _cleanCollectionTitle(
+              (entity['title'] ?? entity['name'] ?? '').toString().trim(),
+            );
             if (name.isNotEmpty) collectionTitle = name;
 
             final sub = (entity['subtitle'] ?? '').toString().trim();
@@ -240,13 +241,27 @@ class MetadataService {
             }
           }
         }
+        if (collectionTitle == 'Spotify Album' ||
+            collectionTitle == 'Spotify Playlist') {
+          final ogTitle = doc
+                  .querySelector('meta[property="og:title"]')
+                  ?.attributes['content'] ??
+              doc.querySelector('title')?.text ??
+              '';
+          final cleanedOg = _cleanCollectionTitle(ogTitle);
+          if (cleanedOg.isNotEmpty) {
+            collectionTitle = cleanedOg;
+          }
+        }
       }
     } catch (e) {
       debugPrint('[AUTO_E2E] Embed ekstraksi $collectionType gagal: $e');
     }
 
-    // 2. Fallback: If embed trackList was empty, fetch oEmbed + query Deezer Album/Playlist
-    if (tracks.isEmpty) {
+    // 2. Enrich title via oEmbed if still generic, or fallback track list if empty
+    if (tracks.isEmpty ||
+        collectionTitle == 'Spotify Album' ||
+        collectionTitle == 'Spotify Playlist') {
       try {
         final oembedResp = await _dio.get<dynamic>(
           'https://open.spotify.com/oembed',
@@ -254,7 +269,9 @@ class MetadataService {
         );
         final oData = _ensureMap(oembedResp.data);
         if (oData != null) {
-          final oTitle = (oData['title'] ?? '').toString().trim();
+          final oTitle = _cleanCollectionTitle(
+            (oData['title'] ?? '').toString().trim(),
+          );
           final oThumb = (oData['thumbnail_url'] ?? '').toString().trim();
           if (oTitle.isNotEmpty) collectionTitle = oTitle;
           if (oThumb.isNotEmpty && collectionCover.isEmpty) {
@@ -263,7 +280,7 @@ class MetadataService {
         }
       } catch (_) {}
 
-      if (collectionTitle.isNotEmpty) {
+      if (tracks.isEmpty && collectionTitle.isNotEmpty) {
         final fallbackTracks = await searchMusicTracks(
           '$collectionSubtitle $collectionTitle'.trim(),
         );
@@ -284,6 +301,19 @@ class MetadataService {
       collectionType: collectionType,
       tracks: tracks,
     );
+  }
+
+  String _cleanCollectionTitle(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return '';
+    s = s
+        .replaceFirst(RegExp(r'\s*[|\-–—]\s*Spotify\s*$', caseSensitive: false), '')
+        .replaceFirst(
+          RegExp(r'\s*-\s*(?:playlist|album)\s+by\s+.+$', caseSensitive: false),
+          '',
+        )
+        .trim();
+    return s;
   }
 
   /// Alias for [searchMusicTracks] for cross-script & multi-region catalog search.

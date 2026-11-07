@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/local_playlist.dart';
 import '../models/local_song.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
+import 'pressable_scale.dart';
 import 'tag_editor_sheet.dart';
 
 // Shared Musicolet Dark Surface Palette
@@ -515,24 +517,81 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
 }
 
 // =============================================================================
-// TAB 3: ALBUMS (`💿`)
+// TAB 3: PLAYLISTS (`musicevee_playlists_v1.json`) — replaces Albums & Artists
 // =============================================================================
-class LocalAlbumsView extends StatefulWidget {
+class LocalPlaylistsView extends StatefulWidget {
   final VoidCallback onOpenNowPlaying;
   final Future<void> Function(LocalSong song) onMoveLocalSongFolder;
 
-  const LocalAlbumsView({
+  const LocalPlaylistsView({
     super.key,
     required this.onOpenNowPlaying,
     required this.onMoveLocalSongFolder,
   });
 
   @override
-  State<LocalAlbumsView> createState() => _LocalAlbumsViewState();
+  State<LocalPlaylistsView> createState() => _LocalPlaylistsViewState();
 }
 
-class _LocalAlbumsViewState extends State<LocalAlbumsView> {
-  String? _openedAlbum;
+class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
+  String? _openedPlaylistId;
+
+  Future<void> _promptRename(
+    LocalMusicProvider provider,
+    LocalPlaylist playlist,
+  ) async {
+    final name = await showPlaylistNameDialog(
+      context,
+      title: 'Ganti Nama Playlist',
+      initialValue: playlist.name,
+      confirmLabel: 'Simpan',
+    );
+    if (name != null) await provider.renamePlaylist(playlist.id, name);
+  }
+
+  Future<void> _promptDelete(
+    LocalMusicProvider provider,
+    LocalPlaylist playlist,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _kCard,
+        title: const Text(
+          'Hapus Playlist?',
+          style: TextStyle(
+            color: _kText,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          'Playlist "${playlist.name}" akan dihapus. File lagu di HP tetap aman.',
+          style: const TextStyle(color: Color(0xFFD0D5DD), fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Batal', style: TextStyle(color: _kMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF04438),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      if (_openedPlaylistId == playlist.id && mounted) {
+        setState(() => _openedPlaylistId = null);
+      }
+      await provider.deletePlaylist(playlist.id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -540,325 +599,423 @@ class _LocalAlbumsViewState extends State<LocalAlbumsView> {
 
     return Consumer2<LocalMusicProvider, DownloaderProvider>(
       builder: (context, localProvider, downloaderProvider, _) {
-        final albumMap = localProvider.albumSongsMap;
+        final playlists = localProvider.playlists;
+        final opened = _openedPlaylistId != null
+            ? localProvider.playlistById(_openedPlaylistId!)
+            : null;
 
-        if (_openedAlbum != null && albumMap.containsKey(_openedAlbum)) {
-          final albumName = _openedAlbum!;
-          final songs = albumMap[albumName] ?? const [];
-          return _buildSongDrillDownView(
-            context: context,
-            title: albumName,
-            subtitle: '${songs.first.artist} • ${songs.length} lagu',
-            songs: songs,
-            localProvider: localProvider,
-            downloaderProvider: downloaderProvider,
-            onBack: () => setState(() => _openedAlbum = null),
-            onPlayAll: () {
-              localProvider.playAlbum(albumName, shuffle: false);
-              widget.onOpenNowPlaying();
-            },
-            onShuffleAll: () {
-              localProvider.playAlbum(albumName, shuffle: true);
-              widget.onOpenNowPlaying();
-            },
-            onMoveLocalSongFolder: widget.onMoveLocalSongFolder,
-            onOpenNowPlaying: widget.onOpenNowPlaying,
+        Widget body;
+        if (opened != null) {
+          final songs = localProvider.songsForPlaylist(opened);
+          body = KeyedSubtree(
+            key: ValueKey('pl_detail_${opened.id}'),
+            child: _buildSongDrillDownView(
+              context: context,
+              title: opened.name,
+              subtitle: 'Playlist • ${songs.length} lagu',
+              songs: songs,
+              localProvider: localProvider,
+              downloaderProvider: downloaderProvider,
+              onBack: () => setState(() => _openedPlaylistId = null),
+              onPlayAll: () {
+                localProvider.playPlaylist(opened.id);
+                widget.onOpenNowPlaying();
+              },
+              onShuffleAll: () {
+                localProvider.playPlaylist(opened.id, shuffle: true);
+                widget.onOpenNowPlaying();
+              },
+              onMoveLocalSongFolder: widget.onMoveLocalSongFolder,
+              onOpenNowPlaying: widget.onOpenNowPlaying,
+              emptyMessage:
+                  'Playlist masih kosong. Tambahkan lagu via menu ⋮ → "Tambah ke Playlist".',
+              onRemoveFromPlaylist: (song) =>
+                  localProvider.removeSongFromPlaylist(opened.id, song.filePath),
+            ),
+          );
+        } else {
+          body = Container(
+            key: const ValueKey('pl_list'),
+            color: _kBg,
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 10, 10),
+                  decoration: BoxDecoration(
+                    color: _kCard,
+                    border: Border(
+                      bottom: BorderSide(color: hairline, width: 0.8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.queue_music_rounded,
+                        color: Colors.white,
+                        size: 19,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Playlists (${playlists.length})',
+                        style: const TextStyle(
+                          color: _kText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: _kAccent,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () async {
+                          final name = await showPlaylistNameDialog(
+                            context,
+                            title: 'Playlist Baru',
+                          );
+                          if (name != null) {
+                            await localProvider.createPlaylist(name);
+                          }
+                        },
+                        icon: const Icon(Icons.playlist_add_rounded, size: 17),
+                        label: const Text(
+                          'Playlist Baru',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: playlists.isEmpty
+                      ? const _EmptyLocalHint(
+                          icon: Icons.queue_music_outlined,
+                          message:
+                              'Belum ada playlist. Buat playlist baru, atau unduh Album/Playlist Spotify agar playlist dibuat otomatis.',
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+                          itemCount: playlists.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (context, idx) {
+                            final playlist = playlists[idx];
+                            final resolved =
+                                localProvider.songsForPlaylist(playlist);
+                            return PressableScale(
+                              pressedScale: 0.98,
+                              child: Material(
+                                color: _kCard,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(color: hairline, width: 0.8),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  onTap: () => setState(
+                                    () => _openedPlaylistId = playlist.id,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(10),
+                                    child: Row(
+                                      children: [
+                                        _LocalCoverThumb(
+                                          coverPath: localProvider
+                                              .playlistCoverPath(playlist),
+                                          size: 48,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                playlist.name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: _kText,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                '${resolved.length} lagu',
+                                                style: const TextStyle(
+                                                  color: _kMuted,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (resolved.isNotEmpty)
+                                          IconButton(
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            tooltip: 'Putar Playlist',
+                                            onPressed: () {
+                                              localProvider
+                                                  .playPlaylist(playlist.id);
+                                              widget.onOpenNowPlaying();
+                                            },
+                                            icon: const Icon(
+                                              Icons.play_circle_fill_rounded,
+                                              color: Colors.white,
+                                              size: 27,
+                                            ),
+                                          ),
+                                        PopupMenuButton<String>(
+                                          icon: const Icon(
+                                            Icons.more_vert_rounded,
+                                            size: 18,
+                                            color: _kMuted,
+                                          ),
+                                          color: _kSubtle,
+                                          onSelected: (value) {
+                                            if (value == 'rename') {
+                                              _promptRename(
+                                                localProvider,
+                                                playlist,
+                                              );
+                                            } else if (value == 'shuffle') {
+                                              localProvider.playPlaylist(
+                                                playlist.id,
+                                                shuffle: true,
+                                              );
+                                              widget.onOpenNowPlaying();
+                                            } else if (value == 'delete') {
+                                              _promptDelete(
+                                                localProvider,
+                                                playlist,
+                                              );
+                                            }
+                                          },
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(
+                                              value: 'shuffle',
+                                              child: Text(
+                                                'Acak Playlist',
+                                                style: TextStyle(
+                                                  color: _kText,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'rename',
+                                              child: Text(
+                                                'Ganti Nama',
+                                                style: TextStyle(
+                                                  color: _kText,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text(
+                                                'Hapus Playlist',
+                                                style: TextStyle(
+                                                  color: Color(0xFFF04438),
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
           );
         }
 
-        final albumNames = albumMap.keys.toList();
-
-        return Container(
-          color: _kBg,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _kCard,
-                  border: Border(
-                    bottom: BorderSide(color: hairline, width: 0.8),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.album_rounded, color: Colors.white, size: 19),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Albums (${albumNames.length})',
-                      style: const TextStyle(
-                        color: _kText,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: albumNames.isEmpty
-                    ? const _EmptyLocalHint(
-                        icon: Icons.album_outlined,
-                        message: 'Belum ada koleksi album lokal.',
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-                        itemCount: albumNames.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 8),
-                        itemBuilder: (context, idx) {
-                          final album = albumNames[idx];
-                          final songs = albumMap[album]!;
-                          final sample = songs.first;
-
-                          return Material(
-                            color: _kCard,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(color: hairline, width: 0.8),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: InkWell(
-                              onTap: () => setState(() => _openedAlbum = album),
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Row(
-                                  children: [
-                                    _LocalCoverThumb(
-                                      coverPath: sample.coverFilePath,
-                                      size: 48,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            album,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: _kText,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            '${sample.artist} • ${songs.length} lagu',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: _kMuted,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    IconButton(
-                                      visualDensity: VisualDensity.compact,
-                                      tooltip: 'Putar Album',
-                                      onPressed: () {
-                                        localProvider.playAlbum(album);
-                                        widget.onOpenNowPlaying();
-                                      },
-                                      icon: const Icon(
-                                        Icons.play_circle_fill_rounded,
-                                        color: Colors.white,
-                                        size: 27,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: body,
         );
       },
     );
   }
 }
 
-// =============================================================================
-// TAB 4: ARTISTS (`👤`)
-// =============================================================================
-class LocalArtistsView extends StatefulWidget {
-  final VoidCallback onOpenNowPlaying;
-  final Future<void> Function(LocalSong song) onMoveLocalSongFolder;
-
-  const LocalArtistsView({
-    super.key,
-    required this.onOpenNowPlaying,
-    required this.onMoveLocalSongFolder,
-  });
-
-  @override
-  State<LocalArtistsView> createState() => _LocalArtistsViewState();
+/// Shared text-input dialog for creating / renaming playlists.
+Future<String?> showPlaylistNameDialog(
+  BuildContext context, {
+  required String title,
+  String initialValue = '',
+  String confirmLabel = 'Buat',
+}) async {
+  final controller = TextEditingController(text: initialValue);
+  final result = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: _kCard,
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: _kText,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        style: const TextStyle(color: _kText, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Nama playlist',
+          hintStyle: const TextStyle(color: _kMuted),
+          filled: true,
+          fillColor: _kSubtle,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(6),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        onSubmitted: (v) => Navigator.of(ctx).pop(v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Batal', style: TextStyle(color: _kMuted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _kAccent,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.of(ctx).pop(controller.text),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  final trimmed = result?.trim() ?? '';
+  return trimmed.isEmpty ? null : trimmed;
 }
 
-class _LocalArtistsViewState extends State<LocalArtistsView> {
-  String? _openedArtist;
-
-  @override
-  Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
-
-    return Consumer2<LocalMusicProvider, DownloaderProvider>(
-      builder: (context, localProvider, downloaderProvider, _) {
-        final artistMap = localProvider.artistSongsMap;
-
-        if (_openedArtist != null && artistMap.containsKey(_openedArtist)) {
-          final artistName = _openedArtist!;
-          final songs = artistMap[artistName] ?? const [];
-          return _buildSongDrillDownView(
-            context: context,
-            title: artistName,
-            subtitle: '${songs.length} lagu tersimpan',
-            songs: songs,
-            localProvider: localProvider,
-            downloaderProvider: downloaderProvider,
-            onBack: () => setState(() => _openedArtist = null),
-            onPlayAll: () {
-              localProvider.playArtist(artistName, shuffle: false);
-              widget.onOpenNowPlaying();
-            },
-            onShuffleAll: () {
-              localProvider.playArtist(artistName, shuffle: true);
-              widget.onOpenNowPlaying();
-            },
-            onMoveLocalSongFolder: widget.onMoveLocalSongFolder,
-            onOpenNowPlaying: widget.onOpenNowPlaying,
-          );
-        }
-
-        final artistNames = artistMap.keys.toList();
-
-        return Container(
-          color: _kBg,
+/// Bottom sheet listing all playlists (+ "Playlist Baru") to add [song] into.
+Future<void> showAddToPlaylistSheet(
+  BuildContext context, {
+  required LocalMusicProvider localProvider,
+  required LocalSong song,
+}) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final selected = await showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: _kCard,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) {
+      final playlists = localProvider.playlists;
+      return SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+          ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _kCard,
-                  border: Border(
-                    bottom: BorderSide(color: hairline, width: 0.8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+                child: Text(
+                  'Tambah "${song.title}" ke Playlist',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _kText,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: Row(
+              ),
+              ListTile(
+                leading: const Icon(Icons.playlist_add_rounded, color: _kAccent),
+                title: const Text(
+                  'Playlist Baru…',
+                  style: TextStyle(color: _kAccent, fontWeight: FontWeight.w700),
+                ),
+                onTap: () => Navigator.of(ctx).pop('__new__'),
+              ),
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
                   children: [
-                    const Icon(
-                      Icons.person_rounded,
-                      color: Colors.white,
-                      size: 19,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Artists (${artistNames.length})',
-                      style: const TextStyle(
-                        color: _kText,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                    for (final p in playlists)
+                      ListTile(
+                        leading: Icon(
+                          p.songPaths.contains(song.filePath)
+                              ? Icons.check_circle_rounded
+                              : Icons.queue_music_rounded,
+                          color: p.songPaths.contains(song.filePath)
+                              ? _kEmerald
+                              : _kMuted,
+                        ),
+                        title: Text(
+                          p.name,
+                          style: const TextStyle(color: _kText, fontSize: 14),
+                        ),
+                        subtitle: Text(
+                          '${p.songCount} lagu',
+                          style: const TextStyle(color: _kMuted, fontSize: 11.5),
+                        ),
+                        onTap: () => Navigator.of(ctx).pop(p.id),
                       ),
-                    ),
                   ],
                 ),
               ),
-              Expanded(
-                child: artistNames.isEmpty
-                    ? const _EmptyLocalHint(
-                        icon: Icons.person_outline_rounded,
-                        message: 'Belum ada daftar artis lokal.',
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-                        itemCount: artistNames.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 8),
-                        itemBuilder: (context, idx) {
-                          final artist = artistNames[idx];
-                          final songs = artistMap[artist]!;
-                          final albumsCount =
-                              songs.map((s) => s.album).toSet().length;
-
-                          return Material(
-                            color: _kCard,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(color: hairline, width: 0.8),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: InkWell(
-                              onTap: () =>
-                                  setState(() => _openedArtist = artist),
-                              child: Padding(
-                                padding: const EdgeInsets.all(10),
-                                child: Row(
-                                  children: [
-                                    _LocalCoverThumb(
-                                      coverPath: songs.first.coverFilePath,
-                                      size: 46,
-                                      circular: true,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            artist,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: _kText,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '$albumsCount album • ${songs.length} lagu',
-                                            style: const TextStyle(
-                                              color: _kMuted,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    IconButton(
-                                      visualDensity: VisualDensity.compact,
-                                      tooltip: 'Putar Artis',
-                                      onPressed: () {
-                                        localProvider.playArtist(artist);
-                                        widget.onOpenNowPlaying();
-                                      },
-                                      icon: const Icon(
-                                        Icons.play_circle_fill_rounded,
-                                        color: Colors.white,
-                                        size: 27,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
             ],
           ),
-        );
-      },
-    );
+        ),
+      );
+    },
+  );
+  if (selected == null) return;
+
+  String? targetId = selected;
+  String targetName = '';
+  if (selected == '__new__') {
+    if (!context.mounted) return;
+    final name = await showPlaylistNameDialog(context, title: 'Playlist Baru');
+    if (name == null) return;
+    final created = await localProvider.createPlaylist(name);
+    targetId = created.id;
+    targetName = created.name;
+  } else {
+    targetName = localProvider.playlistById(selected)?.name ?? '';
   }
+
+  final added = await localProvider.addSongToPlaylist(targetId, song.filePath);
+  messenger?.showSnackBar(
+    SnackBar(
+      content: Text(
+        added
+            ? 'Ditambahkan ke playlist "$targetName".'
+            : 'Lagu sudah ada di playlist "$targetName".',
+      ),
+    ),
+  );
 }
 
 // =============================================================================
@@ -1037,6 +1194,8 @@ Widget _buildSongDrillDownView({
   required VoidCallback onShuffleAll,
   required Future<void> Function(LocalSong song) onMoveLocalSongFolder,
   required VoidCallback onOpenNowPlaying,
+  String emptyMessage = 'Folder ini belum berisi file MP3.',
+  Future<void> Function(LocalSong song)? onRemoveFromPlaylist,
 }) {
   final hairline = Colors.white.withValues(alpha: 0.08);
 
@@ -1112,9 +1271,9 @@ Widget _buildSongDrillDownView({
         ),
         Expanded(
           child: songs.isEmpty
-              ? const _EmptyLocalHint(
+              ? _EmptyLocalHint(
                   icon: Icons.music_off_rounded,
-                  message: 'Folder ini belum berisi file MP3.',
+                  message: emptyMessage,
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
@@ -1128,6 +1287,7 @@ Widget _buildSongDrillDownView({
                       downloaderProvider: downloaderProvider,
                       onMoveLocalSongFolder: onMoveLocalSongFolder,
                       onOpenNowPlaying: onOpenNowPlaying,
+                      onRemoveFromPlaylist: onRemoveFromPlaylist,
                     );
                   },
                 ),
@@ -1144,6 +1304,7 @@ class _LocalSongTile extends StatelessWidget {
   final DownloaderProvider downloaderProvider;
   final Future<void> Function(LocalSong song) onMoveLocalSongFolder;
   final VoidCallback onOpenNowPlaying;
+  final Future<void> Function(LocalSong song)? onRemoveFromPlaylist;
 
   const _LocalSongTile({
     required this.song,
@@ -1152,6 +1313,7 @@ class _LocalSongTile extends StatelessWidget {
     required this.downloaderProvider,
     required this.onMoveLocalSongFolder,
     required this.onOpenNowPlaying,
+    this.onRemoveFromPlaylist,
   });
 
   @override
@@ -1260,6 +1422,14 @@ class _LocalSongTile extends StatelessWidget {
                         content: Text('Ditambahkan ke antrean: ${song.title}'),
                       ),
                     );
+                  } else if (value == 'add_playlist') {
+                    await showAddToPlaylistSheet(
+                      context,
+                      localProvider: localProvider,
+                      song: song,
+                    );
+                  } else if (value == 'remove_playlist') {
+                    await onRemoveFromPlaylist?.call(song);
                   } else if (value == 'edit_tag') {
                     TagEditorSheet.showForLocalSong(
                       context,
@@ -1324,36 +1494,51 @@ class _LocalSongTile extends StatelessWidget {
                     }
                   }
                 },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
                     value: 'play_next',
                     child: Text(
                       'Putar Berikutnya',
                       style: TextStyle(color: _kText, fontSize: 13),
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: 'add_queue',
                     child: Text(
                       'Tambah ke Antrean (=+)',
                       style: TextStyle(color: _kText, fontSize: 13),
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
+                    value: 'add_playlist',
+                    child: Text(
+                      'Tambah ke Playlist',
+                      style: TextStyle(color: _kText, fontSize: 13),
+                    ),
+                  ),
+                  if (onRemoveFromPlaylist != null)
+                    const PopupMenuItem(
+                      value: 'remove_playlist',
+                      child: Text(
+                        'Keluarkan dari Playlist',
+                        style: TextStyle(color: _kText, fontSize: 13),
+                      ),
+                    ),
+                  const PopupMenuItem(
                     value: 'edit_tag',
                     child: Text(
                       'Edit Tag & Auto-Romaji (✎)',
                       style: TextStyle(color: _kText, fontSize: 13),
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: 'move',
                     child: Text(
                       'Pindah Folder',
                       style: TextStyle(color: _kText, fontSize: 13),
                     ),
                   ),
-                  PopupMenuItem(
+                  const PopupMenuItem(
                     value: 'delete',
                     child: Text(
                       'Hapus File',
@@ -1373,19 +1558,15 @@ class _LocalSongTile extends StatelessWidget {
 class _LocalCoverThumb extends StatelessWidget {
   final String? coverPath;
   final double size;
-  final bool circular;
 
   const _LocalCoverThumb({
     required this.coverPath,
     required this.size,
-    this.circular = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final radius = circular
-        ? BorderRadius.circular(size / 2)
-        : BorderRadius.circular(5);
+    final radius = BorderRadius.circular(5);
 
     if (coverPath != null && coverPath!.isNotEmpty) {
       final targetCachePx = (size * 3).round().clamp(96, 256);

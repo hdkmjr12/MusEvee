@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../models/local_playlist.dart';
 import '../models/local_song.dart';
+import '../models/track_metadata.dart';
 import '../services/folder_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/romaji_service.dart';
@@ -80,19 +82,31 @@ class LocalMusicProvider extends ChangeNotifier {
   List<LocalSong> _allSongs = [];
   List<String> _availableFolders =
       List<String>.from(FolderService.defaultFolders);
+  final List<LocalPlaylist> _playlists = [];
   final Set<String> _favoritePaths = {};
   bool _isLoadingLibrary = false;
   bool _isSyncingLibrary = false;
+  bool _requestedNotificationPermission = false;
 
   // Memoized O(N log N) library groupings (invalidated ONLY when `_allSongs` or `_availableFolders` mutates)
   Map<String, List<LocalSong>>? _cachedFolderSongsMap;
   Map<String, List<LocalSong>>? _cachedAlbumSongsMap;
   Map<String, List<LocalSong>>? _cachedArtistSongsMap;
+  Map<String, LocalSong>? _cachedSongsByPath;
 
   void _invalidateGroupingCaches() {
     _cachedFolderSongsMap = null;
     _cachedAlbumSongsMap = null;
     _cachedArtistSongsMap = null;
+    _cachedSongsByPath = null;
+  }
+
+  Map<String, LocalSong> get _songsByPath {
+    final cached = _cachedSongsByPath;
+    if (cached != null) return cached;
+    final built = <String, LocalSong>{for (final s in _allSongs) s.filePath: s};
+    _cachedSongsByPath = built;
+    return built;
   }
 
   // Dedicated 200ms progress & active lyric notifiers to prevent 5 Hz global tree rebuilds
@@ -164,6 +178,7 @@ class LocalMusicProvider extends ChangeNotifier {
   // Getters
   List<LocalSong> get allSongs => List.unmodifiable(_allSongs);
   List<String> get availableFolders => List.unmodifiable(_availableFolders);
+  List<LocalPlaylist> get playlists => List.unmodifiable(_playlists);
   bool get isLoadingLibrary => _isLoadingLibrary;
 
   List<QueueEntry> get queueEntries => List.unmodifiable(_queueEntries);
@@ -297,11 +312,14 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> _initialize() async {
     if (!Platform.isAndroid) return;
     await _loadFavorites();
+    await _loadPlaylists();
     final hydrated = await _loadLibraryAndSessionCache();
     if (hydrated) {
       _syncProgressNotifiers();
       notifyListeners();
       _notifyExternalSync();
+    } else {
+      notifyListeners();
     }
     await _syncDeviceVolume();
     await refreshLibrary(
@@ -324,6 +342,15 @@ class LocalMusicProvider extends ChangeNotifier {
         await Permission.storage.request();
       }
     } catch (_) {}
+    if (!_requestedNotificationPermission) {
+      _requestedNotificationPermission = true;
+      try {
+        final notifStatus = await Permission.notification.status;
+        if (notifStatus.isDenied) {
+          await Permission.notification.request();
+        }
+      } catch (_) {}
+    }
   }
 
   /// Incrementally delta-syncs `/storage/emulated/0/Music/*` and MediaStore via
@@ -720,6 +747,42 @@ class LocalMusicProvider extends ChangeNotifier {
     playNext(fromAutoComplete: true);
   }
 
+  /// Handles transport actions originating from the native Android `MediaSession`
+  /// & `Notification.MediaStyle` notification shade / lockscreen / headset buttons.
+  void handleMediaNotificationAction({
+    required String action,
+    int positionMs = 0,
+  }) {
+    switch (action) {
+      case 'play':
+        if (!_isPlaying) {
+          togglePlayPause();
+        }
+        break;
+      case 'pause':
+        if (_isPlaying) {
+          togglePlayPause();
+        }
+        break;
+      case 'next':
+        playNext();
+        break;
+      case 'previous':
+        playPrevious();
+        break;
+      case 'seek':
+        seekTo(positionMs);
+        break;
+      case 'stop':
+        _isPlaying = false;
+        _hasPreparedNative = false;
+        _syncProgressNotifiers();
+        notifyListeners();
+        _savePlayerSession();
+        break;
+    }
+  }
+
   // ===========================================================================
   // PLAYBACK & QUEUE CONTROLS (TRUE QUEUE-ORDER SHUFFLE)
   // ===========================================================================
@@ -831,6 +894,26 @@ class LocalMusicProvider extends ChangeNotifier {
     await _startCurrentQueueTrack();
   }
 
+  /// Plays every resolvable song of playlist [playlistId] as the active Queue,
+  /// optionally starting from [startSong].
+  Future<void> playPlaylist(
+    String playlistId, {
+    bool shuffle = false,
+    LocalSong? startSong,
+  }) async {
+    final playlist = playlistById(playlistId);
+    if (playlist == null) return;
+    final songs = songsForPlaylist(playlist);
+    if (songs.isEmpty) return;
+    _setQueueFromSongs(
+      songs,
+      startWithSong: startSong,
+      forceShuffle: shuffle,
+    );
+    _localLyricsCandidates = const [];
+    await _startCurrentQueueTrack();
+  }
+
   Future<void> _startCurrentQueueTrack({int startPositionMs = 0}) async {
     final song = currentSong;
     if (song == null) return;
@@ -857,6 +940,11 @@ class LocalMusicProvider extends ChangeNotifier {
           'path': song.filePath,
           'positionMs': startPositionMs,
           'sessionId': sessionId,
+          'title': song.title,
+          'artist': song.artist,
+          'album': song.album,
+          'coverPath': song.coverFilePath,
+          'durationMs': song.durationMs,
         },
       );
       if (ok != true && sessionId == _playbackSessionId) {
@@ -1335,6 +1423,7 @@ class LocalMusicProvider extends ChangeNotifier {
         _favoritePaths.add(newPath);
         await _saveFavorites();
       }
+      await _remapPlaylistPath(song.filePath, newPath);
 
       await _reloadSingleSongInMemory(
         oldPath: song.filePath,
@@ -1466,6 +1555,7 @@ class LocalMusicProvider extends ChangeNotifier {
       _favoritePaths.add(newPath);
       await _saveFavorites();
     }
+    await _remapPlaylistPath(oldPath, newPath);
     await _reloadSingleSongInMemory(
       oldPath: oldPath,
       newPath: newPath,
@@ -1562,6 +1652,7 @@ class LocalMusicProvider extends ChangeNotifier {
       _favoritePaths.add(movedPath);
       await _saveFavorites();
     }
+    await _remapPlaylistPath(song.filePath, movedPath);
 
     if (!_availableFolders.contains(targetFolderName)) {
       _availableFolders = [..._availableFolders, targetFolderName];
@@ -1645,6 +1736,7 @@ class LocalMusicProvider extends ChangeNotifier {
     if (_favoritePaths.remove(targetPath)) {
       await _saveFavorites();
     }
+    await _remapPlaylistPath(targetPath, null);
 
     // Remove orphan extracted cover thumbnail if no other track shares it
     if (song.coverFilePath != null && song.coverFilePath!.isNotEmpty) {
@@ -1726,6 +1818,18 @@ class LocalMusicProvider extends ChangeNotifier {
           } else {
             _hasPreparedNative = false;
             _positionMs = resumePositionMs;
+            try {
+              await _systemChannel.invokeMethod<bool>(
+                'updateMediaNotification',
+                {
+                  'title': refreshed.title,
+                  'artist': refreshed.artist,
+                  'album': refreshed.album,
+                  'coverPath': refreshed.coverFilePath,
+                  'durationMs': refreshed.durationMs,
+                },
+              );
+            } catch (_) {}
           }
         }
       }
@@ -1969,6 +2073,250 @@ class LocalMusicProvider extends ChangeNotifier {
       final docs = await getApplicationDocumentsDirectory();
       final f = File('${docs.path}/musevee_favorites.json');
       await f.writeAsString(jsonEncode(_favoritePaths.toList()), flush: true);
+    } catch (_) {}
+  }
+
+  // ===========================================================================
+  // LOCAL PLAYLISTS (`musicevee_playlists_v1.json`) & SMART DEDUPLICATION
+  // ===========================================================================
+  static const String playlistsFileName = 'musicevee_playlists_v1.json';
+
+  LocalPlaylist? playlistById(String id) {
+    for (final p in _playlists) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
+  LocalPlaylist? playlistByName(String name) {
+    final key = name.trim().toLowerCase();
+    if (key.isEmpty) return null;
+    for (final p in _playlists) {
+      if (p.name.trim().toLowerCase() == key) return p;
+    }
+    return null;
+  }
+
+  /// Resolves playlist paths into in-memory [LocalSong]s (missing files skipped).
+  List<LocalSong> songsForPlaylist(LocalPlaylist playlist) {
+    final byPath = _songsByPath;
+    final result = <LocalSong>[];
+    for (final path in playlist.songPaths) {
+      final song = byPath[path];
+      if (song != null) result.add(song);
+    }
+    return result;
+  }
+
+  /// First resolvable cover art path of a playlist (custom cover takes priority).
+  String? playlistCoverPath(LocalPlaylist playlist) {
+    final custom = playlist.customCoverPath;
+    if (custom != null && custom.isNotEmpty) return custom;
+    for (final s in songsForPlaylist(playlist)) {
+      final c = s.coverFilePath;
+      if (c != null && c.isNotEmpty) return c;
+    }
+    return null;
+  }
+
+  List<LocalPlaylist> playlistsContaining(String filePath) =>
+      _playlists.where((p) => p.songPaths.contains(filePath)).toList();
+
+  Future<LocalPlaylist> createPlaylist(
+    String name, {
+    List<String> initialPaths = const [],
+  }) async {
+    final now = DateTime.now();
+    final trimmed = name.trim().isEmpty ? 'Playlist Baru' : name.trim();
+    final seen = <String>{};
+    final playlist = LocalPlaylist(
+      id: 'pl_${now.microsecondsSinceEpoch}',
+      name: trimmed,
+      songPaths: List<String>.unmodifiable(
+        initialPaths.where((p) => p.trim().isNotEmpty && seen.add(p)),
+      ),
+      createdAt: now,
+      updatedAt: now,
+    );
+    _playlists.insert(0, playlist);
+    notifyListeners();
+    await _savePlaylists();
+    return playlist;
+  }
+
+  /// Returns the playlist named [name] (case-insensitive) or creates it — used
+  /// by Spotify Album/Playlist batch downloads to auto-sync playlist names.
+  Future<LocalPlaylist> ensurePlaylistNamed(String name) async {
+    final existing = playlistByName(name);
+    if (existing != null) return existing;
+    return createPlaylist(name);
+  }
+
+  Future<void> renamePlaylist(String id, String newName) async {
+    final idx = _playlists.indexWhere((p) => p.id == id);
+    final trimmed = newName.trim();
+    if (idx == -1 || trimmed.isEmpty) return;
+    _playlists[idx] = _playlists[idx].copyWith(
+      name: trimmed,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    await _savePlaylists();
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    final before = _playlists.length;
+    _playlists.removeWhere((p) => p.id == id);
+    if (_playlists.length == before) return;
+    notifyListeners();
+    await _savePlaylists();
+  }
+
+  /// Appends [paths] to playlist [id], skipping songs already inside it.
+  /// Returns the number of songs actually added.
+  Future<int> addSongsToPlaylist(String id, List<String> paths) async {
+    final idx = _playlists.indexWhere((p) => p.id == id);
+    if (idx == -1) return 0;
+    final current = List<String>.from(_playlists[idx].songPaths);
+    final existing = current.toSet();
+    int added = 0;
+    for (final raw in paths) {
+      final path = raw.trim();
+      if (path.isEmpty || !existing.add(path)) continue;
+      current.add(path);
+      added++;
+    }
+    if (added == 0) return 0;
+    _playlists[idx] = _playlists[idx].copyWith(
+      songPaths: current,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    await _savePlaylists();
+    return added;
+  }
+
+  Future<bool> addSongToPlaylist(String id, String filePath) async =>
+      (await addSongsToPlaylist(id, [filePath])) > 0;
+
+  Future<void> removeSongFromPlaylist(String id, String filePath) async {
+    final idx = _playlists.indexWhere((p) => p.id == id);
+    if (idx == -1) return;
+    final current = List<String>.from(_playlists[idx].songPaths);
+    if (!current.remove(filePath)) return;
+    _playlists[idx] = _playlists[idx].copyWith(
+      songPaths: current,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    await _savePlaylists();
+  }
+
+  Future<void> reorderPlaylistSong(String id, int oldIndex, int newIndex) async {
+    final idx = _playlists.indexWhere((p) => p.id == id);
+    if (idx == -1) return;
+    final current = List<String>.from(_playlists[idx].songPaths);
+    if (oldIndex < 0 || oldIndex >= current.length) return;
+    var target = newIndex;
+    if (target > oldIndex) target -= 1;
+    target = target.clamp(0, current.length - 1);
+    final moved = current.removeAt(oldIndex);
+    current.insert(target, moved);
+    _playlists[idx] = _playlists[idx].copyWith(
+      songPaths: current,
+      updatedAt: DateTime.now(),
+    );
+    notifyListeners();
+    await _savePlaylists();
+  }
+
+  /// Smart Deduplication: finds an already-present local song matching
+  /// [title]/[artist] by normalized identity (`artist::title`, Katakana/Hiragana,
+  /// macron & noise-tag folding) so downloads can be skipped.
+  LocalSong? findLocalSongByIdentity(String title, String artist) {
+    final identity = TrackMetadata.normalizeTrackIdentity(title, artist);
+    final titleOnly = TrackMetadata.normalizeTrackSegment(
+      title,
+      stripFeat: true,
+    );
+    final artistOnly = TrackMetadata.normalizeTrackSegment(
+      artist,
+      stripFeat: true,
+    );
+    if (titleOnly.isEmpty) return null;
+
+    LocalSong? looseMatch;
+    for (final s in _allSongs) {
+      if (identity.isNotEmpty &&
+          TrackMetadata.normalizeTrackIdentity(s.title, s.artist) == identity) {
+        return s;
+      }
+      if (looseMatch == null && artistOnly.length >= 2) {
+        final sTitle = TrackMetadata.normalizeTrackSegment(
+          s.title,
+          stripFeat: true,
+        );
+        final sArtist = TrackMetadata.normalizeTrackSegment(s.artist);
+        if (sTitle == titleOnly && sArtist.contains(artistOnly)) {
+          looseMatch = s;
+        }
+      }
+    }
+    return looseMatch;
+  }
+
+  Future<void> _remapPlaylistPath(String oldPath, String? newPath) async {
+    if (oldPath == newPath) return;
+    bool changed = false;
+    for (int i = 0; i < _playlists.length; i++) {
+      final paths = _playlists[i].songPaths;
+      if (!paths.contains(oldPath)) continue;
+      final updated = <String>[];
+      final seen = <String>{};
+      for (final p in paths) {
+        final mapped = p == oldPath ? newPath : p;
+        if (mapped != null && seen.add(mapped)) updated.add(mapped);
+      }
+      _playlists[i] = _playlists[i].copyWith(
+        songPaths: updated,
+        updatedAt: DateTime.now(),
+      );
+      changed = true;
+    }
+    if (changed) await _savePlaylists();
+  }
+
+  Future<void> _loadPlaylists() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final f = await _resolveDocFile(
+        docs,
+        playlistsFileName,
+        'musevee_playlists_v1.json',
+      );
+      if (!await f.exists()) return;
+      final decoded = jsonDecode(await f.readAsString());
+      final rawList = decoded is Map ? decoded['playlists'] : decoded;
+      if (rawList is! List) return;
+      _playlists
+        ..clear()
+        ..addAll(
+          rawList
+              .whereType<Map>()
+              .map((m) => LocalPlaylist.fromJson(Map<String, dynamic>.from(m))),
+        );
+    } catch (_) {}
+  }
+
+  Future<void> _savePlaylists() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final f = File('${docs.path}/$playlistsFileName');
+      final payload = <String, dynamic>{
+        'version': 1,
+        'playlists': _playlists.map((p) => p.toJson()).toList(),
+      };
+      await f.writeAsString(jsonEncode(payload), flush: true);
     } catch (_) {}
   }
 }

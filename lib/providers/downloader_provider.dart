@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -406,6 +407,14 @@ class DownloaderProvider extends ChangeNotifier {
   })? onFileMutated;
   void Function(String folderName)? onFolderCreated;
 
+  /// Playlist bridge to `LocalMusicProvider` (wired in `main.dart`):
+  /// - [onEnsurePlaylist]: find-or-create playlist by name, returns its id.
+  /// - [onAddToPlaylist]: append a local file path to a playlist.
+  /// - [onFindLocalDuplicate]: Smart Deduplication by normalized identity.
+  Future<String?> Function(String playlistName)? onEnsurePlaylist;
+  Future<void> Function(String playlistId, String filePath)? onAddToPlaylist;
+  String? Function(TrackMetadata track)? onFindLocalDuplicate;
+
   /// Instant `< 1ms` in-memory two-way sync handler triggered whenever
   /// `LocalMusicProvider` scans, retags, renames, moves, or deletes songs.
   void syncWithLocalLibrary({
@@ -808,14 +817,63 @@ class DownloaderProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> enqueueBatchTracks(
+  /// Enqueues [tracks] from a Spotify Album/Playlist. When [playlistName] is
+  /// given (defaults to the loaded collection title), a local playlist with the
+  /// same name is auto-created/synced. Smart Deduplication: tracks already on
+  /// the device are NOT re-downloaded — their local file is linked instead.
+  /// Returns the number of tracks skipped as already-present duplicates.
+  Future<int> enqueueBatchTracks(
     List<TrackMetadata> tracks, {
     String? folderName,
+    String? playlistName,
+    bool syncPlaylist = true,
   }) async {
-    if (tracks.isEmpty) return;
+    if (tracks.isEmpty) return 0;
     final targetFolder = (folderName ?? _selectedFolder).trim();
 
-    for (final track in tracks.reversed) {
+    String? playlistId;
+    final resolvedPlaylistName =
+        (playlistName ?? _currentCollection?.title ?? '').trim();
+    if (syncPlaylist &&
+        resolvedPlaylistName.isNotEmpty &&
+        onEnsurePlaylist != null) {
+      try {
+        playlistId = await onEnsurePlaylist!(resolvedPlaylistName);
+      } catch (_) {}
+    }
+
+    // Resolve duplicates in original order so playlist order mirrors Spotify.
+    final existingPaths = <int, String>{};
+    for (int i = 0; i < tracks.length; i++) {
+      final existing = await _findExistingLocalFile(tracks[i]);
+      if (existing != null) existingPaths[i] = existing;
+    }
+
+    int skipped = 0;
+    for (int i = tracks.length - 1; i >= 0; i--) {
+      final track = tracks[i];
+      final existing = existingPaths[i];
+      if (existing != null) {
+        skipped++;
+        _queueItems.insert(
+          0,
+          DownloadItem(
+            id: 'dup_${DateTime.now().microsecondsSinceEpoch}_${track.title.hashCode}',
+            metadata: track,
+            targetFolderName: _folderNameOfPath(existing) ?? targetFolder,
+            status: DownloadItemStatus.completed,
+            progress: 1.0,
+            statusDetail: playlistId != null
+                ? 'Sudah ada di HP • ditautkan ke playlist'
+                : 'Sudah ada di HP • dilewati',
+            savedFilePath: existing,
+            createdAt: DateTime.now(),
+            preferSyncedLyrics: true,
+            targetPlaylistId: playlistId,
+          ),
+        );
+        continue;
+      }
       final item = DownloadItem(
         id: 'q_${DateTime.now().microsecondsSinceEpoch}_${track.title.hashCode}',
         metadata: track,
@@ -825,14 +883,47 @@ class DownloaderProvider extends ChangeNotifier {
         statusDetail: 'Dalam antrean',
         createdAt: DateTime.now(),
         preferSyncedLyrics: true,
+        targetPlaylistId: playlistId,
       );
       _queueItems.insert(0, item);
+    }
+
+    // Link already-present files to the playlist in Spotify order.
+    if (playlistId != null && onAddToPlaylist != null) {
+      for (int i = 0; i < tracks.length; i++) {
+        final existing = existingPaths[i];
+        if (existing == null) continue;
+        try {
+          await onAddToPlaylist!(playlistId, existing);
+        } catch (_) {}
+      }
     }
     notifyListeners();
 
     if (!_isProcessingQueue) {
-      await _processQueue();
+      unawaited(_processQueue());
     }
+    return skipped;
+  }
+
+  Future<String?> _findExistingLocalFile(TrackMetadata track) async {
+    try {
+      final inMemory = onFindLocalDuplicate?.call(track);
+      if (inMemory != null && inMemory.isNotEmpty) return inMemory;
+    } catch (_) {}
+    try {
+      return await _folderService.checkDuplicateAcrossFolders(
+        track,
+        _availableFolders,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _folderNameOfPath(String path) {
+    final parts = path.split('/');
+    return parts.length >= 2 ? parts[parts.length - 2] : null;
   }
 
   /// Executes the full download pipeline for the currently previewed track
@@ -1029,6 +1120,12 @@ class DownloaderProvider extends ChangeNotifier {
               currentItem.targetFolderName;
           await _refreshFolderCountsOnly();
           await onSongSaved?.call(savedPath);
+          final playlistId = currentItem.targetPlaylistId;
+          if (playlistId != null && onAddToPlaylist != null) {
+            try {
+              await onAddToPlaylist!(playlistId, savedPath);
+            } catch (_) {}
+          }
 
           _updateQueueItem(
             currentItem.id,

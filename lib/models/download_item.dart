@@ -19,6 +19,7 @@ class DownloadItem {
   final String? errorMessage;
   final DateTime createdAt;
   final bool preferSyncedLyrics;
+  final String? targetPlaylistId;
 
   const DownloadItem({
     required this.id,
@@ -31,6 +32,7 @@ class DownloadItem {
     this.savedFilePath,
     this.errorMessage,
     this.preferSyncedLyrics = true,
+    this.targetPlaylistId,
   });
 
   bool get isActive =>
@@ -46,6 +48,7 @@ class DownloadItem {
     String? savedFilePath,
     String? errorMessage,
     bool? preferSyncedLyrics,
+    String? targetPlaylistId,
   }) {
     return DownloadItem(
       id: id,
@@ -58,6 +61,7 @@ class DownloadItem {
       savedFilePath: savedFilePath ?? this.savedFilePath,
       errorMessage: errorMessage ?? this.errorMessage,
       preferSyncedLyrics: preferSyncedLyrics ?? this.preferSyncedLyrics,
+      targetPlaylistId: targetPlaylistId ?? this.targetPlaylistId,
     );
   }
 }

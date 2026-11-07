@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../models/local_song.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
+import 'local_library_views.dart';
+import 'pressable_scale.dart';
 import 'tag_editor_sheet.dart';
 
 class NowPlayingView extends StatefulWidget {
@@ -853,46 +855,50 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   // MIDDLE SECTION: TRACK INFO + MUSICOLET UTILITY ICON ROW
   // ---------------------------------------------------------------------------
   Widget _buildTrackInfoSection(LocalSong? song) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          song?.title ?? 'MusEvee Player',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      child: Column(
+        key: ValueKey<String>(song?.filePath ?? '__empty__'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            song?.title ?? 'MusEvee Player',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+            ),
           ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          song?.artist ?? 'Pilih atau unduh lagu untuk mulai memutar',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFFD0D5DD),
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+          const SizedBox(height: 3),
+          Text(
+            song?.artist ?? 'Pilih atau unduh lagu untuk mulai memutar',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFFD0D5DD),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          song != null ? song.album : '—',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFF8E96A4),
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
+          const SizedBox(height: 2),
+          Text(
+            song != null ? song.album : '—',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF8E96A4),
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1031,16 +1037,18 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   }) {
     return Tooltip(
       message: tooltip,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: enabled ? onTap : null,
-        child: SizedBox(
-          width: 38,
-          height: 36,
-          child: Center(
-            child: Opacity(
-              opacity: enabled ? 1.0 : 0.35,
-              child: child,
+      child: PressableScale(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: enabled ? onTap : null,
+          child: SizedBox(
+            width: 38,
+            height: 36,
+            child: Center(
+              child: Opacity(
+                opacity: enabled ? 1.0 : 0.35,
+                child: child,
+              ),
             ),
           ),
         ),
@@ -1187,79 +1195,94 @@ class _NowPlayingViewState extends State<NowPlayingView> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           // Left: Speaker / Volume Slider
-          IconButton(
-            tooltip: 'Volume Audio',
-            onPressed: () => _showVolumeSheet(context, localProvider),
-            icon: Icon(volIcon, color: Colors.white70, size: 22),
+          PressableScale(
+            child: IconButton(
+              tooltip: 'Volume Audio',
+              onPressed: () => _showVolumeSheet(context, localProvider),
+              icon: Icon(volIcon, color: Colors.white70, size: 22),
+            ),
           ),
 
           // Center: Previous (`|◀`), Large Play/Pause (`▶`/`||` WITHOUT circle bg), Next (`▶|`)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                tooltip: 'Lagu Sebelumnya',
-                onPressed:
-                    song == null ? null : () => localProvider.playPrevious(),
-                iconSize: 34,
-                icon: Icon(
-                  Icons.skip_previous_rounded,
-                  color: song == null ? Colors.white30 : Colors.white,
+              PressableScale(
+                child: IconButton(
+                  tooltip: 'Lagu Sebelumnya',
+                  onPressed:
+                      song == null ? null : () => localProvider.playPrevious(),
+                  iconSize: 34,
+                  icon: Icon(
+                    Icons.skip_previous_rounded,
+                    color: song == null ? Colors.white30 : Colors.white,
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
               // Musicolet signature large Play/Pause icon WITHOUT circular background
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: localProvider.allSongs.isEmpty && song == null
-                    ? widget.onNavigateToDownloader
-                    : () => localProvider.togglePlayPause(),
-                child: SizedBox(
-                  width: 56,
-                  height: 52,
-                  child: Center(
-                    child: Icon(
-                      localProvider.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      size: 46,
-                      color: Colors.white,
+              PressableScale(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: localProvider.allSongs.isEmpty && song == null
+                      ? widget.onNavigateToDownloader
+                      : () => localProvider.togglePlayPause(),
+                  child: SizedBox(
+                    width: 56,
+                    height: 52,
+                    child: Center(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child: Icon(
+                          localProvider.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey<bool>(localProvider.isPlaying),
+                          size: 46,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: 14),
-              IconButton(
-                tooltip: 'Lagu Berikutnya',
-                onPressed: song == null ? null : () => localProvider.playNext(),
-                iconSize: 34,
-                icon: Icon(
-                  Icons.skip_next_rounded,
-                  color: song == null ? Colors.white30 : Colors.white,
+              PressableScale(
+                child: IconButton(
+                  tooltip: 'Lagu Berikutnya',
+                  onPressed:
+                      song == null ? null : () => localProvider.playNext(),
+                  iconSize: 34,
+                  icon: Icon(
+                    Icons.skip_next_rounded,
+                    color: song == null ? Colors.white30 : Colors.white,
+                  ),
                 ),
               ),
             ],
           ),
 
           // Right: System Equalizer (`📊`)
-          IconButton(
-            tooltip: 'Equalizer Sistem Android',
-            onPressed: () async {
-              final opened = await localProvider.openSystemEqualizer();
-              if (!opened && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Equalizer bawaan sistem tidak ditemukan di perangkat ini.',
+          PressableScale(
+            child: IconButton(
+              tooltip: 'Equalizer Sistem Android',
+              onPressed: () async {
+                final opened = await localProvider.openSystemEqualizer();
+                if (!opened && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Equalizer bawaan sistem tidak ditemukan di perangkat ini.',
+                      ),
                     ),
-                  ),
-                );
-              }
-            },
-            icon: const Icon(
-              Icons.equalizer_rounded,
-              color: Colors.white70,
-              size: 22,
+                  );
+                }
+              },
+              icon: const Icon(
+                Icons.equalizer_rounded,
+                color: Colors.white70,
+                size: 22,
+              ),
             ),
           ),
         ],
@@ -1502,6 +1525,25 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 ),
                 const SizedBox(height: 8),
                 Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(
+                    Icons.playlist_add_rounded,
+                    color: Color(0xFF3898EC),
+                  ),
+                  title: const Text(
+                    'Tambah ke Playlist',
+                    style: TextStyle(color: Colors.white, fontSize: 13.5),
+                  ),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    showAddToPlaylistSheet(
+                      context,
+                      localProvider: localProvider,
+                      song: song,
+                    );
+                  },
+                ),
                 ListTile(
                   dense: true,
                   leading: const Icon(

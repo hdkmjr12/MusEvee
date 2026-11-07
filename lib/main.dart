@@ -59,6 +59,18 @@ class _MusEveeAppState extends State<MusEveeApp> {
     _downloaderProvider.onSongSaved = (savedPath) async {
       await _localMusicProvider.upsertSingleSongByPath(savedPath);
     };
+    _downloaderProvider.onEnsurePlaylist = (name) async {
+      final playlist = await _localMusicProvider.ensurePlaylistNamed(name);
+      return playlist.id;
+    };
+    _downloaderProvider.onAddToPlaylist = (playlistId, filePath) async {
+      await _localMusicProvider.addSongToPlaylist(playlistId, filePath);
+    };
+    _downloaderProvider.onFindLocalDuplicate = (track) {
+      return _localMusicProvider
+          .findLocalSongByIdentity(track.title, track.artist)
+          ?.filePath;
+    };
     _downloaderProvider.onBeforeFileMutation = (path) {
       return _localMusicProvider.prepareForExternalFileMutation(path);
     };

@@ -50,6 +50,7 @@ class MainActivity : FlutterActivity() {
     private var localFocusRequest: AudioFocusRequest? = null
     private var resumeLocalOnFocusGain: Boolean = false
     private var resumeLocalAfterPreview: Boolean = false
+    private var mediaNotifier: MusEveeMediaNotifier? = null
 
     // Android 11-15 Scoped Storage & All Files Access request tracking
     private val reqAllFilesAccess = 2101
@@ -155,6 +156,11 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        mediaNotifier = MusEveeMediaNotifier(this) { action, positionMs ->
+            mainHandler.post {
+                handleMediaNotificationAction(action, positionMs)
+            }
+        }
         extractSharedTextFromIntent(intent)
     }
 
@@ -266,11 +272,53 @@ class MainActivity : FlutterActivity() {
                     val path = call.argument<String>("path")?.trim()
                     val startPositionMs = call.argument<Int>("positionMs") ?: 0
                     val sessionId = call.argument<Int>("sessionId") ?: 0
+                    val title = call.argument<String>("title")?.trim()
+                    val artist = call.argument<String>("artist")?.trim()
+                    val album = call.argument<String>("album")?.trim()
+                    val coverPath = call.argument<String>("coverPath")?.trim()
+                    val durationMs = (call.argument<Number>("durationMs")?.toLong()) ?: 0L
                     if (path.isNullOrEmpty()) {
                         result.success(false)
                     } else {
-                        playLocalAudioFile(path, startPositionMs, sessionId, result)
+                        playLocalAudioFile(
+                            path = path,
+                            startPositionMs = startPositionMs,
+                            requestedSessionId = sessionId,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            coverPath = coverPath,
+                            durationMs = durationMs,
+                            result = result
+                        )
                     }
+                }
+                "updateMediaNotification" -> {
+                    val title = call.argument<String>("title")?.trim().orEmpty()
+                    val artist = call.argument<String>("artist")?.trim().orEmpty()
+                    val album = call.argument<String>("album")?.trim().orEmpty()
+                    val coverPath = call.argument<String>("coverPath")?.trim()
+                    val durationMs = (call.argument<Number>("durationMs")?.toLong()) ?: 0L
+                    mediaNotifier?.updateMetadata(
+                        newTitle = title,
+                        newArtist = artist,
+                        newAlbum = album,
+                        coverPath = coverPath,
+                        newDurationMs = durationMs
+                    )
+                    val mp = localPlayer
+                    val playing = try {
+                        isLocalPrepared && mp?.isPlaying == true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    val pos = try {
+                        if (isLocalPrepared && mp != null) mp.currentPosition.toLong() else 0L
+                    } catch (_: Exception) {
+                        0L
+                    }
+                    mediaNotifier?.updatePlaybackState(playing, pos)
+                    result.success(true)
                 }
                 "localPause" -> {
                     pauseLocalAudioByUser()
@@ -554,6 +602,11 @@ class MainActivity : FlutterActivity() {
         path: String,
         startPositionMs: Int,
         requestedSessionId: Int,
+        title: String?,
+        artist: String?,
+        album: String?,
+        coverPath: String?,
+        durationMs: Long,
         result: MethodChannel.Result
     ) {
         val file = File(path)
@@ -566,6 +619,17 @@ class MainActivity : FlutterActivity() {
         resumeLocalOnFocusGain = false
         stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
         stopLocalAudio(notifyFlutter = false, abandonFocus = false)
+
+        val resolvedTitle = if (!title.isNullOrBlank()) title else file.nameWithoutExtension
+        val resolvedArtist = if (!artist.isNullOrBlank()) artist else "MusEvee"
+        val resolvedAlbum = album.orEmpty()
+        mediaNotifier?.updateMetadata(
+            newTitle = resolvedTitle,
+            newArtist = resolvedArtist,
+            newAlbum = resolvedAlbum,
+            coverPath = coverPath,
+            newDurationMs = durationMs
+        )
 
         val capturedSessionId = if (requestedSessionId > 0) {
             requestedSessionId
@@ -596,6 +660,7 @@ class MainActivity : FlutterActivity() {
                         mp.seekTo(startPositionMs)
                     }
                     mp.start()
+                    mediaNotifier?.updateDuration(mp.duration.toLong())
                     notifyLocalPlayerState(isPlaying = true)
                     startPositionTicker()
                 } catch (_: Exception) {
@@ -699,6 +764,7 @@ class MainActivity : FlutterActivity() {
             val dur = mp.duration
             val clamped = if (dur > 0) positionMs.coerceIn(0, dur) else positionMs.coerceAtLeast(0)
             mp.seekTo(clamped)
+            mediaNotifier?.updatePlaybackState(mp.isPlaying, clamped.toLong())
             methodChannel?.invokeMethod(
                 "onLocalPosition",
                 mapOf(
@@ -744,6 +810,7 @@ class MainActivity : FlutterActivity() {
             abandonLocalAudioFocus()
         }
         if (notifyFlutter) {
+            mediaNotifier?.clear()
             methodChannel?.invokeMethod(
                 "onLocalPlayerState",
                 mapOf(
@@ -775,6 +842,10 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             0
         }
+        if (dur > 0) {
+            mediaNotifier?.updateDuration(dur.toLong())
+        }
+        mediaNotifier?.updatePlaybackState(isPlaying, pos.toLong())
         methodChannel?.invokeMethod(
             "onLocalPlayerState",
             mapOf(
@@ -795,6 +866,32 @@ class MainActivity : FlutterActivity() {
 
     private fun stopPositionTicker() {
         mainHandler.removeCallbacks(positionTicker)
+    }
+
+    private fun handleMediaNotificationAction(action: String, positionMs: Long) {
+        when (action) {
+            "pause" -> pauseLocalAudioByUser()
+            "play" -> {
+                if (!resumeLocalAudio()) {
+                    methodChannel?.invokeMethod(
+                        "onMediaNotificationAction",
+                        mapOf("action" to "play", "positionMs" to 0)
+                    )
+                }
+            }
+            "seek" -> {
+                seekLocalAudio(positionMs.toInt())
+            }
+            "next", "previous" -> {
+                methodChannel?.invokeMethod(
+                    "onMediaNotificationAction",
+                    mapOf("action" to action, "positionMs" to 0)
+                )
+            }
+            "stop" -> {
+                stopLocalAudio(notifyFlutter = true, abandonFocus = true)
+            }
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -2102,6 +2199,8 @@ class MainActivity : FlutterActivity() {
         pendingWriteBytes = null
         stopPreviewAudio(notifyFlutter = false, allowResumeLocal = false)
         stopLocalAudio(notifyFlutter = false, abandonFocus = true)
+        mediaNotifier?.release()
+        mediaNotifier = null
         ioExecutor.shutdownNow()
         super.onDestroy()
     }

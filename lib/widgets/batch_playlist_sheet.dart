@@ -380,22 +380,29 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                       ),
                       onPressed: _selectedIndices.isEmpty
                           ? null
-                          : () {
+                          : () async {
                               final sortedIndices = _selectedIndices.toList()
                                 ..sort();
                               final chosenTracks = <TrackMetadata>[
                                 for (final idx in sortedIndices) tracks[idx],
                               ];
                               final targetFolder = provider.selectedFolder;
+                              final playlistName =
+                                  widget.collection.title.trim();
+                              final messenger = ScaffoldMessenger.of(context);
                               Navigator.of(context).pop();
-                              provider.enqueueBatchTracks(
+                              final skipped = await provider.enqueueBatchTracks(
                                 chosenTracks,
                                 folderName: targetFolder,
+                                playlistName: playlistName,
                               );
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              final queued = chosenTracks.length - skipped;
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    '${chosenTracks.length} lagu ditambahkan ke antrean ($targetFolder).',
+                                    '$queued lagu diantrekan ($targetFolder)'
+                                    '${skipped > 0 ? ', $skipped sudah ada di HP (tidak diunduh ulang)' : ''}'
+                                    '${playlistName.isNotEmpty ? ' • Playlist "$playlistName" tersinkron.' : '.'}',
                                   ),
                                 ),
                               );

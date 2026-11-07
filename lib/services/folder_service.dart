@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/track_metadata.dart';
 
 class FolderService {
   static const String baseMusicRoot = '/storage/emulated/0/Music';
@@ -194,6 +195,94 @@ class FolderService {
                 await entity.length() >= _minValidMusicBytes) {
               return folder;
             }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  /// Checks across all [folders] (plus any extra subdirectories in `/storage/emulated/0/Music/`)
+  /// whether an `.mp3` matching [track] already exists on disk (by exact filename OR
+  /// normalized `Artist - Title` stem) and returns its full file path if found.
+  Future<String?> checkDuplicateAcrossFolders(
+    TrackMetadata track,
+    List<String> folders,
+  ) async {
+    if (!Platform.isAndroid) return null;
+
+    final allFolders = <String>{...folders};
+    try {
+      final discovered = await listAvailableFolders();
+      allFolders.addAll(discovered);
+    } catch (_) {}
+
+    final targetFileLower = track.sanitizedFileName.toLowerCase();
+    final baseWithoutExt = targetFileLower.endsWith('.mp3')
+        ? targetFileLower.substring(0, targetFileLower.length - 4)
+        : targetFileLower;
+    final targetIdentity = TrackMetadata.normalizeTrackIdentity(
+      track.title,
+      track.artist,
+    );
+    final targetCombined = TrackMetadata.normalizeTrackSegment(
+      '${track.artist} ${track.title}',
+    );
+    final targetTitleOnly = TrackMetadata.normalizeTrackSegment(
+      track.title,
+      stripFeat: true,
+    );
+    final targetArtistOnly = TrackMetadata.normalizeTrackSegment(
+      track.artist,
+      stripFeat: true,
+    );
+
+    for (final folder in allFolders) {
+      try {
+        final dir = Directory('$baseMusicRoot/$folder');
+        if (!await dir.exists()) continue;
+
+        final exactFile = File('${dir.path}/${track.sanitizedFileName}');
+        if (await exactFile.exists() &&
+            await exactFile.length() >= _minValidMusicBytes) {
+          return exactFile.path;
+        }
+
+        await for (final entity in dir.list(followLinks: false)) {
+          if (entity is! File) continue;
+          final rawName = entity.path.split(Platform.pathSeparator).last;
+          final lower = rawName.toLowerCase();
+          if (!lower.endsWith('.mp3')) continue;
+          if (await entity.length() < _minValidMusicBytes) continue;
+
+          if (lower == targetFileLower ||
+              lower.startsWith('$baseWithoutExt (')) {
+            return entity.path;
+          }
+
+          final stem = rawName
+              .substring(0, rawName.length - 4)
+              .replaceFirst(RegExp(r'\s\(\d+\)$'), '');
+          final dashIdx = stem.indexOf(' - ');
+          if (dashIdx > 0) {
+            final fArtist = stem.substring(0, dashIdx);
+            final fTitle = stem.substring(dashIdx + 3);
+            if (targetIdentity.isNotEmpty &&
+                TrackMetadata.normalizeTrackIdentity(fTitle, fArtist) ==
+                    targetIdentity) {
+              return entity.path;
+            }
+          }
+          final normStem = TrackMetadata.normalizeTrackSegment(stem);
+          if (normStem.isNotEmpty && normStem == targetCombined) {
+            return entity.path;
+          }
+          if (targetTitleOnly.length >= 4 &&
+              targetArtistOnly.length >= 2 &&
+              normStem.contains(targetTitleOnly) &&
+              normStem.contains(targetArtistOnly)) {
+            return entity.path;
           }
         }
       } catch (_) {}
