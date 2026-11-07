@@ -235,6 +235,28 @@ class FolderService {
     }
   }
 
+  /// Deletes an existing audio file both from disk and Android MediaStore so
+  /// stale versions do not remain cached in Musicolet.
+  Future<bool> deleteMediaFile(String path) async {
+    if (!Platform.isAndroid || path.trim().isEmpty) return false;
+    bool deleted = false;
+    try {
+      final f = File(path);
+      if (await f.exists()) {
+        await f.delete();
+        deleted = true;
+      }
+    } catch (_) {}
+    try {
+      final res = await _systemChannel.invokeMethod<bool>(
+        'deleteMediaFile',
+        {'path': path},
+      );
+      if (res == true) deleted = true;
+    } catch (_) {}
+    return deleted;
+  }
+
   String sanitizeFolderName(String raw) {
     return raw
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')

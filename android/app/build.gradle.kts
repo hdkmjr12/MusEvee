@@ -33,11 +33,21 @@ android {
         }
     }
 
+    signingConfigs {
+        create("museveeRelease") {
+            storeFile = file("musevee-release.jks")
+            storePassword = "musevee123"
+            keyAlias = "musevee"
+            keyPassword = "musevee123"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("museveeRelease")
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("museveeRelease")
             isMinifyEnabled = false
             isShrinkResources = false
         }

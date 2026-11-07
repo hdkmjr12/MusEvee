@@ -746,7 +746,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                               : hasAnyLyrics
                                   ? previewLyricsText
                                   : 'Belum ada lirik. Ketuk "Edit Info & Lirik" untuk mengisi manual.',
-                          maxLines: 4,
+                          maxLines: 8,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: hasAnyLyrics ? _textDark : _textMuted,

@@ -5,9 +5,11 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.MediaScannerConnection
 import android.os.Bundle
+import android.provider.MediaStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.spotmeta.downloader/system"
@@ -38,6 +40,37 @@ class MainActivity : FlutterActivity() {
                             null
                         )
                         result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
+                "deleteMediaFile" -> {
+                    val path = call.argument<String>("path")
+                    if (!path.isNullOrBlank()) {
+                        var deleted = false
+                        try {
+                            val f = File(path)
+                            if (f.exists() && f.delete()) {
+                                deleted = true
+                            }
+                        } catch (_: Exception) {}
+                        try {
+                            val rows = applicationContext.contentResolver.delete(
+                                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                                "${MediaStore.MediaColumns.DATA} = ?",
+                                arrayOf(path)
+                            )
+                            if (rows > 0) deleted = true
+                        } catch (_: Exception) {}
+                        try {
+                            MediaScannerConnection.scanFile(
+                                applicationContext,
+                                arrayOf(path),
+                                null,
+                                null
+                            )
+                        } catch (_: Exception) {}
+                        result.success(deleted)
                     } else {
                         result.success(false)
                     }

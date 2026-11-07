@@ -34,7 +34,7 @@ jobs:
       - name: Ensure Gradle Wrapper & Restore MusEvee Android Config
         run: |
           flutter create . --platforms android
-          git checkout -- android/app/src/main/ android/app/build.gradle* android/build.gradle* android/settings.gradle*
+          git checkout -- android/app/src/main/ android/app/build.gradle* android/app/musevee-release.jks android/build.gradle* android/settings.gradle*
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
 
       - name: Install Dependencies
@@ -57,5 +57,5 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-arm64.apk
           gh release delete v1.0.0 --yes --cleanup-tag || true
           gh release create v1.0.0 MusEvee-arm64.apk \
-            --title "MusEvee v1.0.0 (ARM64 - Versi Ringan ~20 MB)" \
-            --notes "Release APK MusEvee khusus Android ARM64 (~20.1 MB)."
+            --title "MusEvee v1.2 (ARM64 - Versi Ringan ~20 MB)" \
+            --notes "Release APK MusEvee v1.2 khusus Android ARM64 (~20.1 MB) dengan perbaikan Romaji + timestamp [mm:ss.xx] & pembersihan duplikat otomatis."

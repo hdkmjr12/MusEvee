@@ -524,18 +524,35 @@ class _HomeScreenState extends State<HomeScreen> {
         preferredSize: const Size.fromHeight(1),
         child: Divider(height: 1, thickness: 0.8, color: hairline),
       ),
-      title: const Row(
+      title: Row(
         children: [
           // Logo Vektor MusEvee Tanpa Background/Border (100% Transparan)
-          MusEveeLogo(size: 26),
-          SizedBox(width: 10),
-          Text(
+          const MusEveeLogo(size: 26),
+          const SizedBox(width: 10),
+          const Text(
             'MusEvee',
             style: TextStyle(
               color: _textDark,
               fontSize: 17,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            decoration: BoxDecoration(
+              color: _surfaceSubtle,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: hairline, width: 0.8),
+            ),
+            child: const Text(
+              'v1.2',
+              style: TextStyle(
+                color: _primaryBlue,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],

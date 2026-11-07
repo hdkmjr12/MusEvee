@@ -544,6 +544,13 @@ class TaggingService {
     }
 
     if (Platform.isAndroid) {
+      final folderSvc = FolderService();
+      final baseName = fileName.endsWith('.mp3')
+          ? fileName.substring(0, fileName.length - 4)
+          : fileName;
+      final baseNameLower = baseName.toLowerCase();
+      final targetLower = fileName.toLowerCase();
+
       final publicDirs = [
         '${FolderService.baseMusicRoot}/$cleanFolder',
         '${FolderService.fallbackDownloadRoot}/$cleanFolder',
@@ -553,15 +560,34 @@ class TaggingService {
         final dir = Directory(dirPath);
         final exactPath = '$dirPath/$fileName';
 
+        // Purge any previous exact or suffixed duplicate MP3 in this folder
+        // from both disk and Android MediaStore so Musicolet never plays a stale copy.
+        try {
+          if (await dir.exists()) {
+            await for (final entity in dir.list(followLinks: false)) {
+              if (entity is File) {
+                final nameLower = entity.path
+                    .split(Platform.pathSeparator)
+                    .last
+                    .toLowerCase();
+                if (nameLower == targetLower ||
+                    (nameLower.endsWith('.mp3') &&
+                        nameLower.startsWith('$baseNameLower ('))) {
+                  await folderSvc.deleteMediaFile(entity.path);
+                  await removeStaleCompanionLrc(entity.path);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
         // Attempt A: Write directly to exact filename
         try {
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
+          await folderSvc.deleteMediaFile(exactPath);
           final targetFile = File(exactPath);
-          if (await targetFile.exists()) {
-            await targetFile.delete();
-          }
           await targetFile.writeAsBytes(bytes, flush: true);
           if (await targetFile.exists() && await targetFile.length() > 0) {
             await removeStaleCompanionLrc(targetFile.path);
@@ -577,9 +603,6 @@ class TaggingService {
           if (!await dir.exists()) {
             await dir.create(recursive: true);
           }
-          final baseName = fileName.endsWith('.mp3')
-              ? fileName.substring(0, fileName.length - 4)
-              : fileName;
           final uniqueSuffix =
               (DateTime.now().millisecondsSinceEpoch % 100000).toString();
           final uniquePath = '$dirPath/$baseName ($uniqueSuffix).mp3';
