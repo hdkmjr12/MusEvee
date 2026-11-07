@@ -6,6 +6,21 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (sebelumnya *SpotMeta 
 
 ---
 
+## [v3.1] — 2026-11-07 (Bilingual Romaji Deduplication, Japanese Lyrics Priority & Manual Lyrics Picker)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Deduplikasi Otomatis Lirik Bilingual pada `RomajiService` (`lib/services/romaji_service.dart`):**
+  - Menambahkan fungsi `RomajiService.normalizeForComparison(String text)` yang menormalisasi huruf kecil, mengubah vokal bermakron (`ā`, `ī`, `ū`, `ē`, `ō`) serta variasi vokal panjang (`ou`/`oo` -> `o`, `uu` -> `u`, `aa` -> `a`, `ii` -> `i`, `ee` -> `e`, `wo` -> `o`), dan menghapus tanda baca, apostrof (`'`), serta seluruh spasi.
+  - Menambahkan deteksi otomatis pasangan baris bilingual berurutan (1 baris aslinya berhuruf Jepang Kanji/Kana dan 1 baris aslinya alfabet Latin/Romaji pada timestamp identik atau berselisih `< 1.0` detik, maupun baris inline bilingual `Kanji / Romaji`) dan menghapus baris duplikatnya dengan mempertahankan baris yang memiliki pemisahan spasi kata paling rapi (`_pickCleanerRomajiText`).
+- **Filter Bahasa & Prioritas Lirik Asli di `LyricsService` (`lib/services/lyrics_service.dart`):**
+  - Mengubah pipeline pengambilan lirik di `LyricsService.fetchLyricsWithCandidates()` agar mengambil kandidat dari `/api/get`, `/api/search?track_name=...&artist_name=...`, dan `/api/search?q=...` secara paralel sehingga tidak terjebak pada entri tunggal `/api/get` yang terkadang berisi *English Version* (seperti pada lagu *"YOASOBI - Idol"*).
+  - Menambahkan klasifikasi bahasa otomatis `classifyLyricsLanguage()` (`[Jepang/Kanji]`, `[Romaji]`, `[Bilingual]`, `[Inggris/Lainnya]`) serta sistem penilaian skor prioritas berdasarkan kecocokan durasi (`<= 3` detik), ketersediaan `syncedLyrics`, dan prioritas tertinggi untuk lirik `[Jepang/Kanji]`, `[Bilingual]`, serta `[Romaji]` (kecuali judul lagu secara eksplisit meminta `"English Ver"`).
+- **Pemilih Kandidat Lirik Manual ("Ganti Lirik") (`lib/providers/downloader_provider.dart`, `lib/widgets/track_preview_sheet.dart`, `lib/widgets/tag_editor_sheet.dart`):**
+  - Menyimpan daftar `List<LyricsCandidate>` di `DownloaderProvider` lengkap dengan metode `loadLyricsCandidates()` dan `selectLyricsCandidate()`.
+  - Menambahkan tombol **"Ganti Lirik"** di `TrackPreviewSheet` dan `TagEditorSheet` yang menampilkan daftar kandidat lirik LRCLIB beserta badge bahasa (`[Jepang/Kanji]`, `[Romaji]`, `[Bilingual]`, `[Inggris/Lainnya]`), indikator `LRC`/`Biasa` + durasi, serta preview 2 baris pertama lirik untuk pergantian versi lirik 1-klik.
+
+---
+
 ## [v3.0.1] — 2026-11-07 (Romaji Timestamp Alignment Fix, Anti-Duplicate MediaStore & Lightweight APK)
 
 ### Diperbaiki (Fixed)

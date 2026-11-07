@@ -67,8 +67,11 @@ class DownloaderProvider extends ChangeNotifier {
   bool _isSearchingYoutubeCandidates = false;
   YoutubeCandidate? _selectedYoutubeCandidate;
 
-  // Feature 2: Synced [LRC] vs Plain Lyrics toggle for Musicolet USLT
+  // Feature 2: Synced [LRC] vs Plain Lyrics toggle & Manual Lyrics Candidate Picker
   bool _preferSyncedLyrics = true;
+  List<LyricsCandidate> _lyricsCandidates = const [];
+  bool _isSearchingLyricsCandidates = false;
+  LyricsCandidate? _selectedLyricsCandidate;
 
   // Feature 3: Auto-Romaji state
   bool _isRomanizing = false;
@@ -97,6 +100,10 @@ class DownloaderProvider extends ChangeNotifier {
   bool get isSearchingYoutubeCandidates => _isSearchingYoutubeCandidates;
   YoutubeCandidate? get selectedYoutubeCandidate => _selectedYoutubeCandidate;
   bool get preferSyncedLyrics => _preferSyncedLyrics;
+  List<LyricsCandidate> get lyricsCandidates =>
+      List.unmodifiable(_lyricsCandidates);
+  bool get isSearchingLyricsCandidates => _isSearchingLyricsCandidates;
+  LyricsCandidate? get selectedLyricsCandidate => _selectedLyricsCandidate;
   bool get isRomanizing => _isRomanizing;
   RomajiService get romajiService => _romajiService;
 
@@ -233,11 +240,65 @@ class DownloaderProvider extends ChangeNotifier {
   }
 
   // ===========================================================================
-  // FEATURE 2: SYNCED LRC VS PLAIN LYRICS TOGGLE
+  // FEATURE 2: SYNCED LRC VS PLAIN LYRICS TOGGLE & MANUAL LYRICS PICKER
   // ===========================================================================
   void setPreferSyncedLyrics(bool value) {
     if (_preferSyncedLyrics == value) return;
     _preferSyncedLyrics = value;
+    notifyListeners();
+  }
+
+  /// Loads LRCLIB lyrics candidates for [forTrack] (or [_trackMetadata]) so the
+  /// user can manually switch between `[Jepang/Kanji]`, `[Romaji]`, `[Bilingual]`,
+  /// and `[Inggris/Lainnya]` versions via the "Ganti Lirik" picker.
+  Future<void> loadLyricsCandidates({TrackMetadata? forTrack}) async {
+    final target = forTrack ?? _trackMetadata;
+    if (target == null || _isSearchingLyricsCandidates) return;
+
+    _isSearchingLyricsCandidates = true;
+    notifyListeners();
+
+    try {
+      final response = await _lyricsService.fetchLyricsWithCandidates(
+        trackName: target.title,
+        artistName: target.artist,
+        albumName: target.album,
+        durationSeconds: target.durationSeconds,
+        targetFolder: _selectedFolder,
+      );
+      _lyricsCandidates = response.candidates;
+      if (_selectedLyricsCandidate != null) {
+        final match = response.candidates
+            .where((c) => c.id == _selectedLyricsCandidate!.id)
+            .toList();
+        if (match.isNotEmpty) {
+          _selectedLyricsCandidate = match.first;
+        } else {
+          _selectedLyricsCandidate = response.selectedCandidate;
+        }
+      } else {
+        _selectedLyricsCandidate = response.selectedCandidate;
+      }
+    } catch (_) {
+      _lyricsCandidates = const [];
+    } finally {
+      _isSearchingLyricsCandidates = false;
+      notifyListeners();
+    }
+  }
+
+  /// Applies the chosen [candidate] to the current previewed track metadata.
+  void selectLyricsCandidate(LyricsCandidate candidate) {
+    _selectedLyricsCandidate = candidate;
+    final current = _trackMetadata;
+    if (current != null) {
+      _trackMetadata = current.copyWith(
+        syncedLyrics: candidate.syncedLyrics,
+        plainLyrics: candidate.plainLyrics,
+        clearSyncedLyrics: !candidate.hasSynced,
+      );
+      _preferSyncedLyrics = candidate.hasSynced;
+    }
     notifyListeners();
   }
 
@@ -354,6 +415,8 @@ class DownloaderProvider extends ChangeNotifier {
     _searchResults = const [];
     _youtubeCandidates = const [];
     _selectedYoutubeCandidate = null;
+    _lyricsCandidates = const [];
+    _selectedLyricsCandidate = null;
     _progress = 0.0;
     _statusMessage = 'Siap mencari lagu.';
     _errorMessage = null;
@@ -412,7 +475,8 @@ class DownloaderProvider extends ChangeNotifier {
     }
   }
 
-  /// Selects a track from the search results list, fetches its lyrics, and prepares it for download.
+  /// Selects a track from the search results list, fetches its lyrics and
+  /// language-classified candidates, and prepares it for download.
   Future<void> selectSearchResult(TrackMetadata selected) async {
     if (isBusy) return;
 
@@ -422,6 +486,8 @@ class DownloaderProvider extends ChangeNotifier {
     _trackMetadata = selected;
     _youtubeCandidates = const [];
     _selectedYoutubeCandidate = null;
+    _lyricsCandidates = const [];
+    _selectedLyricsCandidate = null;
     _preferSyncedLyrics = true;
 
     _setState(
@@ -431,7 +497,20 @@ class DownloaderProvider extends ChangeNotifier {
     );
 
     try {
-      final enriched = await _lyricsService.enrichWithLyrics(selected);
+      final lyricsResponse = await _lyricsService.fetchLyricsWithCandidates(
+        trackName: selected.title,
+        artistName: selected.artist,
+        albumName: selected.album,
+        durationSeconds: selected.durationSeconds,
+        targetFolder: _selectedFolder,
+      );
+      _lyricsCandidates = lyricsResponse.candidates;
+      _selectedLyricsCandidate = lyricsResponse.selectedCandidate;
+
+      final enriched = selected.copyWith(
+        syncedLyrics: lyricsResponse.bestResult.syncedLyrics,
+        plainLyrics: lyricsResponse.bestResult.plainLyrics,
+      );
       _trackMetadata = enriched;
       _preferSyncedLyrics = enriched.hasSyncedLyrics;
       await _checkDuplicatesForTracks([enriched]);
@@ -451,6 +530,8 @@ class DownloaderProvider extends ChangeNotifier {
     if (_searchResults.isEmpty || isBusy) return;
     stopPreviewAudio();
     _trackMetadata = null;
+    _lyricsCandidates = const [];
+    _selectedLyricsCandidate = null;
     _errorMessage = null;
     _savedFilePath = null;
     _setState(
@@ -518,7 +599,7 @@ class DownloaderProvider extends ChangeNotifier {
   }
 
   /// Checks a Spotify track URL: extracts Spotify public metadata, enriches via
-  /// Deezer Public API, and fetches lyrics from LRCLIB for the preview card.
+  /// Deezer Public API, and fetches lyrics & candidates from LRCLIB for the preview card.
   Future<void> checkTrack(String spotifyUrl) async {
     if (isBusy) return;
 
@@ -529,6 +610,8 @@ class DownloaderProvider extends ChangeNotifier {
     _currentCollection = null;
     _youtubeCandidates = const [];
     _selectedYoutubeCandidate = null;
+    _lyricsCandidates = const [];
+    _selectedLyricsCandidate = null;
     _preferSyncedLyrics = true;
 
     _setState(
@@ -548,8 +631,20 @@ class DownloaderProvider extends ChangeNotifier {
         message: 'Mengambil lirik...',
       );
 
-      final enrichedMetadata =
-          await _lyricsService.enrichWithLyrics(baseMetadata);
+      final lyricsResponse = await _lyricsService.fetchLyricsWithCandidates(
+        trackName: baseMetadata.title,
+        artistName: baseMetadata.artist,
+        albumName: baseMetadata.album,
+        durationSeconds: baseMetadata.durationSeconds,
+        targetFolder: _selectedFolder,
+      );
+      _lyricsCandidates = lyricsResponse.candidates;
+      _selectedLyricsCandidate = lyricsResponse.selectedCandidate;
+
+      final enrichedMetadata = baseMetadata.copyWith(
+        syncedLyrics: lyricsResponse.bestResult.syncedLyrics,
+        plainLyrics: lyricsResponse.bestResult.plainLyrics,
+      );
       _trackMetadata = enrichedMetadata;
       _preferSyncedLyrics = enrichedMetadata.hasSyncedLyrics;
       await _checkDuplicatesForTracks([enrichedMetadata]);
@@ -646,7 +741,10 @@ class DownloaderProvider extends ChangeNotifier {
 
       TrackMetadata workingMeta = currentMeta;
       if (!workingMeta.hasAnyLyrics) {
-        workingMeta = await _lyricsService.enrichWithLyrics(workingMeta);
+        workingMeta = await _lyricsService.enrichWithLyrics(
+          workingMeta,
+          targetFolder: targetFolder,
+        );
         _trackMetadata = workingMeta;
       }
 
@@ -771,7 +869,10 @@ class DownloaderProvider extends ChangeNotifier {
         try {
           var meta = currentItem.metadata;
           if (!meta.hasAnyLyrics) {
-            meta = await _lyricsService.enrichWithLyrics(meta);
+            meta = await _lyricsService.enrichWithLyrics(
+              meta,
+              targetFolder: currentItem.targetFolderName,
+            );
           }
 
           final rawFile = await _audioService.downloadBestAudioStream(

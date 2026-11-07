@@ -48,6 +48,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
   static const Color _emeraldDot = Color(0xFF10B981);
 
   bool _showYoutubeCandidates = false;
+  bool _showLyricsCandidates = false;
 
   void _toggleYoutubePicker(DownloaderProvider provider) {
     setState(() {
@@ -57,6 +58,17 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
         provider.youtubeCandidates.isEmpty &&
         !provider.isSearchingYoutubeCandidates) {
       provider.loadYoutubeCandidates();
+    }
+  }
+
+  void _toggleLyricsPicker(DownloaderProvider provider) {
+    setState(() {
+      _showLyricsCandidates = !_showLyricsCandidates;
+    });
+    if (_showLyricsCandidates &&
+        provider.lyricsCandidates.isEmpty &&
+        !provider.isSearchingLyricsCandidates) {
+      provider.loadLyricsCandidates();
     }
   }
 
@@ -600,6 +612,19 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
+                                  if (provider.selectedLyricsCandidate !=
+                                      null) ...[
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      provider
+                                          .selectedLyricsCandidate!.languageTag,
+                                      style: const TextStyle(
+                                        color: _primaryBlue,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               )
                             else
@@ -612,6 +637,28 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                 ),
                               ),
                             const Spacer(),
+                            if (!isFetchingLyrics)
+                              InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () => _toggleLyricsPicker(provider),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 4,
+                                  ),
+                                  child: Text(
+                                    _showLyricsCandidates
+                                        ? 'Tutup'
+                                        : 'Ganti Lirik',
+                                    style: const TextStyle(
+                                      color: _primaryBlue,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 4),
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
                                 backgroundColor: _surfaceCard,
@@ -648,6 +695,149 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                             ),
                           ],
                         ),
+
+                        // Expandable manual LRCLIB Lyrics Candidate Picker ("Ganti Lirik")
+                        if (_showLyricsCandidates) ...[
+                          const SizedBox(height: 8),
+                          Divider(height: 1, color: hairline),
+                          const SizedBox(height: 8),
+                          if (provider.isSearchingLyricsCandidates)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 10),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: _primaryBlue,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (provider.lyricsCandidates.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 6),
+                              child: Text(
+                                'Versi lirik lain tidak ditemukan di LRCLIB.',
+                                style: TextStyle(
+                                  color: _textMuted,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            )
+                          else
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 195),
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: provider.lyricsCandidates.length,
+                                separatorBuilder: (context, index) =>
+                                    const SizedBox(height: 5),
+                                itemBuilder: (context, idx) {
+                                  final cand = provider.lyricsCandidates[idx];
+                                  final isChosen =
+                                      provider.selectedLyricsCandidate != null
+                                          ? provider.selectedLyricsCandidate!
+                                                  .id ==
+                                              cand.id
+                                          : idx == 0;
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(6),
+                                    onTap: () {
+                                      provider.selectLyricsCandidate(cand);
+                                      setState(() {
+                                        _showLyricsCandidates = false;
+                                      });
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 9,
+                                        vertical: 7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isChosen
+                                            ? _primaryBlue.withValues(
+                                                alpha: 0.08,
+                                              )
+                                            : _surfaceCard,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: isChosen
+                                              ? _primaryBlue
+                                              : hairline,
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 2),
+                                            child: Icon(
+                                              isChosen
+                                                  ? Icons.radio_button_checked
+                                                  : Icons.radio_button_off,
+                                              size: 15,
+                                              color: isChosen
+                                                  ? _primaryBlue
+                                                  : _textMuted,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Text(
+                                                      cand.languageTag,
+                                                      style: const TextStyle(
+                                                        color: _primaryBlue,
+                                                        fontSize: 11.5,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      '${cand.hasSynced ? 'LRC' : 'Biasa'} • ${cand.formattedDuration}',
+                                                      style: const TextStyle(
+                                                        color: _textMuted,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                  cand.previewTwoLines,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: _textDark,
+                                                    fontSize: 11.5,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
 
                         // Toggle: Lirik Berjalan | Lirik Biasa + Auto-Romaji Lirik
                         if (!isFetchingLyrics && hasAnyLyrics) ...[

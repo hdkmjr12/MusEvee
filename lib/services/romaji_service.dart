@@ -18,6 +18,22 @@ class ParsedLyricLine {
   bool get hasLyricContent => lyricContent.trim().isNotEmpty;
 }
 
+class _ProcessedLyricLine {
+  final String timestampPrefix;
+  final String romanizedContent;
+  final String originalContent;
+  final bool wasOriginallyJapanese;
+  final bool isEmptyLine;
+
+  const _ProcessedLyricLine({
+    required this.timestampPrefix,
+    required this.romanizedContent,
+    required this.originalContent,
+    required this.wasOriginallyJapanese,
+    required this.isEmptyLine,
+  });
+}
+
 class RomajiService {
   final Dio _dio;
 
@@ -446,24 +462,41 @@ class RomajiService {
       }
     }
 
-    // 3. Reconstruct each line 1-to-1 with its original timestampPrefix
-    final outputLines = <String>[];
+    // 3. Reconstruct each line with its original timestampPrefix and metadata
+    final processedLines = <_ProcessedLyricLine>[];
     for (int i = 0; i < rawLines.length; i++) {
       final originalTrimmed = rawLines[i].trim();
       final parsed = parsedLines[i];
 
       // Preserve empty lines or timestamp-only lines untouched
       if (originalTrimmed.isEmpty) {
-        outputLines.add('');
+        processedLines.add(
+          const _ProcessedLyricLine(
+            timestampPrefix: '',
+            romanizedContent: '',
+            originalContent: '',
+            wasOriginallyJapanese: false,
+            isEmptyLine: true,
+          ),
+        );
         continue;
       }
       if (!parsed.hasLyricContent) {
-        outputLines.add(parsed.timestampPrefix);
+        processedLines.add(
+          _ProcessedLyricLine(
+            timestampPrefix: parsed.timestampPrefix,
+            romanizedContent: '',
+            originalContent: '',
+            wasOriginallyJapanese: false,
+            isEmptyLine: false,
+          ),
+        );
         continue;
       }
 
+      final hadJapanese = containsJapanese(parsed.lyricContent);
       String romanizedLine;
-      if (!containsJapanese(parsed.lyricContent)) {
+      if (!hadJapanese) {
         romanizedLine = parsed.lyricContent.trim();
       } else {
         final replaced = parsed.lyricContent.replaceAllMapped(
@@ -473,17 +506,345 @@ class RomajiService {
             return segmentCache[seg] ?? convertKanaToRomaji(seg);
           },
         );
-        romanizedLine = cleanRomajiLine(replaced);
+        romanizedLine = _deduplicateInlineBilingual(cleanRomajiLine(replaced));
       }
 
-      if (parsed.hasTimestamp) {
-        outputLines.add('${parsed.timestampPrefix} ${romanizedLine.trim()}');
+      processedLines.add(
+        _ProcessedLyricLine(
+          timestampPrefix: parsed.timestampPrefix,
+          romanizedContent: romanizedLine.trim(),
+          originalContent: parsed.lyricContent.trim(),
+          wasOriginallyJapanese: hadJapanese,
+          isEmptyLine: false,
+        ),
+      );
+    }
+
+    // 4. Deduplicate consecutive bilingual lines (1 line originally Kanji/Kana +
+    //    1 adjacent line originally Latin/Romaji at the same or <1s timestamp,
+    //    or matching after normalizeForComparison).
+    final deduplicated = _deduplicateBilingualLines(processedLines);
+
+    final outputLines = <String>[];
+    for (final line in deduplicated) {
+      if (line.isEmptyLine) {
+        outputLines.add('');
+      } else if (line.romanizedContent.isEmpty) {
+        outputLines.add(line.timestampPrefix);
+      } else if (line.timestampPrefix.isNotEmpty) {
+        outputLines.add('${line.timestampPrefix} ${line.romanizedContent}');
       } else {
-        outputLines.add(romanizedLine.trim());
+        outputLines.add(line.romanizedContent);
       }
     }
 
     return outputLines.join('\n');
+  }
+
+  /// Normalizes a Romaji/Latin lyric string for bilingual duplicate comparison:
+  /// - Lowercases all characters
+  /// - Converts macron vowels (`ā`, `ī`, `ū`, `ē`, `ō`) and circumflex vowels to plain vowels
+  /// - Unifies Hepburn / Kunrei / long-vowel variants (`ou`/`oo` -> `o`, `uu` -> `u`, `aa` -> `a`, `ii` -> `i`, `ee` -> `e`, `wo` -> `o`, `dzu`/`du` -> `zu`)
+  /// - Strips all punctuation, apostrophes (`'`), and whitespace
+  static String normalizeForComparison(String text) {
+    if (text.trim().isEmpty) return '';
+    var s = text.toLowerCase();
+
+    // Replace macron & circumflex vowels
+    s = s
+        .replaceAll('ā', 'a')
+        .replaceAll('ī', 'i')
+        .replaceAll('ū', 'u')
+        .replaceAll('ē', 'e')
+        .replaceAll('ō', 'o')
+        .replaceAll('â', 'a')
+        .replaceAll('î', 'i')
+        .replaceAll('û', 'u')
+        .replaceAll('ê', 'e')
+        .replaceAll('ô', 'o');
+
+    // Normalize common Japanese particle & romanization variants before stripping spaces
+    s = s
+        .replaceAll(RegExp(r'\bwo\b'), 'o')
+        .replaceAll('dzu', 'zu')
+        .replaceAll('du', 'zu')
+        .replaceAll('tch', 'cch')
+        .replaceAll('si', 'shi')
+        .replaceAll('ti', 'chi')
+        .replaceAll('tu', 'tsu')
+        .replaceAll('hu', 'fu')
+        .replaceAll('zi', 'ji')
+        .replaceAll('sya', 'sha')
+        .replaceAll('syu', 'shu')
+        .replaceAll('syo', 'sho')
+        .replaceAll('tya', 'cha')
+        .replaceAll('tyu', 'chu')
+        .replaceAll('tyo', 'cho')
+        .replaceAll('jya', 'ja')
+        .replaceAll('jyu', 'ju')
+        .replaceAll('jyo', 'jo');
+
+    // Strip all punctuation, apostrophes, and spaces (keep only a-z and 0-9)
+    s = s.replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    // Collapse long vowel spellings (ou -> o, oo -> o, uu -> u, aa -> a, ii -> i, ee -> e)
+    // and nasal assimilation (nb -> mb, np -> mp, nm -> mm -> m)
+    s = s
+        .replaceAll('nb', 'mb')
+        .replaceAll('np', 'mp')
+        .replaceAll('nm', 'mm')
+        .replaceAll('ou', 'o')
+        .replaceAll(RegExp(r'a+'), 'a')
+        .replaceAll(RegExp(r'i+'), 'i')
+        .replaceAll(RegExp(r'u+'), 'u')
+        .replaceAll(RegExp(r'e+'), 'e')
+        .replaceAll(RegExp(r'o+'), 'o');
+
+    return s;
+  }
+
+  /// Parses the first `[mm:ss.xx]` timestamp in [timestampPrefix] into seconds.
+  static double? parseTimestampSeconds(String timestampPrefix) {
+    if (timestampPrefix.isEmpty) return null;
+    final match = RegExp(r'\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]')
+        .firstMatch(timestampPrefix);
+    if (match == null) return null;
+    final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
+    final seconds = int.tryParse(match.group(2) ?? '') ?? 0;
+    final fracStr = match.group(3) ?? '';
+    double frac = 0.0;
+    if (fracStr.isNotEmpty) {
+      final raw = int.tryParse(fracStr) ?? 0;
+      if (fracStr.length == 1) {
+        frac = raw / 10.0;
+      } else if (fracStr.length == 2) {
+        frac = raw / 100.0;
+      } else {
+        frac = raw / 1000.0;
+      }
+    }
+    return (minutes * 60) + seconds + frac;
+  }
+
+  /// Computes normalized similarity ratio in `[0.0, 1.0]` between two strings
+  /// that have already been passed through [normalizeForComparison].
+  static double similarityRatio(String normA, String normB) {
+    if (normA.isEmpty || normB.isEmpty) return 0.0;
+    if (normA == normB) return 1.0;
+
+    final shorter = normA.length <= normB.length ? normA : normB;
+    final longer = normA.length <= normB.length ? normB : normA;
+    if (longer.contains(shorter) && shorter.length >= 4) {
+      return shorter.length / longer.length;
+    }
+
+    if (normA.length < 2 || normB.length < 2) {
+      return normA == normB ? 1.0 : 0.0;
+    }
+
+    final bigramsA = <String, int>{};
+    for (int i = 0; i < normA.length - 1; i++) {
+      final bg = normA.substring(i, i + 2);
+      bigramsA[bg] = (bigramsA[bg] ?? 0) + 1;
+    }
+
+    int intersection = 0;
+    for (int i = 0; i < normB.length - 1; i++) {
+      final bg = normB.substring(i, i + 2);
+      final count = bigramsA[bg] ?? 0;
+      if (count > 0) {
+        intersection++;
+        bigramsA[bg] = count - 1;
+      }
+    }
+
+    return (2.0 * intersection) / ((normA.length - 1) + (normB.length - 1));
+  }
+
+  /// Detects if a pure Latin line is likely Japanese Romaji rather than English
+  /// translation by checking common Romaji particles and syllable patterns.
+  static bool isRomajiText(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || containsJapanese(trimmed)) return false;
+    final lower = trimmed.toLowerCase();
+    final words = lower
+        .replaceAll(RegExp(r"[^a-zāīūēō\s']"), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return false;
+
+    const romajiMarkers = {
+      'wa', 'no', 'ni', 'wo', 'ga', 'de', 'to', 'mo', 'ka', 'ne', 'yo',
+      'na', 'ze', 'zo', 'sa', 'kara', 'made', 'kedo', 'keredo', 'node',
+      'noni', 'tara', 'reba', 'desu', 'masu', 'desho', 'deshou', 'darou',
+      'daro', 'janai', 'nai', 'nakatta', 'tai', 'takunai', 'kimi', 'boku',
+      'watashi', 'atashi', 'ore', 'anata', 'kokoro', 'sekai', 'yume', 'ai',
+      'koi', 'uta', 'koe', 'namida', 'hikari', 'sora', 'kaze', 'toki',
+      'ima', 'kyou', 'ashita', 'mirai', 'koto', 'mono', 'hito', 'dare',
+      'nani', 'doko', 'itsu', 'dou', 'soushite', 'soshite', 'demo', 'datte',
+      'kitto', 'zutto', 'motto', 'chotto', 'ichiban', 'hitori', 'futari',
+      'kanpeki', 'kyuukyoku', 'kyūkyoku', 'aidoru', 'muteki', 'egao',
+    };
+
+    int hits = 0;
+    for (final w in words) {
+      if (romajiMarkers.contains(w) ||
+          w.endsWith('tsu') ||
+          w.endsWith('shi') ||
+          w.endsWith('chi') ||
+          w.endsWith('nai') ||
+          w.endsWith('tara') ||
+          w.endsWith('masu') ||
+          w.endsWith('desu') ||
+          w.contains('kyu') ||
+          w.contains('kya') ||
+          w.contains('kyo') ||
+          w.contains('ryu') ||
+          w.contains('shu') ||
+          w.contains('cho')) {
+        hits++;
+      }
+    }
+
+    return hits >= 1 && (hits / words.length >= 0.18 || hits >= 2);
+  }
+
+  /// Chooses the cleaner Romaji line between the auto-converted Japanese line
+  /// and the existing Romaji line (preferring natural word spacing and clean ASCII).
+  static String _pickCleanerRomajiText(
+    String convertedFromJp,
+    String existingLatin,
+  ) {
+    final a = convertedFromJp.trim();
+    final b = existingLatin.trim();
+    if (a.isEmpty) return b;
+    if (b.isEmpty) return a;
+
+    final wordsA = a.split(RegExp(r'\s+')).length;
+    final wordsB = b.split(RegExp(r'\s+')).length;
+    final hasMacronA = RegExp(r'[āīūēōĀĪŪĒŌ]').hasMatch(a);
+    final hasMacronB = RegExp(r'[āīūēōĀĪŪĒŌ]').hasMatch(b);
+
+    // Prefer the line that separates particles cleanly (more words up to a reasonable bound)
+    // and avoids macrons if word counts are comparable.
+    if (wordsB > wordsA && !hasMacronB) {
+      return b;
+    }
+    if (wordsA > wordsB && !hasMacronA) {
+      return a;
+    }
+    if (!hasMacronB && hasMacronA && (wordsB >= wordsA)) {
+      return b;
+    }
+    return wordsB >= wordsA ? b : a;
+  }
+
+  /// Deduplicates inline bilingual lyrics on a single line such as:
+  /// `Kimi wa kanpekide kyūkyoku no aidoru / Kimi wa kanpeki de kyuukyoku no aidoru`
+  static String _deduplicateInlineBilingual(String line) {
+    for (final sep in [' / ', ' | ', ' - ', ' // ']) {
+      if (line.contains(sep)) {
+        final parts = line.split(sep);
+        if (parts.length == 2) {
+          final norm0 = normalizeForComparison(parts[0]);
+          final norm1 = normalizeForComparison(parts[1]);
+          if (norm0.isNotEmpty &&
+              norm1.isNotEmpty &&
+              similarityRatio(norm0, norm1) >= 0.72) {
+            return _pickCleanerRomajiText(parts[0], parts[1]);
+          }
+        }
+      }
+    }
+    return line;
+  }
+
+  /// Deduplicates consecutive bilingual lines where one line was originally
+  /// Japanese (Kanji/Kana) and the adjacent line was originally Latin/Romaji.
+  static List<_ProcessedLyricLine> _deduplicateBilingualLines(
+    List<_ProcessedLyricLine> lines,
+  ) {
+    if (lines.length < 2) return lines;
+    final result = <_ProcessedLyricLine>[];
+    int i = 0;
+
+    while (i < lines.length) {
+      final current = lines[i];
+      if (current.isEmptyLine || current.romanizedContent.isEmpty) {
+        result.add(current);
+        i++;
+        continue;
+      }
+
+      // Look ahead to the next lyric line (either i + 1, or i + 2 if separated by a single empty line)
+      int nextIdx = i + 1;
+      if (nextIdx < lines.length &&
+          lines[nextIdx].isEmptyLine &&
+          nextIdx + 1 < lines.length &&
+          !lines[nextIdx + 1].isEmptyLine &&
+          lines[nextIdx + 1].romanizedContent.isNotEmpty) {
+        nextIdx = i + 2;
+      }
+
+      if (nextIdx < lines.length) {
+        final next = lines[nextIdx];
+        final isOneJpOneLatin =
+            (current.wasOriginallyJapanese && !next.wasOriginallyJapanese) ||
+            (!current.wasOriginallyJapanese && next.wasOriginallyJapanese);
+
+        if (!next.isEmptyLine &&
+            next.romanizedContent.isNotEmpty &&
+            isOneJpOneLatin) {
+          final normCurr = normalizeForComparison(current.romanizedContent);
+          final normNext = normalizeForComparison(next.romanizedContent);
+          final similarity = similarityRatio(normCurr, normNext);
+
+          final secCurr = parseTimestampSeconds(current.timestampPrefix);
+          final secNext = parseTimestampSeconds(next.timestampPrefix);
+          final sameTimestamp = current.timestampPrefix.isNotEmpty &&
+              current.timestampPrefix == next.timestampPrefix;
+          final closeTimestamp = secCurr != null &&
+              secNext != null &&
+              (secNext - secCurr).abs() < 1.0;
+
+          final jpLine = current.wasOriginallyJapanese ? current : next;
+          final latinLine = current.wasOriginallyJapanese ? next : current;
+
+          final isDuplicateRomaji = similarity >= 0.65 ||
+              ((sameTimestamp || closeTimestamp) &&
+                  (similarity >= 0.45 ||
+                      isRomajiText(latinLine.originalContent)));
+
+          if (isDuplicateRomaji) {
+            final chosenText = _pickCleanerRomajiText(
+              jpLine.romanizedContent,
+              latinLine.romanizedContent,
+            );
+            final chosenPrefix = current.timestampPrefix.isNotEmpty
+                ? current.timestampPrefix
+                : next.timestampPrefix;
+
+            result.add(
+              _ProcessedLyricLine(
+                timestampPrefix: chosenPrefix,
+                romanizedContent: chosenText,
+                originalContent: jpLine.originalContent,
+                wasOriginallyJapanese: true,
+                isEmptyLine: false,
+              ),
+            );
+            i = nextIdx + 1;
+            continue;
+          }
+        }
+      }
+
+      result.add(current);
+      i++;
+    }
+
+    return result;
   }
 
   /// Automatically converts Japanese Title, Artist, and Album of [metadata]

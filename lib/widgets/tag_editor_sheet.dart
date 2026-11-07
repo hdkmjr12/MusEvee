@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/download_item.dart';
 import '../models/track_metadata.dart';
 import '../providers/downloader_provider.dart';
+import '../services/lyrics_service.dart';
 import '../services/romaji_service.dart';
 
 class TagEditorSheet extends StatefulWidget {
@@ -74,6 +75,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
   bool _isConvertingRomaji = false;
   bool _isSaving = false;
   String? _syncedLyricsOverride;
+  bool _showLyricsCandidates = false;
+  String? _selectedCandidateId;
 
   @override
   void initState() {
@@ -86,6 +89,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
     _preferSyncedLyrics = widget.historyItem != null
         ? widget.historyItem!.preferSyncedLyrics
         : widget.provider.preferSyncedLyrics;
+    _selectedCandidateId = widget.provider.selectedLyricsCandidate?.id;
 
     final initialLyrics = (_preferSyncedLyrics && widget.track.hasSyncedLyrics)
         ? (widget.track.normalizedSyncedLyrics ?? '')
@@ -113,6 +117,48 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
   bool get _hasJapaneseInLyrics =>
       RomajiService.containsJapanese(_lyricsController.text) ||
       RomajiService.trackLyricsHasJapanese(widget.track);
+
+  Future<void> _toggleLyricsPicker() async {
+    setState(() {
+      _showLyricsCandidates = !_showLyricsCandidates;
+    });
+    if (_showLyricsCandidates &&
+        (widget.provider.lyricsCandidates.isEmpty ||
+            widget.historyItem != null) &&
+        !widget.provider.isSearchingLyricsCandidates) {
+      final lookupTrack = widget.track.copyWith(
+        title: _titleController.text.trim().isNotEmpty
+            ? _titleController.text.trim()
+            : widget.track.title,
+        artist: _artistController.text.trim().isNotEmpty
+            ? _artistController.text.trim()
+            : widget.track.artist,
+        album: _albumController.text.trim().isNotEmpty
+            ? _albumController.text.trim()
+            : widget.track.album,
+      );
+      await widget.provider.loadLyricsCandidates(forTrack: lookupTrack);
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  void _applyLyricsCandidate(LyricsCandidate cand) {
+    final textToUse = cand.hasSynced
+        ? (cand.syncedLyrics ?? '')
+        : (cand.plainLyrics ?? '');
+    if (widget.historyItem == null) {
+      widget.provider.selectLyricsCandidate(cand);
+    }
+    setState(() {
+      _selectedCandidateId = cand.id;
+      _preferSyncedLyrics = cand.hasSynced;
+      _syncedLyricsOverride = cand.syncedLyrics;
+      _lyricsController.text = textToUse;
+      _showLyricsCandidates = false;
+    });
+  }
 
   Future<void> _convertFieldsToRomaji() async {
     if (_isConvertingRomaji) return;
@@ -364,7 +410,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               ),
               const SizedBox(height: 12),
 
-              // Lyrics Header with Romaji button if Japanese lyrics detected
+              // Lyrics Header with Ganti Lirik & Romaji buttons
               Row(
                 children: [
                   const Text(
@@ -377,7 +423,26 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                     ),
                   ),
                   const Spacer(),
-                  if (_hasJapaneseInLyrics)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: _toggleLyricsPicker,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      child: Text(
+                        _showLyricsCandidates ? 'Tutup Pilihan' : 'Ganti Lirik',
+                        style: const TextStyle(
+                          color: _primaryBlue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_hasJapaneseInLyrics) ...[
+                    const SizedBox(width: 6),
                     InkWell(
                       borderRadius: BorderRadius.circular(6),
                       onTap:
@@ -395,8 +460,146 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                         ),
                       ),
                     ),
+                  ],
                 ],
               ),
+              if (_showLyricsCandidates) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: _surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: hairline, width: 0.8),
+                  ),
+                  child: widget.provider.isSearchingLyricsCandidates
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 10),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _primaryBlue,
+                              ),
+                            ),
+                          ),
+                        )
+                      : widget.provider.lyricsCandidates.isEmpty
+                          ? const Text(
+                              'Versi lirik lain tidak ditemukan di LRCLIB.',
+                              style: TextStyle(
+                                color: _textMuted,
+                                fontSize: 11.5,
+                              ),
+                            )
+                          : ConstrainedBox(
+                              constraints: const BoxConstraints(maxHeight: 180),
+                              child: ListView.separated(
+                                shrinkWrap: true,
+                                itemCount:
+                                    widget.provider.lyricsCandidates.length,
+                                separatorBuilder: (context, index) =>
+                                    const SizedBox(height: 5),
+                                itemBuilder: (context, idx) {
+                                  final cand =
+                                      widget.provider.lyricsCandidates[idx];
+                                  final isChosen = _selectedCandidateId != null
+                                      ? _selectedCandidateId == cand.id
+                                      : idx == 0;
+                                  return InkWell(
+                                    borderRadius: BorderRadius.circular(6),
+                                    onTap: () => _applyLyricsCandidate(cand),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isChosen
+                                            ? _primaryBlue.withValues(
+                                                alpha: 0.08,
+                                              )
+                                            : _surfaceCard,
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: isChosen
+                                              ? _primaryBlue
+                                              : hairline,
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 2),
+                                            child: Icon(
+                                              isChosen
+                                                  ? Icons.radio_button_checked
+                                                  : Icons.radio_button_off,
+                                              size: 15,
+                                              color: isChosen
+                                                  ? _primaryBlue
+                                                  : _textMuted,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Text(
+                                                      cand.languageTag,
+                                                      style: const TextStyle(
+                                                        color: _primaryBlue,
+                                                        fontSize: 11.5,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      '${cand.hasSynced ? 'LRC' : 'Biasa'} • ${cand.formattedDuration}',
+                                                      style: const TextStyle(
+                                                        color: _textMuted,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  cand.previewTwoLines,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    color: _textDark,
+                                                    fontSize: 11.5,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                ),
+              ],
               const SizedBox(height: 6),
               TextField(
                 controller: _lyricsController,

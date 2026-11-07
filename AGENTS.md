@@ -9,11 +9,11 @@
 
 ## 1. Status Terkini Proyek
 
-- **Versi Aplikasi Saat Ini:** `v3.0.1` (`pubspec.yaml` version `1.2.0+3`, badge UI `v1.2`)
+- **Versi Aplikasi Saat Ini:** `v3.1` (`pubspec.yaml` version `1.2.0+3`, badge UI `v1.2`)
 - **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — hanya menghasilkan **1 file APK ringan khusus ARM64 (`~20.1 MB`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), dan keystore permanen `android/app/musevee-release.jks`.
-- **Update Terakhir (`v3.0.1`):**
-  - Perbaikan menyeluruh `RomajiService` (`lib/services/romaji_service.dart`): isolasi timestamp `[mm:ss.xx]` baris-demi-baris (`ParsedLyricLine`), konversi Kanji+Kana per segmen secara paralel via endpoint `dt=rm` tanpa menggabungkan baris dan tanpa merusak teks bahasa Inggris di dalam kurung, serta sinkronisasi otomatis `syncedLyrics` dan `plainLyrics`.
-  - Penambahan pembersihan otomatis file MP3 duplikat lama di disk & `MediaStore` Android (`deleteMediaFile` di `MainActivity.kt`, `folder_service.dart`, dan `tagging_service.dart`) serta penguncian keystore rilis permanen (`android/app/musevee-release.jks`).
+- **Update Terakhir (`v3.1`):**
+  - **Deduplikasi Otomatis Lirik Bilingual pada `RomajiService` (`lib/services/romaji_service.dart`):** Menambahkan `normalizeForComparison()`, `similarityRatio()`, `isRomajiText()`, dan deduplikasi otomatis baris bilingual berurutan (1 baris Kanji/Kana + 1 baris Romaji pada timestamp sama atau `< 1.0` detik) sehingga hasil konversi Romaji tidak pernah kembar/double dan mempertahankan spasi kata yang paling rapi.
+  - **Prioritas Bahasa Asli & Pemilih Kandidat Lirik Manual ("Ganti Lirik") (`lib/services/lyrics_service.dart`, `lib/providers/downloader_provider.dart`, `lib/widgets/track_preview_sheet.dart`, `lib/widgets/tag_editor_sheet.dart`):** Menambahkan `LyricsCandidate` dengan deteksi label bahasa otomatis (`[Jepang/Kanji]`, `[Romaji]`, `[Bilingual]`, `[Inggris/Lainnya]`), memprioritaskan lirik asli Jepang/Romaji di atas versi terjemahan Inggris pada lagu Jepang (seperti *"YOASOBI - Idol"*), serta menyediakan tombol **"Ganti Lirik"** lengkap dengan preview 2 baris pertama di `TrackPreviewSheet` dan `TagEditorSheet`.
 
 ---
 
@@ -110,12 +110,14 @@ Menggunakan `MethodChannel('com.spotmeta.downloader/system')` untuk 4 jembatan u
 3. **Pemilih Sumber Audio YouTube Manual & Preview Audio 30 Detik (`AudioService` & `TrackPreviewSheet`):**
    - Tombol play/stop di atas sampul album untuk memutar cuplikan lagu 30 detik dari Deezer/iTunes.
    - Panel **"Sumber Audio"** yang memungkinkan pengguna melihat dan memilih secara manual dari 5 kandidat video YouTube teratas jika ingin mengganti sumber audio default.
-4. **Engine Lirik LRCLIB, Toggle USLT Musicolet, & Auto-Romaji (`LyricsService`, `RomajiService`, `TaggingService`):**
-   - Mengambil `syncedLyrics` (`[mm:ss.xx]`) dan `plainLyrics` dari LRCLIB.
+4. **Engine Lirik LRCLIB, Prioritas Bahasa Asli, Pemilih "Ganti Lirik", Toggle USLT Musicolet, & Auto-Romaji (`LyricsService`, `RomajiService`, `TaggingService`):**
+   - Mengambil `syncedLyrics` (`[mm:ss.xx]`) dan `plainLyrics` beserta daftar `LyricsCandidate` dari LRCLIB (`/api/get` & `/api/search`) dengan deteksi bahasa otomatis (`[Jepang/Kanji]`, `[Romaji]`, `[Bilingual]`, `[Inggris/Lainnya]`) dan prioritas skor tertinggi pada lirik asli Jepang/Romaji (mencegah salah ambil *English Version* kecuali diminta di judul).
+   - Menyediakan tombol pemilih **"Ganti Lirik"** di `TrackPreviewSheet` dan `TagEditorSheet` lengkap dengan label bahasa dan preview 2 baris pertama lirik.
    - Toggle **Lirik Berjalan** vs **Lirik Biasa**: Keduanya disuntikkan langsung ke dalam frame biner **`USLT` ID3v2.4.0** ber-encoding UTF-8 dengan pemisah baris `\r\n` di dalam file `.mp3` (**tanpa** membuat file `.lrc` eksternal) sehingga langsung kompatibel dengan fitur *Embedded Synced Lyrics* di **Musicolet**.
    - **Auto-Romaji (`RomajiService`):**
      - Mengonversi Judul, Artis, dan Album berhuruf Jepang ke Romaji (memanfaatkan pencocokan katalog iTunes US + transliterasi morfologi).
      - Mengonversi lirik Jepang (Kanji, Hiragana, Katakana) ke Romaji **secara baris-demi-baris** menggunakan isolasi Regex `^((?:\[\d{2}:\d{2}(?:\.\d{1,3})?\])+)(.*)$` dan endpoint `translate.googleapis.com/...&dt=rm` per segmen Jepang sehingga timestamp `[mm:ss.xx]` tidak pernah hilang, baris tidak pernah menyatu menjadi satu paragraf, dan teks bahasa Inggris di dalam kurung tetap utuh.
+     - Melakukan **deduplikasi otomatis lirik bilingual** (`normalizeForComparison`) ketika lirik LRCLIB memiliki baris Kanji yang diikuti baris Romaji bawaan pada timestamp yang sama atau berselisih `< 1.0` detik, mempertahankan 1 baris Romaji yang paling rapi spasinya.
      - Menyinkronkan `syncedLyrics` dan `plainLyrics` sekaligus (menurunkan `plainLyrics` via `RomajiService.stripTimestamps` tanpa memanggil API dua kali).
 5. **Tag & Lyrics Editor + Retag MP3 Instan (`TagEditorSheet` & `TaggingService.retagExistingMp3`):**
    - Pengguna dapat mengedit Judul, Artis, Album, Tahun, dan Lirik (termasuk menekan tombol **Auto-Romaji** / **Lirik ke Romaji**) baik **sebelum mengunduh** maupun **setelah lagu selesai diunduh** lewat tab *Antrean & Riwayat*.

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:spotmeta_downloader/models/track_metadata.dart';
+import 'package:spotmeta_downloader/services/lyrics_service.dart';
 import 'package:spotmeta_downloader/services/romaji_service.dart';
 
 void main() {
@@ -73,6 +74,85 @@ void main() {
 
       // 5. Zero leaked Kanji or Kana in output
       expect(RomajiService.containsJapanese(romanized), isFalse);
+    });
+
+    test(
+        'normalizeForComparison unifies macron vowels, long vowels, punctuation, and spacing',
+        () {
+      final normA = RomajiService.normalizeForComparison(
+        'Kimi wa kanpekide kyūkyoku no aidoru',
+      );
+      final normB = RomajiService.normalizeForComparison(
+        'Kimi wa kanpeki de kyuukyoku no aidoru!',
+      );
+      expect(normA, equals(normB));
+      expect(RomajiService.similarityRatio(normA, normB), equals(1.0));
+    });
+
+    test(
+        'romanizeLyrics deduplicates bilingual Kanji + Romaji lines so each timestamp has only 1 clean Romaji line',
+        () async {
+      final service = RomajiService();
+      const bilingualLrc = '''[00:01.00] 無敵の笑顔で荒らすメディア
+[00:01.00] Muteki no egao de arasu media
+[00:15.20] 君は完璧で究極のアイドル
+[00:15.50] Kimi wa kanpeki de kyuukyoku no aidoru''';
+
+      final romanized = await service.romanizeLyrics(bilingualLrc);
+      final lines = romanized.split('\n');
+
+      // Duplicate Romaji lines must be collapsed from 4 lines down to 2 lines
+      expect(lines.length, equals(2));
+      expect(lines[0], startsWith('[00:01.00] '));
+      expect(lines[1], startsWith('[00:15.20] '));
+      expect(RomajiService.containsJapanese(romanized), isFalse);
+      // Should keep the cleaner spaced version ("kanpeki de")
+      expect(lines[1].toLowerCase(), contains('kanpeki de'));
+    });
+
+    test(
+        'LyricsService classifies language tags accurately and prioritizes original Japanese/Romaji over English version for YOASOBI - Idol',
+        () async {
+      expect(
+        LyricsService.classifyLyricsLanguage(
+          '[00:01.00] 無敵の笑顔で荒らすメディア\n[00:03.00] 知りたいその秘密ミステリアス',
+        ),
+        equals('[Jepang/Kanji]'),
+      );
+      expect(
+        LyricsService.classifyLyricsLanguage(
+          '[00:01.00] Muteki no egao de arasu media\n[00:03.00] Shiritai sono himitsu misuteriasu',
+        ),
+        equals('[Romaji]'),
+      );
+      expect(
+        LyricsService.classifyLyricsLanguage(
+          "[00:00.51] Couldn't beat her smile, it Readily garnished all the media",
+        ),
+        equals('[Inggris/Lainnya]'),
+      );
+
+      final lyricsService = LyricsService();
+      final response = await lyricsService.fetchLyricsWithCandidates(
+        trackName: 'Idol',
+        artistName: 'YOASOBI',
+        albumName: 'Idol - Single',
+        durationSeconds: 213,
+      );
+
+      expect(response.candidates, isNotEmpty);
+      expect(response.selectedCandidate, isNotNull);
+      // Must NOT pick English translation as bestResult when Japanese/Romaji exists
+      expect(
+        response.selectedCandidate!.languageTag,
+        isNot(equals('[Inggris/Lainnya]')),
+      );
+      expect(
+        RomajiService.containsJapanese(
+          response.bestResult.syncedLyrics ?? '',
+        ),
+        isTrue,
+      );
     });
 
     test(
