@@ -7,6 +7,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-android:
     name: Build Release APK (ARM64)
@@ -17,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17 (Zulu)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -46,3 +49,13 @@ jobs:
           name: MusEvee-APK
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk MusEvee-arm64.apk
+          gh release delete v1.0.0 --yes --cleanup-tag || true
+          gh release create v1.0.0 MusEvee-arm64.apk \
+            --title "MusEvee v1.0.0 (ARM64 - Versi Ringan)" \
+            --notes "Release APK MusEvee khusus Android ARM64 (~20 MB)."
