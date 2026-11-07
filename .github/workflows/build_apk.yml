@@ -40,22 +40,22 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build Release APK (ARM64)
-        run: flutter build apk --release --target-platform android-arm64
+      - name: Build Release APK (ARM64 Lightweight ~20MB)
+        run: flutter build apk --release --split-per-abi --target-platform android-arm64
 
       - name: Upload MusEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MusEvee-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk MusEvee-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-arm64.apk
           gh release delete v1.0.0 --yes --cleanup-tag || true
           gh release create v1.0.0 MusEvee-arm64.apk \
-            --title "MusEvee v1.0.0 (ARM64 - Versi Ringan)" \
-            --notes "Release APK MusEvee khusus Android ARM64 (~20 MB)."
+            --title "MusEvee v1.0.0 (ARM64 - Versi Ringan ~20 MB)" \
+            --notes "Release APK MusEvee khusus Android ARM64 (~20.1 MB)."
