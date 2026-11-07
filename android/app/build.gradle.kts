@@ -20,6 +20,9 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     packaging {
