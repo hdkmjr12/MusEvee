@@ -16,37 +16,37 @@ class SearchResultTile extends StatelessWidget {
     this.onQuickQueue,
   });
 
-  static const Color _surfaceCard = Color(0xFFFFFFFF);
-  static const Color _surfaceSubtle = Color(0xFFF2F4F7);
-  static const Color _primaryBlue = Color(0xFF1677B8);
-  static const Color _textDark = Color(0xFF15181E);
-  static const Color _textMuted = Color(0xFF68717C);
-  static const Color _amberDot = Color(0xFFD97706);
+  static const Color _surfaceCard = Color(0xFF17191E);
+  static const Color _surfaceSubtle = Color(0xFF22252D);
+  static const Color _primaryAccent = Color(0xFF3898EC);
+  static const Color _textPrimary = Color(0xFFF2F4F7);
+  static const Color _textMuted = Color(0xFF98A2B3);
+  static const Color _amberDot = Color(0xFFF59E0B);
 
   @override
   Widget build(BuildContext context) {
     final hasDuplicate =
         duplicateFolder != null && duplicateFolder!.trim().isNotEmpty;
-    final hairline = Colors.black.withValues(alpha: 0.07);
+    final hairline = Colors.white.withValues(alpha: 0.08);
 
     return Material(
       color: _surfaceCard,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         side: BorderSide(color: hairline, width: 0.8),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Cover Art 52x52 (Micro-radius 6px + Subtle Hairline)
+              // Cover Art 50x50
               Container(
-                width: 52,
-                height: 52,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   color: _surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
@@ -56,8 +56,8 @@ class SearchResultTile extends StatelessWidget {
                 child: track.coverUrl.isNotEmpty
                     ? Image.network(
                         track.coverUrl,
-                        width: 52,
-                        height: 52,
+                        width: 50,
+                        height: 50,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
                             _buildCoverPlaceholder(),
@@ -66,7 +66,7 @@ class SearchResultTile extends StatelessWidget {
               ),
               const SizedBox(width: 12),
 
-              // Title, Artist • Album, and Modern Dot Indicator
+              // Title, Artist • Album, and Duplicate Dot Indicator
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,10 +77,10 @@ class SearchResultTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        color: _textDark,
-                        fontSize: 14.5,
+                        color: _textPrimary,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
+                        letterSpacing: -0.2,
                         height: 1.25,
                       ),
                     ),
@@ -91,7 +91,7 @@ class SearchResultTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: _textMuted,
-                        fontSize: 12.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w400,
                         height: 1.25,
                       ),
@@ -131,7 +131,7 @@ class SearchResultTile extends StatelessWidget {
               ),
               const SizedBox(width: 10),
 
-              // Right column: Duration + subtle 18px icon
+              // Right column: Duration + chevron
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
@@ -140,7 +140,7 @@ class SearchResultTile extends StatelessWidget {
                     track.formattedDuration,
                     style: const TextStyle(
                       color: _textMuted,
-                      fontSize: 12,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -148,7 +148,7 @@ class SearchResultTile extends StatelessWidget {
                   const Icon(
                     Icons.chevron_right_rounded,
                     size: 18,
-                    color: _primaryBlue,
+                    color: _primaryAccent,
                   ),
                 ],
               ),
@@ -161,8 +161,8 @@ class SearchResultTile extends StatelessWidget {
 
   Widget _buildCoverPlaceholder() {
     return Container(
-      width: 52,
-      height: 52,
+      width: 50,
+      height: 50,
       color: _surfaceSubtle,
       alignment: Alignment.center,
       child: const Icon(

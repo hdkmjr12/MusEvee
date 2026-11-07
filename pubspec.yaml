@@ -1,7 +1,7 @@
 name: spotmeta_downloader
-description: "SpotMeta Downloader - Unduh lagu dari link Spotify lengkap dengan metadata, cover art resolusi tinggi, dan lirik tersinkronisasi."
+description: "MusicEvee - Pemutar musik lokal bergaya Musicolet (Embedded USLT Lyrics) terintegrasi dengan All-in-One Music & Spotify Downloader."
 publish_to: 'none'
-version: 1.2.0+3
+version: 4.0.0+4
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

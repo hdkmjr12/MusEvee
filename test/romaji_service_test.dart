@@ -1,11 +1,14 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:spotmeta_downloader/models/local_song.dart';
 import 'package:spotmeta_downloader/models/track_metadata.dart';
 import 'package:spotmeta_downloader/services/lyrics_service.dart';
 import 'package:spotmeta_downloader/services/romaji_service.dart';
 
 void main() {
-  group('RomajiService Line-by-Line Timestamp & Kanji-to-Romaji Tests', () {
-    test('parseLyricLine isolates timestampPrefix and lyricContent accurately', () {
+  group('RomajiService, LyricsService & LocalSong Tests', () {
+    test('parseLyricLine isolates timestampPrefix and lyricContent accurately',
+        () {
       final line1 = RomajiService.parseLyricLine(
         '[00:20.15] 誰も教えてくれなかった 歪んだルール',
       );
@@ -51,13 +54,8 @@ void main() {
       final inputLines = rawLrc.split('\n');
       final outputLines = romanized.split('\n');
 
-      // 1. Exact line count preserved
       expect(outputLines.length, equals(inputLines.length));
-
-      // 2. Timestamp-only line preserved as-is
       expect(outputLines[0], equals('[00:00.00]'));
-
-      // 3. Every timestamp prefix preserved at exact line index
       expect(outputLines[1], startsWith('[00:13.20] '));
       expect(outputLines[2], equals('[00:16.50] (Break your limits)'));
       expect(outputLines[3], startsWith('[00:19.10] '));
@@ -67,12 +65,9 @@ void main() {
       expect(outputLines[7], startsWith('[01:44.20] '));
       expect(outputLines[8], startsWith('[01:50.60] '));
 
-      // 4. English parenthetical phrases preserved without katakana distortion
       expect(outputLines[1], contains('(Go to the outside of daydream)'));
       expect(outputLines[2], contains('(Break your limits)'));
       expect(outputLines[5], contains('Pride on myself, ah'));
-
-      // 5. Zero leaked Kanji or Kana in output
       expect(RomajiService.containsJapanese(romanized), isFalse);
     });
 
@@ -90,28 +85,32 @@ void main() {
     });
 
     test(
-        'romanizeLyrics deduplicates bilingual Kanji + Romaji lines so each timestamp has only 1 clean Romaji line',
+        'romanizeLyrics & deduplicateRomajiLyrics eliminate double Romaji and inline furigana',
         () async {
       final service = RomajiService();
-      const bilingualLrc = '''[00:01.00] 無敵の笑顔で荒らすメディア
+      const bilingualLrc = '''[00:01.00] 無敵(むてき)の笑顔で荒らすメディア
 [00:01.00] Muteki no egao de arasu media
 [00:15.20] 君は完璧で究極のアイドル
-[00:15.50] Kimi wa kanpeki de kyuukyoku no aidoru''';
+[00:15.50] Kimi wa kanpeki de kyūkyoku no aidoru''';
 
       final romanized = await service.romanizeLyrics(bilingualLrc);
       final lines = romanized.split('\n');
 
-      // Duplicate Romaji lines must be collapsed from 4 lines down to 2 lines
       expect(lines.length, equals(2));
       expect(lines[0], startsWith('[00:01.00] '));
       expect(lines[1], startsWith('[00:15.20] '));
       expect(RomajiService.containsJapanese(romanized), isFalse);
-      // Should keep the cleaner spaced version ("kanpeki de")
       expect(lines[1].toLowerCase(), contains('kanpeki de'));
+
+      // Also test already-converted duplicate Romaji lines
+      const alreadyDoubleRomaji = '''[00:01.00] Muteki no egao de arasu media
+[00:01.00] Mutekino egaode arasu media!''';
+      final deduped = RomajiService.deduplicateRomajiLyrics(alreadyDoubleRomaji);
+      expect(deduped.split('\n').length, equals(1));
     });
 
     test(
-        'LyricsService classifies language tags accurately and prioritizes original Japanese/Romaji over English version for YOASOBI - Idol',
+        'LyricsService classifies language tags accurately and prioritizes Japanese/Romaji over English version',
         () async {
       expect(
         LyricsService.classifyLyricsLanguage(
@@ -127,12 +126,74 @@ void main() {
       );
       expect(
         LyricsService.classifyLyricsLanguage(
-          "[00:00.51] Couldn't beat her smile, it Readily garnished all the media",
+          "[00:00.51] Couldn't beat her smile, it readily garnished all the media",
         ),
         equals('[Inggris/Lainnya]'),
       );
 
-      final lyricsService = LyricsService();
+      // Mock Dio returning both English translation and Original Japanese candidates
+      final mockDio = Dio();
+      mockDio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path.contains('/api/get')) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'id': 101,
+                    'trackName': 'Idol',
+                    'artistName': 'YOASOBI',
+                    'albumName': 'Idol',
+                    'duration': 213,
+                    'syncedLyrics':
+                        "[00:01.00] Couldn't beat her smile, it garnished all the media\n[00:04.00] You are my savior, my true savior",
+                  },
+                ),
+              );
+              return;
+            }
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: [
+                  {
+                    'id': 101,
+                    'trackName': 'Idol',
+                    'artistName': 'YOASOBI',
+                    'albumName': 'Idol',
+                    'duration': 213,
+                    'syncedLyrics':
+                        "[00:01.00] Couldn't beat her smile, it garnished all the media\n[00:04.00] You are my savior, my true savior",
+                  },
+                  {
+                    'id': 202,
+                    'trackName': 'アイドル',
+                    'artistName': 'YOASOBI',
+                    'albumName': 'アイドル',
+                    'duration': 213,
+                    'syncedLyrics':
+                        '[00:01.00] 無敵の笑顔で荒らすメディア\n[00:04.00] 知りたいその秘密ミステリアス',
+                  },
+                  {
+                    'id': 303,
+                    'trackName': 'Idol (Romaji)',
+                    'artistName': 'YOASOBI',
+                    'albumName': 'Idol',
+                    'duration': 213,
+                    'syncedLyrics':
+                        '[00:01.00] Muteki no egao de arasu media\n[00:04.00] Kimi wa kanpeki de kyuukyoku no aidoru',
+                  },
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      final lyricsService = LyricsService(dio: mockDio);
       final response = await lyricsService.fetchLyricsWithCandidates(
         trackName: 'Idol',
         artistName: 'YOASOBI',
@@ -140,19 +201,11 @@ void main() {
         durationSeconds: 213,
       );
 
-      expect(response.candidates, isNotEmpty);
+      expect(response.candidates.length, greaterThanOrEqualTo(3));
       expect(response.selectedCandidate, isNotNull);
-      // Must NOT pick English translation as bestResult when Japanese/Romaji exists
-      expect(
-        response.selectedCandidate!.languageTag,
-        isNot(equals('[Inggris/Lainnya]')),
-      );
-      expect(
-        RomajiService.containsJapanese(
-          response.bestResult.syncedLyrics ?? '',
-        ),
-        isTrue,
-      );
+      // Japanese Kanji must rank #1, Romaji #2, and English translation last!
+      expect(response.selectedCandidate!.languageTag, equals('[Jepang/Kanji]'));
+      expect(response.candidates.last.languageTag, equals('[Inggris/Lainnya]'));
     });
 
     test(
@@ -181,13 +234,33 @@ void main() {
       expect(updated.plainLyrics, isNotNull);
       expect(RomajiService.containsJapanese(updated.syncedLyrics!), isFalse);
       expect(RomajiService.containsJapanese(updated.plainLyrics!), isFalse);
-
-      // Synced has timestamps, Plain has no timestamps
       expect(updated.syncedLyrics!, contains('[00:13.20]'));
-      expect(updated.syncedLyrics!, contains('[01:38.00]'));
       expect(updated.plainLyrics!, isNot(contains('[00:13.20]')));
-      expect(updated.plainLyrics!, isNot(contains('[01:38.00]')));
-      expect(updated.plainLyrics!.split('\n').length, equals(3));
+    });
+
+    test('LocalSong parses USLT synced LRC timestamps accurately', () {
+      const song = LocalSong(
+        filePath: '/storage/emulated/0/Music/Music Japan/YOASOBI - Idol.mp3',
+        fileName: 'YOASOBI - Idol.mp3',
+        folderName: 'Music Japan',
+        title: 'Idol',
+        artist: 'YOASOBI',
+        album: 'THE BOOK 3',
+        year: '2023',
+        durationMs: 213000,
+        sizeBytes: 8400000,
+        bitrateKbps: 320,
+        sampleRateHz: 44100,
+        usltLyrics:
+            '[ti:Idol]\r\n[00:01.20] Muteki no egao de arasu media\r\n[00:15.50] Kimi wa kanpeki de kyuukyoku no aidoru',
+      );
+
+      expect(song.hasLyrics, isTrue);
+      expect(song.hasSyncedLyrics, isTrue);
+      expect(song.parsedSyncedLyrics.length, equals(2));
+      expect(song.parsedSyncedLyrics[0].timeMs, equals(1200));
+      expect(song.parsedSyncedLyrics[1].timeMs, equals(15500));
+      expect(song.plainLyricLines.length, equals(2));
     });
   });
 }

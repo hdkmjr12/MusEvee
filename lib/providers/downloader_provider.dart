@@ -386,7 +386,10 @@ class DownloaderProvider extends ChangeNotifier {
     _folderSongCounts =
         await _folderService.getFolderSongCounts(_availableFolders);
     notifyListeners();
+    onLibraryChanged?.call();
   }
+
+  VoidCallback? onLibraryChanged;
 
   Future<void> selectFolder(String folderName) async {
     final trimmed = folderName.trim();

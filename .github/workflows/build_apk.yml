@@ -1,4 +1,4 @@
-name: Build MusEvee APK
+name: Build MusicEvee APK
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Ensure Gradle Wrapper & Restore MusEvee Android Config
+      - name: Ensure Gradle Wrapper & Restore MusicEvee Android Config
         run: |
           flutter create . --platforms android
           git checkout -- android/app/src/main/ android/app/build.gradle* android/app/musevee-release.jks android/build.gradle* android/settings.gradle*
@@ -43,10 +43,10 @@ jobs:
       - name: Build Release APK (ARM64 Lightweight ~20MB)
         run: flutter build apk --release --split-per-abi --target-platform android-arm64
 
-      - name: Upload MusEvee-APK Artifact
+      - name: Upload MusicEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusEvee-APK
+          name: MusicEvee-APK
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
 
@@ -54,8 +54,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-arm64.apk
-          gh release delete v1.0.0 --yes --cleanup-tag || true
-          gh release create v1.0.0 MusEvee-arm64.apk \
-            --title "MusEvee v1.2 (ARM64 - Versi Ringan ~20 MB)" \
-            --notes "Release APK MusEvee v1.2 khusus Android ARM64 (~20.1 MB) dengan perbaikan Romaji + timestamp [mm:ss.xx] & pembersihan duplikat otomatis."
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusicEvee-arm64.apk
+          gh release delete v4.0.0 --yes --cleanup-tag || true
+          gh release create v4.0.0 MusicEvee-arm64.apk \
+            --title "MusicEvee v4.0 (Musicolet UI/UX + Downloader ARM64 ~20 MB)" \
+            --notes "Release APK MusicEvee v4.0 khusus Android ARM64 (~20 MB): Reverse Engineering 1:1 Musicolet UI/UX (Dynamic Ambient Background, Embedded Lyrics USLT/APIC Ribbon & Tap-to-Seek, 8-Tab Bottom Icon Strip + Mini Player) terintegrasi penuh dengan All-in-One Downloader v3.x & Anti Double-Romaji."

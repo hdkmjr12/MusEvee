@@ -24,7 +24,7 @@ class BatchPlaylistSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFFFFFFFF),
+      backgroundColor: const Color(0xFF17191E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -40,12 +40,12 @@ class BatchPlaylistSheet extends StatefulWidget {
 }
 
 class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
-  static const Color _surfaceCard = Color(0xFFFFFFFF);
-  static const Color _surfaceSubtle = Color(0xFFF2F4F7);
-  static const Color _primaryBlue = Color(0xFF1677B8);
-  static const Color _textDark = Color(0xFF15181E);
-  static const Color _textMuted = Color(0xFF68717C);
-  static const Color _amberDot = Color(0xFFD97706);
+  static const Color _surfaceCard = Color(0xFF17191E);
+  static const Color _surfaceSubtle = Color(0xFF22252D);
+  static const Color _primaryBlue = Color(0xFF3898EC);
+  static const Color _textDark = Color(0xFFF2F4F7);
+  static const Color _textMuted = Color(0xFF98A2B3);
+  static const Color _amberDot = Color(0xFFF59E0B);
 
   late final Set<int> _selectedIndices;
 
@@ -75,7 +75,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
     final tracks = widget.collection.tracks;
     final allSelected =
         tracks.isNotEmpty && _selectedIndices.length == tracks.length;
-    final hairline = Colors.black.withValues(alpha: 0.07);
+    final hairline = Colors.white.withValues(alpha: 0.09);
 
     return Consumer<DownloaderProvider>(
       builder: (context, provider, _) {
@@ -94,7 +94,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.14),
+                        color: Colors.white.withValues(alpha: 0.22),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -226,7 +226,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                             value: isChecked,
                             dense: true,
                             activeColor: _primaryBlue,
-                            checkColor: _surfaceCard,
+                            checkColor: Colors.white,
                             checkboxShape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4),
                             ),
@@ -335,7 +335,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                               label: Text(
                                 folder,
                                 style: TextStyle(
-                                  color: isSelected ? _surfaceCard : _textDark,
+                                  color: isSelected ? Colors.white : _textDark,
                                   fontSize: 12.5,
                                   fontWeight: isSelected
                                       ? FontWeight.w700
@@ -373,7 +373,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primaryBlue,
-                        foregroundColor: _surfaceCard,
+                        foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
