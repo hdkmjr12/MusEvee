@@ -16,13 +16,13 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
-  runApp(const MusicEveeApp());
+  runApp(const MusEveeApp());
 }
 
-typedef SpotMetaApp = MusicEveeApp;
+typedef SpotMetaApp = MusEveeApp;
 
-class MusicEveeApp extends StatefulWidget {
-  const MusicEveeApp({super.key});
+class MusEveeApp extends StatefulWidget {
+  const MusEveeApp({super.key});
 
   // Palet Musicolet Reverse-Engineered Dark UI
   static const Color bgCanvas = Color(0xFF0E1014);
@@ -35,10 +35,10 @@ class MusicEveeApp extends StatefulWidget {
   static final Color hairlineBorder = Colors.white.withValues(alpha: 0.09);
 
   @override
-  State<MusicEveeApp> createState() => _MusicEveeAppState();
+  State<MusEveeApp> createState() => _MusEveeAppState();
 }
 
-class _MusicEveeAppState extends State<MusicEveeApp> {
+class _MusEveeAppState extends State<MusEveeApp> {
   late final LocalMusicProvider _localMusicProvider;
   late final DownloaderProvider _downloaderProvider;
 
@@ -94,7 +94,7 @@ class _MusicEveeAppState extends State<MusicEveeApp> {
         ),
       ],
       child: MaterialApp(
-        title: 'MusicEvee',
+        title: 'MusEvee',
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.dark,
         darkTheme: _buildDarkTheme(),
@@ -105,14 +105,14 @@ class _MusicEveeAppState extends State<MusicEveeApp> {
   }
 
   ThemeData _buildDarkTheme() {
-    const bgCanvas = MusicEveeApp.bgCanvas;
-    const surfaceCard = MusicEveeApp.surfaceCard;
-    const surfaceSubtle = MusicEveeApp.surfaceSubtle;
-    const primaryAccent = MusicEveeApp.primaryAccent;
-    const primaryAccentDark = MusicEveeApp.primaryAccentDark;
-    const textLight = MusicEveeApp.textLight;
-    const textMuted = MusicEveeApp.textMuted;
-    final hairlineBorder = MusicEveeApp.hairlineBorder;
+    const bgCanvas = MusEveeApp.bgCanvas;
+    const surfaceCard = MusEveeApp.surfaceCard;
+    const surfaceSubtle = MusEveeApp.surfaceSubtle;
+    const primaryAccent = MusEveeApp.primaryAccent;
+    const primaryAccentDark = MusEveeApp.primaryAccentDark;
+    const textLight = MusEveeApp.textLight;
+    const textMuted = MusEveeApp.textMuted;
+    final hairlineBorder = MusEveeApp.hairlineBorder;
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,

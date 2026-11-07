@@ -286,86 +286,492 @@ class MetadataService {
     );
   }
 
-  /// Searches music tracks directly by keyword (title, artist, anime/J-Pop, etc.)
-  /// combining iTunes Search API (rich releaseYear & Japanese/global catalog)
-  /// and Deezer Public Search API (1000x1000 cover_xl).
+  /// Alias for [searchMusicTracks] for cross-script & multi-region catalog search.
+  Future<List<TrackMetadata>> searchTracks(String rawQuery) =>
+      searchMusicTracks(rawQuery);
+
+  /// Searches music tracks directly by keyword (Western, Indonesian, Romaji J-Pop/Anime, Kanji/Kana)
+  /// using a Multi-Source & Cross-Script Search Engine:
+  /// 1. Automatic Romaji -> Kanji/Kana query expansion (`Google Input Tools ja-t-i0-und` + `Google Translate gtx`)
+  /// 2. Parallel Multi-Region queries (`Future.wait`):
+  ///    - iTunes Japan (`country=JP&lang=ja_jp`) with original + Kanji/Kana expanded queries
+  ///    - iTunes Global/Indonesia (`country=ID`)
+  ///    - Deezer Public Search API (`cover_xl` 1000x1000) with original + expanded queries
+  /// 3. Smart cross-script relevance ranking & deduplication (penalizing orgel/karaoke/music-box covers).
   Future<List<TrackMetadata>> searchMusicTracks(String rawQuery) async {
     final query = rawQuery.trim();
     if (query.isEmpty) {
       throw const MetadataException('Kata kunci pencarian tidak boleh kosong.');
     }
 
-    debugPrint('[AUTO_E2E] SEARCH: Mencari lagu untuk kata kunci: "$query"');
+    debugPrint('[MusEvee] SEARCH: Mencari lagu untuk kata kunci: "$query"');
 
-    final results = await Future.wait<List<TrackMetadata>>([
-      _searchItunesCatalog(query),
-      _searchDeezerCatalog(query),
-    ]);
+    // Step 1: Expand Latin/Romaji query into Kanji/Kana equivalents (e.g. "heikousen sayuri" -> "平行線 さユり")
+    final expansion = await expandRomajiQueryForJapanese(query);
+    final jaQueries = expansion.expandedQueries;
+    if (jaQueries.isNotEmpty) {
+      debugPrint(
+        '[MusEvee] SEARCH: Ekspansi Romaji -> Kanji/Kana: ${jaQueries.join(" | ")}',
+      );
+    }
 
-    final itunesTracks = results[0];
-    final deezerTracks = results[1];
+    // Step 2: Run multi-region iTunes (JP + Global/ID) & Deezer searches in parallel
+    final searchFutures = <Future<_CatalogBatch>>[
+      _searchItunesCatalog(
+        query,
+        country: 'ID',
+        limit: 15,
+      ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 8)),
+      _searchDeezerCatalog(
+        query,
+        limit: 15,
+      ).then((list) => _CatalogBatch(tracks: list, isItunes: false, boost: 10)),
+      _searchItunesCatalog(
+        query,
+        country: 'JP',
+        lang: 'ja_jp',
+        limit: 15,
+      ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 6)),
+    ];
 
-    // Merge and deduplicate while preserving releaseYear from iTunes when matched
-    final merged = <TrackMetadata>[];
-    final seenKeys = <String>{};
+    for (final jaQ in jaQueries.take(2)) {
+      searchFutures.add(
+        _searchItunesCatalog(
+          jaQ,
+          country: 'JP',
+          lang: 'ja_jp',
+          limit: 15,
+        ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 12)),
+      );
+      searchFutures.add(
+        _searchDeezerCatalog(
+          jaQ,
+          limit: 10,
+        ).then((list) => _CatalogBatch(tracks: list, isItunes: false, boost: 8)),
+      );
+    }
 
-    // Index iTunes release years by normalized artist+title
+    final batches = await Future.wait<_CatalogBatch>(searchFutures);
+
+    // Index true release years & high-res covers from iTunes batches
     final itunesYearMap = <String, String>{};
-    for (final t in itunesTracks) {
-      final key =
-          '${t.artist.toLowerCase().trim()}|${_stripFeaturedFromTitle(t.title).toLowerCase().trim()}';
-      if (t.releaseYear.isNotEmpty) {
-        itunesYearMap[key] = t.releaseYear;
+    final itunesCoverMap = <String, String>{};
+    final itunesPreviewMap = <String, String>{};
+    for (final batch in batches) {
+      if (!batch.isItunes) continue;
+      for (final t in batch.tracks) {
+        final key = _dedupTrackKey(t.artist, t.title);
+        if (t.releaseYear.isNotEmpty && !itunesYearMap.containsKey(key)) {
+          itunesYearMap[key] = t.releaseYear;
+        }
+        if (t.coverUrl.isNotEmpty && !itunesCoverMap.containsKey(key)) {
+          itunesCoverMap[key] = t.coverUrl;
+        }
+        if (t.previewAudioUrl != null &&
+            t.previewAudioUrl!.isNotEmpty &&
+            !itunesPreviewMap.containsKey(key)) {
+          itunesPreviewMap[key] = t.previewAudioUrl!;
+        }
       }
     }
 
-    // Interleave Deezer & iTunes results for best coverage of Western + Japanese tracks
-    final maxLen = itunesTracks.length > deezerTracks.length
-        ? itunesTracks.length
-        : deezerTracks.length;
+    // Merge, enrich, deduplicate, and score candidates
+    final candidatesByKey = <String, _ScoredSearchTrack>{};
+    int sequenceCounter = 0;
 
-    for (int i = 0; i < maxLen; i++) {
-      if (i < deezerTracks.length) {
-        var dTrack = deezerTracks[i];
-        final normKey =
-            '${dTrack.artist.toLowerCase().trim()}|${_stripFeaturedFromTitle(dTrack.title).toLowerCase().trim()}';
-        if (seenKeys.add(normKey)) {
-          final matchedYear = itunesYearMap[normKey];
-          if (matchedYear != null && matchedYear.isNotEmpty) {
-            dTrack = dTrack.copyWith(releaseYear: matchedYear);
+    for (final batch in batches) {
+      for (int idx = 0; idx < batch.tracks.length; idx++) {
+        var track = batch.tracks[idx];
+        final normKey = _dedupTrackKey(track.artist, track.title);
+
+        if (!batch.isItunes) {
+          final realYear = itunesYearMap[normKey];
+          if (realYear != null && realYear.isNotEmpty) {
+            track = track.copyWith(releaseYear: realYear);
           }
-          merged.add(dTrack);
+          if (track.coverUrl.isEmpty && itunesCoverMap.containsKey(normKey)) {
+            track = track.copyWith(coverUrl: itunesCoverMap[normKey]);
+          }
+          if ((track.previewAudioUrl == null ||
+                  track.previewAudioUrl!.isEmpty) &&
+              itunesPreviewMap.containsKey(normKey)) {
+            track = track.copyWith(previewAudioUrl: itunesPreviewMap[normKey]);
+          }
         }
-      }
-      if (i < itunesTracks.length) {
-        final iTrack = itunesTracks[i];
-        final normKey =
-            '${iTrack.artist.toLowerCase().trim()}|${_stripFeaturedFromTitle(iTrack.title).toLowerCase().trim()}';
-        if (seenKeys.add(normKey)) {
-          merged.add(iTrack);
+
+        final score = _scoreTrackRelevance(
+          track: track,
+          rawQuery: query,
+          expansion: expansion,
+          rankInSource: idx,
+          sourceBoost: batch.boost,
+        );
+
+        final existing = candidatesByKey[normKey];
+        if (existing == null) {
+          candidatesByKey[normKey] = _ScoredSearchTrack(
+            track: track,
+            score: score,
+            order: sequenceCounter++,
+          );
+        } else if (score > existing.score) {
+          candidatesByKey[normKey] = _ScoredSearchTrack(
+            track: track,
+            score: score,
+            order: existing.order,
+          );
         }
       }
     }
 
-    if (merged.isEmpty) {
+    final ranked = candidatesByKey.values.toList()
+      ..sort((a, b) {
+        final cmp = b.score.compareTo(a.score);
+        if (cmp != 0) return cmp;
+        return a.order.compareTo(b.order);
+      });
+
+    if (ranked.isEmpty) {
       throw MetadataException(
         'Tidak ditemukan lagu untuk kata kunci "$query". Coba gunakan nama artis dan judul lagu.',
       );
     }
 
-    return merged.take(20).toList();
+    return ranked.take(25).map((e) => e.track).toList();
   }
 
-  Future<List<TrackMetadata>> _searchItunesCatalog(String query) async {
+  static final RegExp _japaneseScriptRegex = RegExp(
+    r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]',
+  );
+
+  static final RegExp _coverNoiseRegex = RegExp(
+    r'(\borgel\b|オルゴール|music\s*box|originally\s+performed\s+by|\bkaraoke\b|カラオケ|\btribute\b|\b8-?bit\b|\bringtone\b|off\s*vocal|inst\.?\s*ver)',
+    caseSensitive: false,
+  );
+
+  /// Expands Latin/Romaji keywords into Japanese Kanji/Kana equivalents using
+  /// Google Input Tools (`ja-t-i0-und`) + Google Translate (`gtx`) in parallel.
+  @visibleForTesting
+  Future<RomajiQueryExpansion> expandRomajiQueryForJapanese(
+    String rawQuery,
+  ) async {
+    final cleaned = rawQuery
+        .replaceAll(RegExp(r'[\-—–/|,:;()\[\]]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final rawTokens = cleaned
+        .split(' ')
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    final tokenVariants = <Set<String>>[
+      for (final tok in rawTokens) {tok.toLowerCase()},
+    ];
+
+    if (cleaned.isEmpty || !RegExp(r'[a-zA-Z]').hasMatch(cleaned)) {
+      return RomajiQueryExpansion(
+        originalTokens: rawTokens,
+        tokenVariantGroups: tokenVariants,
+        expandedQueries: const [],
+      );
+    }
+
+    // Run whole-phrase IME, per-token IME, and GTX transliteration/translation in parallel
+    final futures = <Future<void>>[];
+    final phraseCandidates = <String>[];
+    String? gtxCandidate;
+
+    // 1. Whole-phrase Google Input Tools Japanese IME (`heikousen sayuri` -> `平行線 さユり`)
+    futures.add(() async {
+      try {
+        final resp = await _dio
+            .get<dynamic>(
+              'https://inputtools.google.com/request',
+              queryParameters: {
+                'text': cleaned.toLowerCase(),
+                'itc': 'ja-t-i0-und',
+                'num': 4,
+              },
+            )
+            .timeout(const Duration(milliseconds: 3500));
+        final parsed = _parseGoogleImeResponse(resp.data);
+        if (parsed.isNotEmpty && parsed.first.isNotEmpty) {
+          for (final cand in parsed.first) {
+            final norm = cand.replaceAll('\u3000', ' ').trim();
+            if (norm.isNotEmpty && _japaneseScriptRegex.hasMatch(norm)) {
+              phraseCandidates.add(norm);
+            }
+          }
+        }
+      } catch (_) {}
+    }());
+
+    // 2. Per-token Google Input Tools Japanese IME (`heikousen,sayuri` -> `["平行線", ...]`, `["さユり", ...]`)
+    if (rawTokens.isNotEmpty && rawTokens.length <= 6) {
+      futures.add(() async {
+        try {
+          final latinIdx = <int>[];
+          final latinWords = <String>[];
+          for (int i = 0; i < rawTokens.length; i++) {
+            if (RegExp(r'^[a-zA-Z0-9\x27]+$').hasMatch(rawTokens[i])) {
+              latinIdx.add(i);
+              latinWords.add(rawTokens[i].toLowerCase());
+            }
+          }
+          if (latinWords.isEmpty) return;
+
+          final resp = await _dio
+              .get<dynamic>(
+                'https://inputtools.google.com/request',
+                queryParameters: {
+                  'text': latinWords.join(','),
+                  'itc': 'ja-t-i0-und',
+                  'num': 5,
+                },
+              )
+              .timeout(const Duration(milliseconds: 3500));
+          final perWord = _parseGoogleImeResponse(resp.data);
+          for (int k = 0;
+              k < perWord.length && k < latinIdx.length;
+              k++) {
+            final targetGroup = tokenVariants[latinIdx[k]];
+            for (final c in perWord[k]) {
+              final cleanCand = c.replaceAll('\u3000', ' ').trim().toLowerCase();
+              if (cleanCand.isNotEmpty) {
+                targetGroup.add(cleanCand);
+              }
+            }
+          }
+        } catch (_) {}
+      }());
+    }
+
+    // 3. Google Translate (`gtx`) fallback for loanwords / English-to-Japanese titles
+    futures.add(() async {
+      try {
+        final resp = await _dio
+            .get<dynamic>(
+              'https://translate.googleapis.com/translate_a/single',
+              queryParameters: {
+                'client': 'gtx',
+                'sl': 'en',
+                'tl': 'ja',
+                'dt': 't',
+                'q': cleaned,
+              },
+            )
+            .timeout(const Duration(milliseconds: 3200));
+        final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
+        if (data is List && data.isNotEmpty && data[0] is List) {
+          final sb = StringBuffer();
+          for (final seg in data[0]) {
+            if (seg is List && seg.isNotEmpty && seg[0] != null) {
+              sb.write(seg[0].toString());
+            }
+          }
+          final translated = sb.toString().replaceAll('\u3000', ' ').trim();
+          if (translated.isNotEmpty &&
+              _japaneseScriptRegex.hasMatch(translated)) {
+            gtxCandidate = translated;
+          }
+        }
+      } catch (_) {}
+    }());
+
+    await Future.wait(futures);
+
+    final uniqueQueries = <String>[];
+    final seenLower = <String>{cleaned.toLowerCase()};
+
+    void addExpanded(String candidate) {
+      final norm = candidate
+          .replaceAll('\u3000', ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      if (norm.isEmpty || !_japaneseScriptRegex.hasMatch(norm)) return;
+      if (seenLower.add(norm.toLowerCase())) {
+        uniqueQueries.add(norm);
+      }
+    }
+
+    // Priority A: Top phrase candidate from Google Input Tools (`平行線 さユり`)
+    for (final c in phraseCandidates.take(2)) {
+      addExpanded(c);
+      // Also enrich tokenVariantGroups when space-split aligns with rawTokens
+      final parts = c.split(' ').where((p) => p.isNotEmpty).toList();
+      if (parts.length == tokenVariants.length) {
+        for (int i = 0; i < parts.length; i++) {
+          tokenVariants[i].add(parts[i].toLowerCase());
+        }
+      }
+    }
+
+    // Priority B: Assembled top #0 Japanese IME candidate per token
+    if (tokenVariants.isNotEmpty) {
+      final assembled = <String>[];
+      for (int i = 0; i < rawTokens.length; i++) {
+        final jaPick = tokenVariants[i].firstWhere(
+          (v) => _japaneseScriptRegex.hasMatch(v),
+          orElse: () => rawTokens[i],
+        );
+        assembled.add(jaPick);
+      }
+      addExpanded(assembled.join(' '));
+    }
+
+    // Priority C: Google Translate candidate
+    if (gtxCandidate != null) {
+      addExpanded(gtxCandidate!);
+    }
+
+    return RomajiQueryExpansion(
+      originalTokens: rawTokens,
+      tokenVariantGroups: tokenVariants,
+      expandedQueries: uniqueQueries,
+    );
+  }
+
+  List<List<String>> _parseGoogleImeResponse(dynamic rawData) {
     try {
+      final decoded = rawData is String ? jsonDecode(rawData) : rawData;
+      if (decoded is! List || decoded.length < 2 || decoded[0] != 'SUCCESS') {
+        return const [];
+      }
+      final entries = decoded[1];
+      if (entries is! List) return const [];
+      final out = <List<String>>[];
+      for (final entry in entries) {
+        if (entry is List && entry.length >= 2 && entry[1] is List) {
+          final cands = (entry[1] as List)
+              .map((e) => e.toString().trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+          out.add(cands);
+        }
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  String _dedupTrackKey(String artist, String title) {
+    final normArtist = artist.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final normTitle = _stripFeaturedFromTitle(title)
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return '$normArtist|$normTitle';
+  }
+
+  double _scoreTrackRelevance({
+    required TrackMetadata track,
+    required String rawQuery,
+    required RomajiQueryExpansion expansion,
+    required int rankInSource,
+    required int sourceBoost,
+  }) {
+    final titleLower = track.title.toLowerCase();
+    final cleanTitleLower = _stripFeaturedFromTitle(track.title).toLowerCase();
+    final artistLower = track.artist.toLowerCase();
+    final albumLower = track.album.toLowerCase();
+    final combined = '$titleLower $artistLower';
+
+    double score = sourceBoost.toDouble() +
+        ((15 - rankInSource).clamp(0, 15) * 1.2);
+
+    final groups = expansion.tokenVariantGroups;
+    int matchedGroups = 0;
+    bool anyTitleHit = false;
+    bool anyArtistHit = false;
+    int exactOriginalMatches = 0;
+
+    for (int i = 0; i < groups.length; i++) {
+      final group = groups[i];
+      final origTok = expansion.originalTokens[i].toLowerCase();
+
+      bool groupHitTitle = false;
+      bool groupHitArtist = false;
+      for (final variant in group) {
+        if (variant.isEmpty) continue;
+        if (titleLower.contains(variant)) {
+          groupHitTitle = true;
+          if (cleanTitleLower == variant) {
+            score += 22;
+          }
+        }
+        if (artistLower.contains(variant)) {
+          groupHitArtist = true;
+          if (artistLower == variant) {
+            score += 22;
+          }
+        }
+      }
+
+      if (combined.contains(origTok)) {
+        exactOriginalMatches++;
+      }
+
+      if (groupHitTitle || groupHitArtist) {
+        matchedGroups++;
+        if (groupHitTitle) anyTitleHit = true;
+        if (groupHitArtist) anyArtistHit = true;
+      }
+    }
+
+    if (groups.isNotEmpty) {
+      final coverage = matchedGroups / groups.length;
+      score += coverage * 75.0;
+      if (matchedGroups == groups.length) {
+        score += 35.0;
+      }
+    }
+
+    if (anyTitleHit && anyArtistHit) {
+      score += 45.0;
+    }
+
+    if (exactOriginalMatches > 0) {
+      score += exactOriginalMatches * 8.0;
+    }
+
+    // Penalize orgel / music box / karaoke / tribute covers unless explicitly requested
+    final userAskedForCover = _coverNoiseRegex.hasMatch(rawQuery);
+    if (!userAskedForCover &&
+        (_coverNoiseRegex.hasMatch(titleLower) ||
+            _coverNoiseRegex.hasMatch(artistLower) ||
+            _coverNoiseRegex.hasMatch(albumLower))) {
+      score -= 110.0;
+    }
+
+    return score;
+  }
+
+  Future<List<TrackMetadata>> _searchItunesCatalog(
+    String query, {
+    String? country,
+    String? lang,
+    int limit = 15,
+  }) async {
+    try {
+      final params = <String, dynamic>{
+        'term': query,
+        'entity': 'song',
+        'limit': limit,
+      };
+      if (country != null && country.isNotEmpty) {
+        params['country'] = country;
+      }
+      if (lang != null && lang.isNotEmpty) {
+        params['lang'] = lang;
+      }
+
       final resp = await _dio
           .get<dynamic>(
             'https://itunes.apple.com/search',
-            queryParameters: {
-              'term': query,
-              'entity': 'song',
-              'limit': 15,
-            },
+            queryParameters: params,
           )
           .timeout(const Duration(seconds: 10));
 
@@ -412,18 +818,21 @@ class MetadataService {
       }
       return tracks;
     } catch (e) {
-      debugPrint('[AUTO_E2E] SEARCH: iTunes search gagal: $e');
+      debugPrint('[MusEvee] SEARCH: iTunes ($country) search gagal: $e');
       return const [];
     }
   }
 
-  Future<List<TrackMetadata>> _searchDeezerCatalog(String query) async {
+  Future<List<TrackMetadata>> _searchDeezerCatalog(
+    String query, {
+    int limit = 15,
+  }) async {
     try {
       final list = await _queryDeezerSearch(query);
       if (list.isEmpty) return const [];
 
       final tracks = <TrackMetadata>[];
-      for (final item in list.take(15)) {
+      for (final item in list.take(limit)) {
         final m = _ensureMap(item);
         if (m == null) continue;
 
@@ -459,7 +868,7 @@ class MetadataService {
       }
       return tracks;
     } catch (e) {
-      debugPrint('[AUTO_E2E] SEARCH: Deezer search gagal: $e');
+      debugPrint('[MusEvee] SEARCH: Deezer search gagal: $e');
       return const [];
     }
   }
@@ -971,6 +1380,42 @@ class _PartialMetadata {
     required this.durationSeconds,
     required this.coverUrl,
     this.previewAudioUrl,
+  });
+}
+
+class RomajiQueryExpansion {
+  final List<String> originalTokens;
+  final List<Set<String>> tokenVariantGroups;
+  final List<String> expandedQueries;
+
+  const RomajiQueryExpansion({
+    required this.originalTokens,
+    required this.tokenVariantGroups,
+    required this.expandedQueries,
+  });
+}
+
+class _CatalogBatch {
+  final List<TrackMetadata> tracks;
+  final bool isItunes;
+  final int boost;
+
+  const _CatalogBatch({
+    required this.tracks,
+    required this.isItunes,
+    required this.boost,
+  });
+}
+
+class _ScoredSearchTrack {
+  final TrackMetadata track;
+  final double score;
+  final int order;
+
+  const _ScoredSearchTrack({
+    required this.track,
+    required this.score,
+    required this.order,
   });
 }
 

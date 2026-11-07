@@ -1270,7 +1270,58 @@ class _LocalSongTile extends StatelessWidget {
                   } else if (value == 'move') {
                     await onMoveLocalSongFolder(song);
                   } else if (value == 'delete') {
-                    await localProvider.deleteLocalSong(song);
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: _kCard,
+                        title: const Text(
+                          'Hapus File Lagu?',
+                          style: TextStyle(
+                            color: _kText,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        content: Text(
+                          'Hapus permanen "${song.title}" dari folder ${song.folderName}?',
+                          style: const TextStyle(
+                            color: Color(0xFFD0D5DD),
+                            fontSize: 13,
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text(
+                              'Batal',
+                              style: TextStyle(color: _kMuted),
+                            ),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF04438),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            child: const Text('Hapus'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && context.mounted) {
+                      final ok = await localProvider.deleteLocalSong(song);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? 'File lagu berhasil dihapus.'
+                                  : 'Penghapusan dibatalkan atau izin ditolak.',
+                            ),
+                          ),
+                        );
+                      }
+                    }
                   }
                 },
                 itemBuilder: (_) => const [

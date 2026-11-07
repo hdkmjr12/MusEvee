@@ -1,4 +1,4 @@
-# MusicEvee — Project Context & AI Agent Rules (`AGENTS.md`)
+# MusEvee — Project Context & AI Agent Rules (`AGENTS.md`)
 
 > **MANDATORY WORKFLOW — SETIAP AI AGENT YANG MENGERJAKAN PROYEK INI WAJIB:**
 > 1. Membaca `AGENTS.md` dan `CHANGELOG.md` terlebih dahulu sebelum menulis atau mengubah kode apa pun.
@@ -9,19 +9,20 @@
 
 ## 1. Status Terkini Proyek
 
-- **Nama & Versi Aplikasi Saat Ini:** **`MusicEvee` `v4.1`** (`pubspec.yaml` version `4.1.0+5`, badge UI `v4.1`)
+- **Nama Resmi & Permanen Aplikasi:** **`MusEvee`** (bukan *MusicEvee* / *SpotMeta Downloader*)
+- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.2`** (`pubspec.yaml` version `4.2.0+6`, badge UI `v4.2`)
 - **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — hanya menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), dan keystore permanen `android/app/musevee-release.jks`.
-- **Update Terakhir (`v4.1` — True Queue-Order Shuffle, Incremental Library Cache, 200ms Ticker Isolation & Native AudioFocus):**
-  - **True Queue-Order Shuffle & `QueueEntry` (`lib/models/local_song.dart`, `lib/providers/local_music_provider.dart`, `lib/widgets/local_library_views.dart`):** Antrean putar menggunakan `QueueEntry(queueId, song)` ber-ID unik dengan `ValueKey(entry.queueId)` dan `buildDefaultDragHandles: false` untuk mendukung duplikat lagu & drag-and-drop mulus; tombol Shuffle mengacak fisik `_queueEntries` menggunakan algoritma Fisher-Yates (menjaga lagu aktif di indeks `0`) dan memulihkan urutan asli `_originalQueueEntries` saat dimatikan; `playNext()` & `playPrevious()` selalu bergerak linier mengikuti urutan visual Queue; `playSongByPath` tidak lagi menimpa Queue aktif.
-  - **Session Guard, Native `AudioFocusRequest` & Seekbar Snap-Back Guard (`MainActivity.kt`, `local_music_provider.dart`, `now_playing_view.dart`):** Penjaga `playbackSessionId` monotonik + validasi instance `mp === localPlayer` & `path` pada `OnCompletionListener` mencegah *double-skip*; dukungan penuh `AudioFocusRequest` (`AUDIOFOCUS_GAIN` dengan auto-pause saat telepon/aplikasi lain berbunyi & volume ducking, plus `AUDIOFOCUS_GAIN_TRANSIENT` & `resumeLocalAfterPreview` pada preview 30s); masa tenggang *seek guard* `350ms` menghilangkan gejala *seekbar snap-back*; sinkronisasi 2 arah instan `< 1ms` antara `LocalMusicProvider` dan `DownloaderProvider`.
-  - **Instant Startup Hydrate (`< 50ms`) & Incremental Delta Sync (`MainActivity.kt`, `local_music_provider.dart`):** Menyimpan cache koleksi lokal di `musicevee_library_cache_v1.json`, sesi antrean terakhir di `musicevee_player_session.json`, serta sampul `APIC` permanen di `filesDir/covers`; handler native `scanLocalMusicLibraryDelta` hanya mengekstrak ulang file yang berubah (`lastModifiedMs` + `sizeBytes`) dan `upsertSingleSongByPath` menyisipkan lagu baru tanpa memindai ulang seluruh disk.
-  - **Isolasi Rebuild 200ms (`ValueNotifier`), Memoisasi & Optimasi RAM Bitmap (`local_music_provider.dart`, `now_playing_view.dart`, `musicolet_mini_player.dart`, `local_library_views.dart`, `MainActivity.kt`):** Detak 5 Hz (`200ms`) diisolasi ke `progressNotifier` (`PlaybackProgress`) dan `activeLyricIndexNotifier` sehingga `IndexedStack` 8-tab tidak lagi di-rebuild 5x/detik; memoisasi `folderSongsMap`/`albumSongsMap`/`artistSongsMap` + `Expando` `parsedSyncedLyrics`; penghapusan `File.existsSync()` dari `build()`; penambahan `cacheWidth` proporsional (`144` thumbnail / `960` Now Playing) dan streaming parser `parseId3v2Tags` (`raf.seek()` melewati payload `APIC` multi-MB).
+- **Update Terakhir (`v4.2` — Rebranding Permanen `MusEvee`, Scoped Storage Android 15 File Delete/Retag/Move, Cross-Script Romaji J-Pop Search & Live Audit `Z2464N`):**
+  - **Rebranding Permanen ke `MusEvee` (`AndroidManifest.xml`, `lib/main.dart`, `lib/screens/home_screen.dart`, `lib/widgets/now_playing_view.dart`, `pubspec.yaml`, `.github/workflows/build_apk.yml`):** Menetapkan **`MusEvee`** sebagai nama resmi dan permanen aplikasi di seluruh label sistem Android, header UI (`MusEvee v4.2`), widget `MusEveeApp`, berkas cache (`musevee_*.json` dengan migrasi otomatis dari cache lama), dokumentasi, dan pipeline rilis CI/CD.
+  - **Penghapusan, Retag & Pindah Lagu Berlapis di Android 11–15 Scoped Storage (`MainActivity.kt`, `folder_service.dart`, `tagging_service.dart`, `local_music_provider.dart`, `local_library_views.dart`, `now_playing_view.dart`):** Menambahkan metode native `deleteLocalAudioFile`, `writeBytesToMusicFile`, `hasAllFilesAccess`, dan `requestAllFilesAccess` di `MainActivity.kt` yang melepaskan *file lock* `localPlayer` terlebih dahulu, mengeksekusi penghapusan/penulisan via `File` -> `MediaStore` (`ContentUris` `_ID` & `DATA=?`) -> dialog konfirmasi OS `MediaStore.createDeleteRequest` / `MediaStore.createWriteRequest` -> eskalasi `MANAGE_EXTERNAL_STORAGE` (`Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`), serta memverifikasi fisik `!File(path).exists()` sebelum memutakhirkan antrean, cache JSON, cover thumbnail yatim, file pendamping `.lrc`, dan `MediaScannerConnection`.
+  - **Mesin Pencarian Lagu Jepang Lintas-Aksara Romaji -> Kanji/Kana (`lib/services/metadata_service.dart`, `test/romaji_service_test.dart`):** Mengembangkan `MetadataService.searchMusicTracks` (`searchTracks`) dengan ekspansi kueri paralel ke **Google Input Tools Japanese IME** (`itc=ja-t-i0-und` frasa utuh + per-kata) dan **Google Translate** (`gtx`), dikombinasikan dengan pencarian paralel `Future.wait` ke **iTunes Search API Japan (`country=JP&lang=ja_jp`)**, **iTunes Global (`country=ID`)**, dan **Deezer API**, lengkap dengan penilaian relevansi lintas-aksara dan penalti cover *orgel/music-box/karaoke* (sehingga pencarian `"heikousen sayuri"` langsung menemukan **`平行線` — `さユり`** di urutan teratas).
+  - **Temuan & Perbaikan Live USB Debugging di Perangkat `Z2464N` Android 15 (`MainActivity.kt`, `folder_service.dart`, `local_music_provider.dart`):** Menyaring direktori nada dering sistem bawaan ZTE (`ringtones_music`, `ringtones`, `alarms`, `notifications`, `ui`, `.thumbnails`, filter `IS_MUSIC != 0`) serta stub file rusak `< 16 KB` agar tidak mengotori pustaka/antrean atau memicu error `MetadataRetrieverClient`, serta menambahkan fallback pembacaan & pemeliharaan file pendamping `.lrc` lama (`readCompanionLrcIfPresent` / `deleteCompanionLrcIfPresent`) bagi lagu warisan yang belum memiliki frame biner `USLT`.
 
 ---
 
-## 2. Identitas & Prinsip Desain (`MusicEvee` — Musicolet Dark UI)
+## 2. Identitas & Prinsip Desain (`MusEvee` — Musicolet Dark UI)
 
-- **Nama Aplikasi:** `MusicEvee` (sebelumnya `MusEvee` / `SpotMeta Downloader`).
+- **Nama Resmi & Permanen Aplikasi:** `MusEvee` (tanpa huruf *"ic"*).
 - **Gaya Visual:** *1:1 Musicolet Dark UI/UX* dipadukan dengan kerapian *Architectural Hairline Borders*:
   - **Dynamic Ambient Background (Now Playing):** Gradasi gelap vertikal yang otomatis menyesuaikan warna dominan Cover Art lagu yang sedang diputar (misal ungu tua lembut untuk *YOASOBI - Idol*, abu-abu olive gelap untuk *ASCA - Resister*).
   - **Palet Warna Gelap (`Musicolet Dark Surface`):**
@@ -43,8 +44,8 @@
 ### Struktur Direktori Utama
 ```text
 MusEvee/
-├── AGENTS.md                                 # Cetak biru arsitektur MusicEvee & SOP wajib AI Agent
-├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.0)
+├── AGENTS.md                                 # Cetak biru arsitektur MusEvee & SOP wajib AI Agent
+├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.2)
 ├── .github/
 │   ├── copilot-instructions.md               # Instruksi otomatis GitHub Copilot / Remote Agent
 │   └── workflows/
@@ -56,11 +57,11 @@ MusEvee/
 │       ├── build.gradle.kts                  # Konfigurasi Gradle Kotlin DSL, signing musevee-release.jks & filter ARM64
 │       ├── musevee-release.jks               # Keystore permanen agar tanda tangan APK konsisten antar build CI
 │       └── src/main/
-│           ├── AndroidManifest.xml           # Label "MusicEvee", izin audio/penyimpanan/equalizer, & Share Intent
+│           ├── AndroidManifest.xml           # Label permanen "MusEvee", izin audio/penyimpanan/equalizer, & Share Intent
 │           └── kotlin/com/example/spotmeta_downloader/
-│               └── MainActivity.kt           # MethodChannel native: Local MediaPlayer, ID3v2 APIC/USLT reader, Equalizer, 30s Preview, MediaScanner, Share Intent
+│               └── MainActivity.kt           # MethodChannel native: Local MediaPlayer, ID3v2 APIC/USLT reader, Scoped Storage Delete/Write, Equalizer, 30s Preview, MediaScanner, Share Intent
 ├── lib/
-│   ├── main.dart                             # Entry point MusicEveeApp, MultiProvider (LocalMusicProvider + DownloaderProvider), & Dark Musicolet Theme
+│   ├── main.dart                             # Entry point MusEveeApp, MultiProvider (LocalMusicProvider + DownloaderProvider), & Dark Musicolet Theme
 │   ├── models/
 │   │   ├── download_item.dart                # Model item antrean & riwayat unduhan FFmpeg
 │   │   ├── local_song.dart                   # Model lagu lokal + parser LRC [mm:ss.xx] SyncedLyricEntry & jembatan ke TrackMetadata
@@ -72,15 +73,15 @@ MusEvee/
 │   │   └── home_screen.dart                  # Shell utama 8-Tab Musicolet + Unified MethodChannel Router + Smart Omnibox Downloader
 │   ├── services/
 │   │   ├── audio_service.dart                # Ekstraktor stream YouTube (YoutubeExplode multi-client) & 5 kandidat manual
-│   │   ├── folder_service.dart               # Manajemen folder (/storage/emulated/0/Music/*), duplicate checker, & MediaScanner
+│   │   ├── folder_service.dart               # Manajemen folder (/storage/emulated/0/Music/*), Scoped Storage delete/write, duplicate checker, & MediaScanner
 │   │   ├── lyrics_service.dart               # Pencarian kandidat lirik LRCLIB dengan prioritas bahasa asli Jepang/Romaji + fallback lyrics.ovh
-│   │   ├── metadata_service.dart             # Ekstraktor link Spotify (oEmbed/OpenGraph Track/Album/Playlist) & pencarian Deezer+iTunes
+│   │   ├── metadata_service.dart             # Ekstraktor link Spotify + Mesin Pencari Lintas-Aksara (Google IME Romaji->Kanji + iTunes JP/Global + Deezer)
 │   │   ├── romaji_service.dart               # Konversi Kanji/Kana ke Romaji baris-demi-baris + Anti Double-Romaji & Furigana Deduplication
 │   │   └── tagging_service.dart              # Konversi FFmpeg MP3 320kbps, injeksi biner ID3v2.4.0 (APIC + USLT \r\n), & retag instan (-c:a copy)
 │   └── widgets/
 │       ├── batch_playlist_sheet.dart         # Bottom sheet pemilihan lagu massal dari Album/Playlist Spotify
 │       ├── local_library_views.dart          # Tab lokal Musicolet: PlaybackQueueView, LocalFoldersView, LocalAlbumsView, LocalArtistsView, LocalSearchView
-│       ├── musevee_logo.dart                 # CustomPainter logo vektor transparan MusicEvee
+│       ├── musevee_logo.dart                 # CustomPainter logo vektor transparan MusEvee
 │       ├── musicolet_bottom_strip.dart       # Deretan 8 ikon navigasi bawah khas Musicolet dengan garis indikator putih
 │       ├── musicolet_mini_player.dart        # Mini Player tipis ala Musicolet di atas bottom strip
 │       ├── now_playing_view.dart             # Layar utama 1:1 Musicolet Now Playing + Embedded Lyrics Ribbon + Tap-to-Seek
@@ -89,15 +90,15 @@ MusEvee/
 │       ├── tag_editor_sheet.dart             # Modal editor tag ID3 & lirik (pra-unduh, riwayat unduhan, maupun lagu lokal yang sedang diputar!)
 │       └── track_preview_sheet.dart          # Modal detail unduhan: preview 30s, pilih sumber YouTube, Ganti Lirik LRCLIB, Auto-Romaji, & pilih folder
 └── test/
-    ├── romaji_service_test.dart              # Unit test Romaji, deduplikasi bilingual, prioritas bahasa LyricsService, & parser USLT LocalSong
-    └── widget_test.dart                      # Widget test layar NowPlayingView & navigasi 8-tab MusicEvee
+    ├── romaji_service_test.dart              # Unit test Romaji, deduplikasi bilingual, prioritas bahasa LyricsService, pencarian lintas-aksara, & parser USLT LocalSong
+    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, & navigasi 8-tab MusEvee
 ```
 
 ### Integrasi Native Android (`MainActivity.kt`)
 Menggunakan satu `MethodChannel('com.spotmeta.downloader/system')` terpadu yang di-routing di `HomeScreen`:
 1. **Mesin Pemutar Lokal & AudioFocus:** `localPlayFile` (dengan `sessionId`), `localPause`, `localResume`, `localSeekTo`, `localStop`, `getVolume`, `setVolume`, `openEqualizer` (`AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL`), `AudioFocusRequest` (`AUDIOFOCUS_GAIN` + ducking + auto-resume setelah preview 30s), serta event real-time `onLocalPosition`, `onLocalPlayerState`, dan `onLocalTrackCompleted`.
 2. **Pemindai Delta Inkremental & Pembaca Streaming Tag `USLT`/`APIC`:** `scanLocalMusicLibraryDelta`, `scanLocalMusicLibrary`, dan `readLocalTrackDetails` memadukan `MediaMetadataRetriever` dengan streaming parser `RandomAccessFile` ID3v2 (`v2.2`/`v2.3`/`v2.4`, melewati frame besar via `raf.seek()`), menyimpan sampul `APIC` permanen ke `filesDir/covers`, menghitung warna dominan Cover Art, dan membaca teks lirik `USLT`.
-3. **MediaStore & File Sync:** `scanMediaFile` (`MediaScannerConnection.scanFile`) dan `deleteMediaFile` (`MediaStore.Audio.Media.EXTERNAL_CONTENT_URI`).
+3. **Scoped Storage Android 11–15 & MediaStore Sync:** `deleteLocalAudioFile`, `writeBytesToMusicFile`, `hasAllFilesAccess`, `requestAllFilesAccess`, `deleteMediaFile`, dan `scanMediaFile` (`MediaScannerConnection.scanFile` + `MediaStore.createDeleteRequest` / `MediaStore.createWriteRequest` + `MANAGE_EXTERNAL_STORAGE`).
 4. **Share Intent & 30s Preview Downloader:** `getInitialSharedText` / `onSharedText` serta `playPreviewUrl` / `stopPreview` / `onPreviewStateChanged` (otomatis menjeda lagu lokal saat memutar preview 30 detik agar suara tidak bertabrakan).
 
 ---

@@ -1,4 +1,4 @@
-# Instruksi Wajib AI Agent (Project IDX / Gemini) — Proyek MusicEvee
+# Instruksi Wajib AI Agent (Project IDX / Gemini) — Proyek MusEvee
 
 SETIAP AI AGENT YANG MENGERJAKAN PROYEK INI WAJIB:
 1. Membaca `AGENTS.md` dan `CHANGELOG.md` di root repositori terlebih dahulu sebelum menulis atau mengubah kode apa pun.

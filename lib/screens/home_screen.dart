@@ -541,7 +541,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           backgroundColor: _bgCanvas,
           // Full-bleed Now Playing without AppBar (1:1 Musicolet!), compact header on other tabs
-          appBar: isOnNowPlaying ? null : _buildMusicEveeAppBar(provider),
+          appBar: isOnNowPlaying ? null : _buildMusEveeAppBar(provider),
           body: Column(
             children: [
               Expanded(
@@ -640,7 +640,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  PreferredSizeWidget _buildMusicEveeAppBar(DownloaderProvider provider) {
+  PreferredSizeWidget _buildMusEveeAppBar(DownloaderProvider provider) {
     final hairline = Colors.white.withValues(alpha: 0.08);
     return AppBar(
       toolbarHeight: 48,
@@ -655,7 +655,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const MusEveeLogo(size: 22),
           const SizedBox(width: 9),
           const Text(
-            'MusicEvee',
+            'MusEvee',
             style: TextStyle(
               color: _textPrimary,
               fontSize: 16,
@@ -672,7 +672,7 @@ class _HomeScreenState extends State<HomeScreen> {
               border: Border.all(color: hairline, width: 0.8),
             ),
             child: const Text(
-              'v4.1',
+              'v4.2',
               style: TextStyle(
                 color: _primaryAccent,
                 fontSize: 9.5,
@@ -974,7 +974,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'MusicEvee All-in-One Downloader (MP3 320kbps + USLT Lyrics)',
+                      'MusEvee All-in-One Downloader (MP3 320kbps + USLT Lyrics)',
                       style: TextStyle(
                         color: _textPrimary,
                         fontSize: 13.5,

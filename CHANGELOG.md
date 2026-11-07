@@ -1,8 +1,26 @@
-# Changelog — MusicEvee
+# Changelog — MusEvee
 
-Seluruh riwayat perubahan penting pada proyek **MusicEvee** (sebelumnya *MusEvee* / *SpotMeta Downloader*) dicatat di dokumen ini secara kronologis terbalik (versi terbaru berada di paling atas).
+Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan permanen aplikasi; sebelumnya sempat menggunakan nama *SpotMeta Downloader*) dicatat di dokumen ini secara kronologis terbalik (versi terbaru berada di paling atas).
 
 > **Catatan Wajib untuk AI Agent:** Setiap kali Anda menyelesaikan perbaikan bug, perubahan UI, atau penambahan fitur baru, Anda **wajib** menambahkan entri baru di bagian paling atas file ini dan memperbarui bagian *Status Terkini* di `AGENTS.md` sebelum melakukan `git commit` / `git push`.
+
+---
+
+## [v4.2] — 2026-11-07 (Permanent Rebranding to MusEvee, Android 15 Scoped Storage Delete/Retag/Move & Cross-Script Romaji J-Pop Search)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Rebranding Resmi & Permanen Kembali ke `MusEvee` (`android/app/src/main/AndroidManifest.xml`, `lib/main.dart`, `lib/screens/home_screen.dart`, `lib/widgets/now_playing_view.dart`, `lib/widgets/queue_history_view.dart`, `lib/providers/local_music_provider.dart`, `pubspec.yaml`, `.github/workflows/build_apk.yml`, `.github/copilot-instructions.md`, `.idx/airules.md`, `test/widget_test.dart`):**
+  - Menetapkan **`MusEvee`** (`v4.2.0+6`, badge UI `v4.2`) sebagai nama resmi dan permanen aplikasi pada ikon peluncur Android, `MusEveeApp`, header aplikasi, layar `NowPlayingView` (`MusEvee Player`), berkas cache sesi/pustaka (`musevee_library_cache_v1.json`, `musevee_player_session.json`, `musevee_favorites.json` dengan migrasi otomatis dari cache lama), serta artefak CI/CD GitHub Actions.
+- **Perbaikan Total Penghapusan, Retag & Pemindahan File Lagu di Android 15 Scoped Storage (`android/app/src/main/kotlin/com/example/spotmeta_downloader/MainActivity.kt`, `lib/services/folder_service.dart`, `lib/services/tagging_service.dart`, `lib/providers/local_music_provider.dart`, `lib/widgets/now_playing_view.dart`, `lib/widgets/local_library_views.dart`):**
+  - **Pelepasan File Lock `MediaPlayer` Lebih Dulu:** Memastikan `localPlayer` dilepaskan penuh (`stop()` + `reset()` + `release()` melalui `await localStop`) sebelum file MP3 yang sedang aktif/dijeda dihapus, di-retag, atau dipindah folder, serta melanjutkan pemutaran otomatis ke lagu berikutnya di Queue setelah file berhasil dihapus.
+  - **Penghapusan & Penulisan Berlapis Android 11–15 (`API 30–35`):** Menambahkan metode native `deleteLocalAudioFile`, `writeBytesToMusicFile`, `hasAllFilesAccess`, dan `requestAllFilesAccess` di `MainActivity.kt` yang menangani `File.delete()`/`FileOutputStream`, `ContentResolver` (`ContentUris` `_ID` & `DATA=?`), dialog konfirmasi sistem `MediaStore.createDeleteRequest` / `MediaStore.createWriteRequest`, serta eskalasi izin `MANAGE_EXTERNAL_STORAGE` (`Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`).
+  - **Konsistensi State & Proteksi Exception:** Memperbaiki urutan `LocalMusicProvider.deleteLocalSong` agar hanya menghapus entri dari `_allSongs`, `_queueEntries`, cache JSON, dan cover thumbnail setelah file fisik terkonfirmasi terhapus (`!File(path).exists()`), menambahkan dialog konfirmasi + notifikasi SnackBar pada menu hapus di `LocalFoldersView`/`LocalAlbumsView`/`LocalArtistsView`/`LocalSearchView`, serta membungkus penanaman lirik LRCLIB & Auto-Romaji agar bebas `PathAccessException (errno = 13)`.
+- **Mesin Pencarian Lagu Jepang Lintas-Aksara Romaji -> Kanji/Kana (`lib/services/metadata_service.dart`, `test/romaji_service_test.dart`):**
+  - Menambahkan ekspansi kueri Romaji otomatis (`expandRomajiQueryForJapanese`) menggunakan **Google Input Tools Japanese IME** (`itc=ja-t-i0-und` untuk frasa utuh dan per-kata) serta **Google Translate** (`client=gtx&sl=en&tl=ja&dt=t`) secara paralel.
+  - Menggabungkan pencarian paralel (`Future.wait`) ke **iTunes Search API Japan (`country=JP&lang=ja_jp`)**, **iTunes Search API Global (`country=ID`)**, dan **Deezer Search API** baik menggunakan kata kunci asli maupun hasil konversi Kanji/Kana, dilengkapi *relevance scoring* lintas-aksara dan penalti cover *orgel / music box / karaoke* — teruji langsung mengembalikan **`平行線` (`Heikousen`) — `さユり` (`Sayuri`)** di peringkat #1 untuk kueri `"heikousen sayuri"`.
+- **Perbaikan Tambahan Hasil Live USB Debugging di Perangkat Android 15 `Z2464N` (`android/app/src/main/kotlin/com/example/spotmeta_downloader/MainActivity.kt`, `lib/services/folder_service.dart`, `lib/providers/local_music_provider.dart`):**
+  - **Penyaringan Folder Sistem & Stub Audio Rusak (`< 16 KB`):** Mengecualikan subfolder sistem bawaan OS (`ringtones_music`, `ringtones`, `alarms`, `notifications`, `ui`, `.thumbnails`), menambahkan klausa `MediaStore.Audio.Media.IS_MUSIC != 0`, serta mengabaikan file stub rusak berukuran `< 16 KB` (seperti `au_uu_*.mp3` `1.1 KB`) baik di pemindai perpustakaan lokal maupun penghitung folder Downloader sehingga bebas dari polusi nada dering sistem dan error `MetadataRetrieverClient`.
+  - **Dukungan Lirik Pendamping `.lrc` Warisan & Sinkronisasi Pindah/Hapus:** Menambahkan fallback `readCompanionLrcIfPresent` di `MainActivity.kt` (beserta pengecekan delta `hasLyrics`) agar koleksi MP3 lama yang masih menyimpan lirik di file `.lrc` pendamping tetap menampilkan *Synchronized Lyrics Ribbon* & mendukung Auto-Romaji, sekaligus menyalin/menghapus file `.lrc` pendamping secara otomatis saat lagu dipindah folder atau dihapus.
 
 ---
 

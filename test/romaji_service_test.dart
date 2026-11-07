@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:spotmeta_downloader/models/local_song.dart';
 import 'package:spotmeta_downloader/models/track_metadata.dart';
 import 'package:spotmeta_downloader/services/lyrics_service.dart';
+import 'package:spotmeta_downloader/services/metadata_service.dart';
 import 'package:spotmeta_downloader/services/romaji_service.dart';
 
 void main() {
@@ -261,6 +262,32 @@ void main() {
       expect(song.parsedSyncedLyrics[0].timeMs, equals(1200));
       expect(song.parsedSyncedLyrics[1].timeMs, equals(15500));
       expect(song.plainLyricLines.length, equals(2));
+    });
+
+    test(
+        'MetadataService cross-script Romaji search resolves "heikousen sayuri" to 平行線 by さユり',
+        () async {
+      final metadataService = MetadataService();
+
+      final expansion = await metadataService.expandRomajiQueryForJapanese(
+        'heikousen sayuri',
+      );
+      expect(
+        expansion.expandedQueries.any((q) => q.contains('平行線')),
+        isTrue,
+      );
+
+      final results = await metadataService.searchMusicTracks(
+        'heikousen sayuri',
+      );
+      expect(results, isNotEmpty);
+
+      // Top result MUST be "平行線" by "さユり" (and NOT an orgel / music-box cover)
+      final top = results.first;
+      expect(top.title, contains('平行線'));
+      expect(top.artist, contains('さユり'));
+      expect(top.title.toLowerCase(), isNot(contains('orgel')));
+      expect(top.title, isNot(contains('オルゴール')));
     });
   });
 }

@@ -16,6 +16,43 @@ class FolderService {
   static const MethodChannel _systemChannel =
       MethodChannel('com.spotmeta.downloader/system');
 
+  /// Checks whether the app currently holds `MANAGE_EXTERNAL_STORAGE` on Android 11+.
+  Future<bool> hasAllFilesAccess() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final granted = await _systemChannel.invokeMethod<bool>(
+        'hasAllFilesAccess',
+      );
+      return granted == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the system "All files access" page for MusEvee on Android 11–15 and awaits return.
+  Future<bool> requestAllFilesAccess() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final granted = await _systemChannel.invokeMethod<bool>(
+        'requestAllFilesAccess',
+      );
+      return granted == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static const Set<String> _excludedSystemFolderNames = {
+    'ringtones_music',
+    'ringtones',
+    'alarms',
+    'notifications',
+    'ui',
+    '.thumbnails',
+  };
+
+  static const int _minValidMusicBytes = 16384;
+
   /// Lists all available target folders under `/storage/emulated/0/Music/`,
   /// always prioritizing `Music Barat`, `Music Japan`, and `Music Random`,
   /// followed by any other existing subdirectories in `/storage/emulated/0/Music/`.
@@ -46,9 +83,14 @@ class FolderService {
                   .where((s) => s.isNotEmpty)
                   .last
                   .trim();
-              if (name.isEmpty || name.startsWith('.')) continue;
-              if (!seenLower.contains(name.toLowerCase())) {
-                seenLower.add(name.toLowerCase());
+              final lower = name.toLowerCase();
+              if (name.isEmpty ||
+                  name.startsWith('.') ||
+                  _excludedSystemFolderNames.contains(lower)) {
+                continue;
+              }
+              if (!seenLower.contains(lower)) {
+                seenLower.add(lower);
                 extraFolders.add(name);
               }
             }
@@ -135,7 +177,8 @@ class FolderService {
         if (!await dir.exists()) continue;
 
         final exactFile = File('${dir.path}/$fileName');
-        if (await exactFile.exists() && await exactFile.length() > 0) {
+        if (await exactFile.exists() &&
+            await exactFile.length() >= _minValidMusicBytes) {
           return folder;
         }
 
@@ -145,9 +188,10 @@ class FolderService {
                 .split(Platform.pathSeparator)
                 .last
                 .toLowerCase();
-            if (name == targetLower ||
-                (name.endsWith('.mp3') &&
-                    name.startsWith('$baseWithoutExt ('))) {
+            if ((name == targetLower ||
+                    (name.endsWith('.mp3') &&
+                        name.startsWith('$baseWithoutExt ('))) &&
+                await entity.length() >= _minValidMusicBytes) {
               return folder;
             }
           }
@@ -170,7 +214,8 @@ class FolderService {
         if (await dir.exists()) {
           await for (final entity in dir.list(followLinks: false)) {
             if (entity is File &&
-                entity.path.toLowerCase().endsWith('.mp3')) {
+                entity.path.toLowerCase().endsWith('.mp3') &&
+                await entity.length() >= _minValidMusicBytes) {
               count++;
             }
           }
@@ -206,15 +251,34 @@ class FolderService {
 
     final destFile = File(destPath);
     if (await destFile.exists()) {
-      await destFile.delete();
+      await deleteLocalAudioFile(destPath);
     }
 
     final bytes = await sourceFile.readAsBytes();
-    await destFile.writeAsBytes(bytes, flush: true);
+    final wroteOk = await writeBytesToMusicFile(destPath, bytes);
+    if (!wroteOk) {
+      throw Exception(
+        'Gagal menulis file ke folder $cleanFolder. Pastikan izin penyimpanan diberikan.',
+      );
+    }
 
+    // Preserve legacy companion .lrc sidecar if present next to sourceFile
     try {
-      await sourceFile.delete();
+      final dotIdx = sourceFile.path.lastIndexOf('.');
+      if (dotIdx > 0) {
+        final srcLrc = File('${sourceFile.path.substring(0, dotIdx)}.lrc');
+        if (await srcLrc.exists()) {
+          final destDotIdx = destPath.lastIndexOf('.');
+          if (destDotIdx > 0) {
+            final destLrcPath = '${destPath.substring(0, destDotIdx)}.lrc';
+            final lrcBytes = await srcLrc.readAsBytes();
+            await writeBytesToMusicFile(destLrcPath, lrcBytes);
+          }
+        }
+      }
     } catch (_) {}
+
+    await deleteLocalAudioFile(currentFilePath);
 
     await scanMediaFile(currentFilePath);
     await scanMediaFile(destFile.path);
@@ -235,16 +299,140 @@ class FolderService {
     }
   }
 
-  /// Deletes an existing audio file both from disk and Android MediaStore so
-  /// stale versions do not remain cached in Musicolet.
+  /// Layered Android 11–15 Scoped Storage audio deletion:
+  /// 1. Releases native `MediaPlayer` lock if active
+  /// 2. Deletes via `File(path).delete()`
+  /// 3. Deletes via `MediaStore` (`_ID` item URI & `DATA = ?`)
+  /// 4. Escalates to `MediaStore.createDeleteRequest` / `MANAGE_EXTERNAL_STORAGE` when needed
+  /// 5. Verifies physical removal (`!File(path).exists()`) before returning `true`.
+  Future<bool> deleteLocalAudioFile(
+    String path, {
+    bool autoRequestPermission = true,
+  }) async {
+    if (path.trim().isEmpty) return false;
+    if (!Platform.isAndroid) {
+      try {
+        final f = File(path);
+        if (!await f.exists()) return true;
+        await f.delete();
+        return !await f.exists();
+      } catch (_) {
+        return false;
+      }
+    }
+
+    try {
+      final res = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'deleteLocalAudioFile',
+        {
+          'path': path,
+          'allowSystemPrompt': true,
+        },
+      );
+      final deleted = res?['deleted'] == true;
+      final cancelled = res?['cancelledByUser'] == true;
+      final needsAllFiles = res?['needsAllFilesAccess'] == true;
+
+      if (deleted && !await File(path).exists()) {
+        return true;
+      }
+      if (cancelled) {
+        return false;
+      }
+      if (needsAllFiles && autoRequestPermission) {
+        final granted = await requestAllFilesAccess();
+        if (granted) {
+          final retry = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+            'deleteLocalAudioFile',
+            {
+              'path': path,
+              'allowSystemPrompt': false,
+            },
+          );
+          if (retry?['deleted'] == true && !await File(path).exists()) {
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[MusEvee] deleteLocalAudioFile error: $e');
+    }
+
+    return !await File(path).exists();
+  }
+
+  /// Writes MP3 bytes safely on Android 11–15 Scoped Storage, escalating to
+  /// `MediaStore.createWriteRequest` or `MANAGE_EXTERNAL_STORAGE` if overwriting
+  /// a non-owned file in `/storage/emulated/0/Music/`.
+  Future<bool> writeBytesToMusicFile(
+    String path,
+    Uint8List bytes, {
+    bool autoRequestPermission = true,
+  }) async {
+    if (path.trim().isEmpty || bytes.isEmpty) return false;
+    try {
+      final targetFile = File(path);
+      if (!await targetFile.parent.exists()) {
+        await targetFile.parent.create(recursive: true);
+      }
+      await targetFile.writeAsBytes(bytes, flush: true);
+      if (await targetFile.exists() && await targetFile.length() > 0) {
+        await scanMediaFile(path);
+        return true;
+      }
+    } catch (_) {
+      // Fall through to native Scoped Storage handler on Android
+    }
+
+    if (!Platform.isAndroid) return false;
+
+    try {
+      final res = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'writeBytesToMusicFile',
+        {
+          'path': path,
+          'bytes': bytes,
+          'allowSystemPrompt': true,
+        },
+      );
+      if (res?['written'] == true) {
+        return true;
+      }
+      final cancelled = res?['cancelledByUser'] == true;
+      final needsAllFiles = res?['needsAllFilesAccess'] == true;
+      if (!cancelled && needsAllFiles && autoRequestPermission) {
+        final granted = await requestAllFilesAccess();
+        if (granted) {
+          final retry = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+            'writeBytesToMusicFile',
+            {
+              'path': path,
+              'bytes': bytes,
+              'allowSystemPrompt': false,
+            },
+          );
+          return retry?['written'] == true;
+        }
+      }
+    } catch (e) {
+      debugPrint('[MusEvee] writeBytesToMusicFile error: $e');
+    }
+    return false;
+  }
+
+  /// Non-interactive delete helper used during fresh download deduplication.
   Future<bool> deleteMediaFile(String path) async {
     if (!Platform.isAndroid || path.trim().isEmpty) return false;
-    bool deleted = false;
     try {
       final f = File(path);
-      if (await f.exists()) {
-        await f.delete();
-        deleted = true;
+      if (!await f.exists()) return true;
+      await f.delete();
+      if (!await f.exists()) {
+        await _systemChannel.invokeMethod<bool>(
+          'deleteMediaFile',
+          {'path': path},
+        );
+        return true;
       }
     } catch (_) {}
     try {
@@ -252,9 +440,10 @@ class FolderService {
         'deleteMediaFile',
         {'path': path},
       );
-      if (res == true) deleted = true;
-    } catch (_) {}
-    return deleted;
+      return res == true && !await File(path).exists();
+    } catch (_) {
+      return false;
+    }
   }
 
   String sanitizeFolderName(String raw) {

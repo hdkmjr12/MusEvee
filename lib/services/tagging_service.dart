@@ -258,28 +258,40 @@ class TaggingService {
       );
 
       // 4. Write back to the target folder (updating filename if Artist/Title changed)
+      final folderSvc = FolderService();
       final parentDir = existingFile.parent;
       final desiredPath =
           '${parentDir.path}${Platform.pathSeparator}${updatedMetadata.sanitizedFileName}';
       final updatedBytes = await tempCopyMp3.readAsBytes();
 
       String finalSavedPath = existingFile.path;
-      try {
-        final targetFile = File(desiredPath);
-        await targetFile.writeAsBytes(updatedBytes, flush: true);
-        finalSavedPath = targetFile.path;
-        if (existingFile.path != targetFile.path &&
-            await existingFile.exists()) {
-          await existingFile.delete();
-          await FolderService().scanMediaFile(existingFile.path);
+      if (desiredPath != existingFile.path) {
+        final wroteRenamed = await folderSvc.writeBytesToMusicFile(
+          desiredPath,
+          updatedBytes,
+        );
+        if (wroteRenamed) {
+          finalSavedPath = desiredPath;
+          if (await existingFile.exists()) {
+            await folderSvc.deleteLocalAudioFile(existingFile.path);
+          }
+          await folderSvc.scanMediaFile(desiredPath);
+          return finalSavedPath;
         }
-      } catch (_) {
-        // Overwrite existing file path if rename wasn't permitted
-        await existingFile.writeAsBytes(updatedBytes, flush: true);
-        finalSavedPath = existingFile.path;
       }
 
-      await FolderService().scanMediaFile(finalSavedPath);
+      // Overwrite existing file path safely on Android 11-15 Scoped Storage
+      final wroteInPlace = await folderSvc.writeBytesToMusicFile(
+        existingFile.path,
+        updatedBytes,
+      );
+      if (!wroteInPlace) {
+        throw const TaggingException(
+          'Gagal menyimpan tag ke file MP3. Izinkan akses file musik jika diminta oleh sistem.',
+        );
+      }
+      finalSavedPath = existingFile.path;
+      await folderSvc.scanMediaFile(finalSavedPath);
       return finalSavedPath;
     } finally {
       for (final f in [coverFile, tempCopyMp3]) {

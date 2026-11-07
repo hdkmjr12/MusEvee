@@ -449,7 +449,7 @@ class QueueHistoryView extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Cover Art 50x50 (Tap to play directly in MusicEvee!)
+              // Cover Art 50x50 (Tap to play directly in MusEvee!)
               GestureDetector(
                 onTap: (!isFailed &&
                         item.savedFilePath != null &&

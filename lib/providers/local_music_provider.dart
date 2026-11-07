@@ -329,7 +329,7 @@ class LocalMusicProvider extends ChangeNotifier {
   /// Incrementally delta-syncs `/storage/emulated/0/Music/*` and MediaStore via
   /// `MainActivity.kt` (`scanLocalMusicLibraryDelta`), inspecting only new or
   /// modified MP3 files (`lastModifiedMs` + `sizeBytes` + persistent cover file)
-  /// and persisting `musicevee_library_cache_v1.json`.
+  /// and persisting `musevee_library_cache_v1.json`.
   Future<void> refreshLibrary({
     bool requestPermission = false,
     bool silentBackground = false,
@@ -357,6 +357,7 @@ class LocalMusicProvider extends ChangeNotifier {
             'lastModifiedMs': s.lastModifiedMs,
             'sizeBytes': s.sizeBytes,
             'coverFilePath': s.coverFilePath,
+            'hasLyrics': s.hasLyrics,
           },
       };
 
@@ -420,7 +421,7 @@ class LocalMusicProvider extends ChangeNotifier {
           });
           nextSongs = merged;
 
-          // Clean up orphan covers for files removed externally outside MusicEvee
+          // Clean up orphan covers for files removed externally outside MusEvee
           if (removedSongs.isNotEmpty) {
             final activeCovers = nextSongs
                 .map((s) => s.coverFilePath)
@@ -532,7 +533,7 @@ class LocalMusicProvider extends ChangeNotifier {
         _notifyExternalSync();
       }
     } catch (e) {
-      debugPrint('[MusicEvee] refreshLibrary gagal: $e');
+      debugPrint('[MusEvee] refreshLibrary gagal: $e');
     } finally {
       _isSyncingLibrary = false;
       final wasLoading = _isLoadingLibrary;
@@ -1278,8 +1279,12 @@ class LocalMusicProvider extends ChangeNotifier {
     final savedPos = isEditingCurrent ? _positionMs : 0;
 
     try {
-      if (wasPlaying && Platform.isAndroid) {
-        await _systemChannel.invokeMethod<bool>('localPause');
+      // Release MediaPlayer file lock completely (even if paused) before rewriting MP3
+      if (isEditingCurrent && Platform.isAndroid) {
+        _playbackSessionId++;
+        _isPlaying = false;
+        _hasPreparedNative = false;
+        await _systemChannel.invokeMethod<bool>('localStop');
       }
 
       final trimmedLyrics = lyricsText.trim();
@@ -1574,10 +1579,31 @@ class LocalMusicProvider extends ChangeNotifier {
 
   Future<bool> deleteLocalSong(LocalSong song) async {
     final targetPath = song.filePath;
+    if (targetPath.trim().isEmpty) return false;
+
     final wasCurrent = currentSong?.filePath == targetPath;
     final wasPlayingCurrent = wasCurrent && _isPlaying;
 
-    // Remove ALL occurrences of `targetPath` in `_queueEntries` & `_originalQueueEntries`
+    // 1. Release native MediaPlayer file lock FIRST if this track is active/loaded
+    if (wasCurrent) {
+      _playbackSessionId++;
+      _isPlaying = false;
+      _hasPreparedNative = false;
+      if (Platform.isAndroid) {
+        await _systemChannel.invokeMethod<bool>('localStop');
+      }
+    }
+
+    // 2. Delete physical file via layered Android 11–15 Scoped Storage handler
+    final deleted = await _folderService.deleteLocalAudioFile(targetPath);
+    if (!deleted) {
+      // Keep in-memory library & queue intact if user cancelled or deletion failed
+      _syncProgressNotifiers();
+      notifyListeners();
+      return false;
+    }
+
+    // 3. Physical deletion confirmed: remove all occurrences from Queue & Library
     int removedBeforeCurrent = 0;
     final filteredQueue = <QueueEntry>[];
     for (int i = 0; i < _queueEntries.length; i++) {
@@ -1599,9 +1625,6 @@ class LocalMusicProvider extends ChangeNotifier {
       _positionMs = 0;
       _durationMs = 0;
       _hasPreparedNative = false;
-      if (Platform.isAndroid) {
-        _systemChannel.invokeMethod<bool>('localStop');
-      }
     } else {
       _currentIndex = (_currentIndex - removedBeforeCurrent).clamp(
         0,
@@ -1609,15 +1632,11 @@ class LocalMusicProvider extends ChangeNotifier {
       );
       if (wasCurrent) {
         if (wasPlayingCurrent) {
-          _startCurrentQueueTrack();
+          await _startCurrentQueueTrack();
         } else {
-          _playbackSessionId++;
           _positionMs = 0;
           _durationMs = currentSong?.durationMs ?? 0;
           _hasPreparedNative = false;
-          if (Platform.isAndroid) {
-            _systemChannel.invokeMethod<bool>('localStop');
-          }
         }
       }
     }
@@ -1648,7 +1667,7 @@ class LocalMusicProvider extends ChangeNotifier {
     _notifyExternalSync(oldPath: targetPath, newPath: null);
     await _saveLibraryCache();
     await _savePlayerSession();
-    return _folderService.deleteMediaFile(targetPath);
+    return true;
   }
 
   Future<void> _reloadSingleSongInMemory({
@@ -1728,10 +1747,26 @@ class LocalMusicProvider extends ChangeNotifier {
   // ===========================================================================
   // INCREMENTAL LIBRARY CACHE, PLAYER SESSION & FAVORITES PERSISTENCE
   // ===========================================================================
+  Future<File> _resolveDocFile(
+    Directory docs,
+    String primaryName,
+    String legacyName,
+  ) async {
+    final primary = File('${docs.path}/$primaryName');
+    if (await primary.exists()) return primary;
+    final legacy = File('${docs.path}/$legacyName');
+    if (await legacy.exists()) return legacy;
+    return primary;
+  }
+
   Future<bool> _loadLibraryAndSessionCache() async {
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final libFile = File('${docs.path}/musicevee_library_cache_v1.json');
+      final libFile = await _resolveDocFile(
+        docs,
+        'musevee_library_cache_v1.json',
+        'musicevee_library_cache_v1.json',
+      );
       if (!await libFile.exists()) return false;
 
       final rawLib = await libFile.readAsString();
@@ -1768,7 +1803,11 @@ class LocalMusicProvider extends ChangeNotifier {
       final byPath = {for (final s in _allSongs) s.filePath: s};
 
       // Restore last Musicolet player session & queue order
-      final sessionFile = File('${docs.path}/musicevee_player_session.json');
+      final sessionFile = await _resolveDocFile(
+        docs,
+        'musevee_player_session.json',
+        'musicevee_player_session.json',
+      );
       bool restoredQueue = false;
       if (await sessionFile.exists()) {
         final rawSession = await sessionFile.readAsString();
@@ -1874,7 +1913,7 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> _saveLibraryCache() async {
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final libFile = File('${docs.path}/musicevee_library_cache_v1.json');
+      final libFile = File('${docs.path}/musevee_library_cache_v1.json');
       final payload = <String, dynamic>{
         'version': 1,
         'folders': _availableFolders,
@@ -1887,7 +1926,7 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> _savePlayerSession() async {
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final sessionFile = File('${docs.path}/musicevee_player_session.json');
+      final sessionFile = File('${docs.path}/musevee_player_session.json');
       final payload = <String, dynamic>{
         'playMode': _playMode.index,
         'isShuffle': _isShuffle,
@@ -1904,10 +1943,15 @@ class LocalMusicProvider extends ChangeNotifier {
       await sessionFile.writeAsString(jsonEncode(payload));
     } catch (_) {}
   }
+
   Future<void> _loadFavorites() async {
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final f = File('${docs.path}/musicevee_favorites.json');
+      final f = await _resolveDocFile(
+        docs,
+        'musevee_favorites.json',
+        'musicevee_favorites.json',
+      );
       if (await f.exists()) {
         final raw = await f.readAsString();
         final decoded = jsonDecode(raw);
@@ -1923,7 +1967,7 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> _saveFavorites() async {
     try {
       final docs = await getApplicationDocumentsDirectory();
-      final f = File('${docs.path}/musicevee_favorites.json');
+      final f = File('${docs.path}/musevee_favorites.json');
       await f.writeAsString(jsonEncode(_favoritePaths.toList()), flush: true);
     } catch (_) {}
   }

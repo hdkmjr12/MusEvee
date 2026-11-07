@@ -400,11 +400,13 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   );
                 } else if (value == 'romaji') {
                   final ok = await localProvider.autoRomanizeLocalSong(song);
-                  if (ok && context.mounted) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
+                      SnackBar(
                         content: Text(
-                          'Lirik berhasil dikonversi ke Romaji (tanpa duplikat).',
+                          ok
+                              ? 'Lirik berhasil dikonversi ke Romaji (tanpa duplikat).'
+                              : 'Gagal mengonversi atau menyimpan lirik Romaji.',
                         ),
                       ),
                     );
@@ -855,7 +857,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          song?.title ?? 'MusicEvee Player',
+          song?.title ?? 'MusEvee Player',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
@@ -1573,11 +1575,13 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                       song,
                       includeMetadata: true,
                     );
-                    if (ok && context.mounted) {
+                    if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
+                        SnackBar(
                           content: Text(
-                            'Tag & lirik berhasil dikonversi ke Romaji.',
+                            ok
+                                ? 'Tag & lirik berhasil dikonversi ke Romaji.'
+                                : 'Gagal menyimpan perubahan Romaji ke file MP3.',
                           ),
                         ),
                       );
@@ -1699,15 +1703,30 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                               borderRadius: BorderRadius.circular(8),
                               onTap: () async {
                                 Navigator.of(ctx).pop();
-                                await lp.applyLyricsCandidateToSong(song, cand);
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Lirik ${cand.languageTag} berhasil ditanamkan ke MP3.',
-                                      ),
-                                    ),
+                                try {
+                                  await lp.applyLyricsCandidateToSong(
+                                    song,
+                                    cand,
                                   );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Lirik ${cand.languageTag} berhasil ditanamkan ke MP3.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Gagal menanamkan lirik ke MP3: $e',
+                                        ),
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                               child: Container(

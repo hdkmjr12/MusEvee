@@ -1,5 +1,7 @@
 package com.example.spotmeta_downloader
 
+import android.app.Activity
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -11,15 +13,19 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.MediaScannerConnection
 import android.media.audiofx.AudioEffect
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
@@ -44,6 +50,17 @@ class MainActivity : FlutterActivity() {
     private var localFocusRequest: AudioFocusRequest? = null
     private var resumeLocalOnFocusGain: Boolean = false
     private var resumeLocalAfterPreview: Boolean = false
+
+    // Android 11-15 Scoped Storage & All Files Access request tracking
+    private val reqAllFilesAccess = 2101
+    private val reqDeleteMedia = 2102
+    private val reqWriteMedia = 2103
+    private var pendingAllFilesResult: MethodChannel.Result? = null
+    private var pendingDeleteResult: MethodChannel.Result? = null
+    private var pendingDeletePath: String? = null
+    private var pendingWriteResult: MethodChannel.Result? = null
+    private var pendingWritePath: String? = null
+    private var pendingWriteBytes: ByteArray? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -166,41 +183,52 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "deleteMediaFile" -> {
-                    val path = call.argument<String>("path")
+                    val path = call.argument<String>("path")?.trim()
                     if (!path.isNullOrBlank()) {
-                        if (currentLocalPath == path) {
-                            stopLocalAudio(notifyFlutter = true)
-                        }
-                        var deleted = false
-                        try {
-                            val f = File(path)
-                            if (f.exists() && f.delete()) {
-                                deleted = true
-                            }
-                        } catch (_: Exception) {
-                        }
-                        try {
-                            val rows = applicationContext.contentResolver.delete(
-                                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                                "${MediaStore.MediaColumns.DATA} = ?",
-                                arrayOf(path)
-                            )
-                            if (rows > 0) deleted = true
-                        } catch (_: Exception) {
-                        }
-                        try {
-                            MediaScannerConnection.scanFile(
-                                applicationContext,
-                                arrayOf(path),
-                                null,
-                                null
-                            )
-                        } catch (_: Exception) {
-                        }
+                        val deleted = deleteMediaFileNonInteractive(path)
                         result.success(deleted)
                     } else {
                         result.success(false)
                     }
+                }
+                "deleteLocalAudioFile" -> {
+                    val path = call.argument<String>("path")?.trim()
+                    val allowSystemPrompt = call.argument<Boolean>("allowSystemPrompt") ?: true
+                    if (path.isNullOrBlank()) {
+                        result.success(
+                            mapOf(
+                                "deleted" to false,
+                                "needsAllFilesAccess" to false,
+                                "cancelledByUser" to false
+                            )
+                        )
+                    } else {
+                        deleteLocalAudioFileLayered(path, allowSystemPrompt, result)
+                    }
+                }
+                "writeBytesToMusicFile" -> {
+                    val path = call.argument<String>("path")?.trim()
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val allowSystemPrompt = call.argument<Boolean>("allowSystemPrompt") ?: true
+                    if (path.isNullOrBlank() || bytes == null || bytes.isEmpty()) {
+                        result.success(
+                            mapOf(
+                                "written" to false,
+                                "needsAllFilesAccess" to false,
+                                "cancelledByUser" to false
+                            )
+                        )
+                    } else {
+                        writeBytesToMusicFileLayered(path, bytes, allowSystemPrompt, result)
+                    }
+                }
+                "hasAllFilesAccess" -> {
+                    val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                        Environment.isExternalStorageManager()
+                    result.success(granted)
+                }
+                "requestAllFilesAccess" -> {
+                    requestAllFilesAccessNative(result)
                 }
                 "getInitialSharedText" -> {
                     val text = pendingSharedText
@@ -794,8 +822,29 @@ class MainActivity : FlutterActivity() {
     }
 
     // =========================================================================
-    // LOCAL LIBRARY SCANNER & ID3v2 (USLT + APIC) METADATA EXTRACTOR
+    // LOCAL LIBRARY SCANNER & ID3v2 (USLT + APIC + .LRC FALLBACK) EXTRACTOR
     // =========================================================================
+    private val excludedSystemAudioDirs = setOf(
+        "ringtones_music",
+        "ringtones",
+        "alarms",
+        "notifications",
+        "ui",
+        ".thumbnails"
+    )
+    private val minValidMusicBytes = 16384L // Ignore <16KB system sound stubs / corrupt fragments
+
+    private fun isExcludedAudioPath(path: String): Boolean {
+        val segments = path.replace('\\', '/').split('/')
+        for (seg in segments) {
+            val lower = seg.lowercase()
+            if (seg.startsWith(".") || excludedSystemAudioDirs.contains(lower)) {
+                return true
+            }
+        }
+        return false
+    }
+
     private fun discoverLocalAudioFiles(requestedFolders: List<String>?): LinkedHashMap<String, File> {
         val audioExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "opus")
         val discoveredFiles = LinkedHashMap<String, File>()
@@ -807,6 +856,7 @@ class MainActivity : FlutterActivity() {
         val baseFolders = requestedFolders?.takeIf { it.isNotEmpty() }
             ?: listOf("Music Barat", "Music Japan", "Music Random")
         for (folderName in baseFolders) {
+            if (excludedSystemAudioDirs.contains(folderName.lowercase())) continue
             val dir = File(musicRoot, folderName)
             collectAudioFilesRecursively(dir, audioExtensions, discoveredFiles, maxDepth = 3)
             val dlDir = File(downloadRoot, folderName)
@@ -816,13 +866,14 @@ class MainActivity : FlutterActivity() {
         // 2. Scan remaining subdirectories in /storage/emulated/0/Music
         collectAudioFilesRecursively(musicRoot, audioExtensions, discoveredFiles, maxDepth = 4)
 
-        // 3. Supplement via MediaStore query for any audio files under /Music or /SpotMeta
+        // 3. Supplement via MediaStore query for music files under /Music or /SpotMeta
         try {
             val projection = arrayOf(MediaStore.MediaColumns.DATA)
+            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
             applicationContext.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                null,
+                selection,
                 null,
                 "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
             )?.use { cursor ->
@@ -830,11 +881,12 @@ class MainActivity : FlutterActivity() {
                 if (dataCol >= 0) {
                     while (cursor.moveToNext()) {
                         val rawPath = cursor.getString(dataCol) ?: continue
-                        if (rawPath.contains("/Music/", ignoreCase = true) ||
-                            rawPath.contains("/SpotMeta/", ignoreCase = true)
+                        if ((rawPath.contains("/Music/", ignoreCase = true) ||
+                                rawPath.contains("/SpotMeta/", ignoreCase = true)) &&
+                            !isExcludedAudioPath(rawPath)
                         ) {
                             val f = File(rawPath)
-                            if (f.exists() && f.isFile && f.length() > 1024L) {
+                            if (f.exists() && f.isFile && f.length() >= minValidMusicBytes) {
                                 discoveredFiles.putIfAbsent(f.absolutePath, f)
                             }
                         }
@@ -881,16 +933,23 @@ class MainActivity : FlutterActivity() {
                 val cachedMod = (cached["lastModifiedMs"] as? Number)?.toLong() ?: -1L
                 val cachedSize = (cached["sizeBytes"] as? Number)?.toLong() ?: -1L
                 if (cachedMod == file.lastModified() && cachedSize == file.length()) {
-                    val cachedCoverPath = (cached["coverFilePath"] as? String)?.trim()
-                    if (cachedCoverPath.isNullOrEmpty()) {
-                        isUpToDate = true
-                    } else {
-                        val covFile = File(cachedCoverPath)
-                        if (covFile.exists() &&
-                            covFile.length() > 0L &&
-                            covFile.parentFile?.absolutePath == persistentCoversRoot
-                        ) {
+                    val cachedHasLyrics = cached["hasLyrics"] == true
+                    val companionLrcExists = !cachedHasLyrics &&
+                        File(file.parentFile, "${file.nameWithoutExtension}.lrc").let {
+                            it.exists() && it.isFile && it.length() > 0L
+                        }
+                    if (!companionLrcExists) {
+                        val cachedCoverPath = (cached["coverFilePath"] as? String)?.trim()
+                        if (cachedCoverPath.isNullOrEmpty()) {
                             isUpToDate = true
+                        } else {
+                            val covFile = File(cachedCoverPath)
+                            if (covFile.exists() &&
+                                covFile.length() > 0L &&
+                                covFile.parentFile?.absolutePath == persistentCoversRoot
+                            ) {
+                                isUpToDate = true
+                            }
                         }
                     }
                 }
@@ -927,10 +986,11 @@ class MainActivity : FlutterActivity() {
             if (child.name.startsWith(".")) continue
             if (child.isFile) {
                 val ext = child.extension.lowercase()
-                if (extensions.contains(ext) && child.length() > 1024L) {
+                if (extensions.contains(ext) && child.length() >= minValidMusicBytes) {
                     out.putIfAbsent(child.absolutePath, child)
                 }
             } else if (child.isDirectory && maxDepth > 0) {
+                if (excludedSystemAudioDirs.contains(child.name.lowercase())) continue
                 collectAudioFilesRecursively(child, extensions, out, maxDepth - 1)
             }
         }
@@ -1039,6 +1099,13 @@ class MainActivity : FlutterActivity() {
             dominantColor = computeDominantAmbientColor(coverBytes)
         }
 
+        // Fallback to companion .lrc file if legacy MP3 has no embedded USLT frame
+        val resolvedLyrics = if (!id3.usltLyrics.isNullOrBlank()) {
+            id3.usltLyrics
+        } else {
+            readCompanionLrcIfPresent(file)
+        }
+
         val folderName = file.parentFile?.name ?: "Music"
         val bitrateKbps = if (bitrateBps > 0) (bitrateBps / 1000L).toInt() else 320
 
@@ -1055,7 +1122,7 @@ class MainActivity : FlutterActivity() {
             "bitrateKbps" to bitrateKbps,
             "sampleRateHz" to sampleRateHz,
             "coverFilePath" to coverFilePath,
-            "usltLyrics" to id3.usltLyrics,
+            "usltLyrics" to resolvedLyrics,
             "dominantColor" to dominantColor,
             "lastModifiedMs" to file.lastModified()
         )
@@ -1545,6 +1612,477 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun readCompanionLrcIfPresent(audioFile: File): String? {
+        return try {
+            val lrcFile = File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.lrc")
+            if (lrcFile.exists() && lrcFile.isFile && lrcFile.length() in 1L..262144L) {
+                val text = lrcFile.readText(StandardCharsets.UTF_8).trim()
+                text.takeIf { it.isNotEmpty() }
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun deleteCompanionLrcIfPresent(audioPath: String) {
+        try {
+            val af = File(audioPath)
+            val lrcFile = File(af.parentFile, "${af.nameWithoutExtension}.lrc")
+            if (lrcFile.exists() && lrcFile.isFile) {
+                lrcFile.delete()
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    // =========================================================================
+    // ANDROID 11-15 SCOPED STORAGE & MEDIASTORE FILE MANAGEMENT
+    // =========================================================================
+    private fun findMediaStoreAudioUri(path: String): Uri? {
+        return try {
+            val projection = arrayOf(MediaStore.Audio.Media._ID)
+            val selection = "${MediaStore.MediaColumns.DATA} = ?"
+            val selectionArgs = arrayOf(path)
+            applicationContext.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idCol = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                    if (idCol >= 0) {
+                        val id = cursor.getLong(idCol)
+                        return ContentUris.withAppendedId(
+                            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                            id
+                        )
+                    }
+                }
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun purgeMediaStoreRow(path: String, itemUri: Uri? = null) {
+        if (itemUri != null) {
+            try {
+                applicationContext.contentResolver.delete(itemUri, null, null)
+            } catch (_: Exception) {
+            }
+        }
+        try {
+            applicationContext.contentResolver.delete(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                "${MediaStore.MediaColumns.DATA} = ?",
+                arrayOf(path)
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun scanMediaPath(path: String, mimeType: String? = null) {
+        try {
+            val mimes = if (mimeType != null) arrayOf(mimeType) else null
+            MediaScannerConnection.scanFile(
+                applicationContext,
+                arrayOf(path),
+                mimes,
+                null
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun deleteMediaFileNonInteractive(path: String): Boolean {
+        if (currentLocalPath == path) {
+            stopLocalAudio(notifyFlutter = false, abandonFocus = true)
+        }
+        val targetFile = File(path)
+        if (!targetFile.exists()) {
+            purgeMediaStoreRow(path)
+            scanMediaPath(path)
+            return true
+        }
+        try {
+            targetFile.delete()
+        } catch (_: Exception) {
+        }
+        val itemUri = findMediaStoreAudioUri(path)
+        if (targetFile.exists()) {
+            purgeMediaStoreRow(path, itemUri)
+        } else {
+            purgeMediaStoreRow(path, itemUri)
+        }
+        val physicallyDeleted = !targetFile.exists()
+        if (physicallyDeleted) {
+            deleteCompanionLrcIfPresent(path)
+            scanMediaPath(path)
+        }
+        return physicallyDeleted
+    }
+
+    @Suppress("DEPRECATION")
+    private fun deleteLocalAudioFileLayered(
+        path: String,
+        allowSystemPrompt: Boolean,
+        result: MethodChannel.Result
+    ) {
+        // Layer 1: Release MediaPlayer file lock if this track is currently loaded
+        if (currentLocalPath == path) {
+            stopLocalAudio(notifyFlutter = false, abandonFocus = true)
+        }
+
+        val targetFile = File(path)
+        if (!targetFile.exists()) {
+            deleteCompanionLrcIfPresent(path)
+            purgeMediaStoreRow(path)
+            scanMediaPath(path)
+            result.success(
+                mapOf(
+                    "deleted" to true,
+                    "needsAllFilesAccess" to false,
+                    "cancelledByUser" to false
+                )
+            )
+            return
+        }
+
+        // Layer 2: Direct filesystem delete (succeeds for app-owned files or All Files Access)
+        try {
+            targetFile.delete()
+        } catch (_: Exception) {
+        }
+
+        // Layer 3: MediaStore ContentResolver delete (both by _ID item Uri and DATA=?)
+        val itemUri = findMediaStoreAudioUri(path)
+        if (targetFile.exists()) {
+            purgeMediaStoreRow(path, itemUri)
+        } else {
+            purgeMediaStoreRow(path, itemUri)
+        }
+
+        if (!targetFile.exists()) {
+            deleteCompanionLrcIfPresent(path)
+            scanMediaPath(path)
+            result.success(
+                mapOf(
+                    "deleted" to true,
+                    "needsAllFilesAccess" to false,
+                    "cancelledByUser" to false
+                )
+            )
+            return
+        }
+
+        // Layer 4: Android 11-15 Scoped Storage OS confirmation sheet or All Files Access signal
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (allowSystemPrompt && itemUri != null && pendingDeleteResult == null) {
+                try {
+                    val pi = MediaStore.createDeleteRequest(
+                        applicationContext.contentResolver,
+                        listOf(itemUri)
+                    )
+                    pendingDeleteResult = result
+                    pendingDeletePath = path
+                    startIntentSenderForResult(
+                        pi.intentSender,
+                        reqDeleteMedia,
+                        null,
+                        0,
+                        0,
+                        0,
+                        null
+                    )
+                    return
+                } catch (_: Exception) {
+                    pendingDeleteResult = null
+                    pendingDeletePath = null
+                }
+            }
+
+            val needsAllFiles = !Environment.isExternalStorageManager()
+            result.success(
+                mapOf(
+                    "deleted" to false,
+                    "needsAllFilesAccess" to needsAllFiles,
+                    "cancelledByUser" to false
+                )
+            )
+            return
+        }
+
+        val gone = !targetFile.exists()
+        if (gone) {
+            scanMediaPath(path)
+        }
+        result.success(
+            mapOf(
+                "deleted" to gone,
+                "needsAllFilesAccess" to false,
+                "cancelledByUser" to false
+            )
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun writeBytesToMusicFileLayered(
+        path: String,
+        bytes: ByteArray,
+        allowSystemPrompt: Boolean,
+        result: MethodChannel.Result
+    ) {
+        if (currentLocalPath == path) {
+            stopLocalAudio(notifyFlutter = false, abandonFocus = true)
+        }
+
+        val targetFile = File(path)
+        try {
+            targetFile.parentFile?.let { parent ->
+                if (!parent.exists()) parent.mkdirs()
+            }
+            FileOutputStream(targetFile, false).use { out ->
+                out.write(bytes)
+                out.flush()
+            }
+            if (targetFile.exists() && targetFile.length() > 0L) {
+                scanMediaPath(path, "audio/mpeg")
+                result.success(
+                    mapOf(
+                        "written" to true,
+                        "needsAllFilesAccess" to false,
+                        "cancelledByUser" to false
+                    )
+                )
+                return
+            }
+        } catch (_: Exception) {
+        }
+
+        val itemUri = findMediaStoreAudioUri(path)
+        if (itemUri != null) {
+            try {
+                applicationContext.contentResolver.openOutputStream(itemUri, "rwt")?.use { out ->
+                    out.write(bytes)
+                    out.flush()
+                }
+                if (targetFile.exists() && targetFile.length() > 0L) {
+                    scanMediaPath(path, "audio/mpeg")
+                    result.success(
+                        mapOf(
+                            "written" to true,
+                            "needsAllFilesAccess" to false,
+                            "cancelledByUser" to false
+                        )
+                    )
+                    return
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (allowSystemPrompt && itemUri != null && pendingWriteResult == null) {
+                try {
+                    val pi = MediaStore.createWriteRequest(
+                        applicationContext.contentResolver,
+                        listOf(itemUri)
+                    )
+                    pendingWriteResult = result
+                    pendingWritePath = path
+                    pendingWriteBytes = bytes
+                    startIntentSenderForResult(
+                        pi.intentSender,
+                        reqWriteMedia,
+                        null,
+                        0,
+                        0,
+                        0,
+                        null
+                    )
+                    return
+                } catch (_: Exception) {
+                    pendingWriteResult = null
+                    pendingWritePath = null
+                    pendingWriteBytes = null
+                }
+            }
+
+            val needsAllFiles = !Environment.isExternalStorageManager()
+            result.success(
+                mapOf(
+                    "written" to false,
+                    "needsAllFilesAccess" to needsAllFiles,
+                    "cancelledByUser" to false
+                )
+            )
+            return
+        }
+
+        result.success(
+            mapOf(
+                "written" to false,
+                "needsAllFilesAccess" to false,
+                "cancelledByUser" to false
+            )
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun requestAllFilesAccessNative(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            Environment.isExternalStorageManager()
+        ) {
+            result.success(true)
+            return
+        }
+        if (pendingAllFilesResult != null) {
+            result.success(false)
+            return
+        }
+        try {
+            pendingAllFilesResult = result
+            val appIntent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            if (appIntent.resolveActivity(packageManager) != null) {
+                startActivityForResult(appIntent, reqAllFilesAccess)
+            } else {
+                val fallbackIntent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                startActivityForResult(fallbackIntent, reqAllFilesAccess)
+            }
+        } catch (_: Exception) {
+            pendingAllFilesResult = null
+            result.success(false)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        when (requestCode) {
+            reqAllFilesAccess -> {
+                val cb = pendingAllFilesResult
+                pendingAllFilesResult = null
+                val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                    Environment.isExternalStorageManager()
+                cb?.success(granted)
+                return
+            }
+            reqDeleteMedia -> {
+                val cb = pendingDeleteResult
+                val path = pendingDeletePath
+                pendingDeleteResult = null
+                pendingDeletePath = null
+
+                if (path != null) {
+                    val f = File(path)
+                    if (resultCode == Activity.RESULT_OK && f.exists()) {
+                        try {
+                            f.delete()
+                        } catch (_: Exception) {
+                        }
+                        if (f.exists()) {
+                            purgeMediaStoreRow(path, findMediaStoreAudioUri(path))
+                        }
+                    }
+                    val gone = !f.exists()
+                    if (gone) {
+                        deleteCompanionLrcIfPresent(path)
+                        scanMediaPath(path)
+                    }
+                    val cancelled = !gone && resultCode == Activity.RESULT_CANCELED
+                    val needsAllFiles = !gone &&
+                        !cancelled &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        !Environment.isExternalStorageManager()
+                    cb?.success(
+                        mapOf(
+                            "deleted" to gone,
+                            "needsAllFilesAccess" to needsAllFiles,
+                            "cancelledByUser" to cancelled
+                        )
+                    )
+                } else {
+                    cb?.success(
+                        mapOf(
+                            "deleted" to false,
+                            "needsAllFilesAccess" to false,
+                            "cancelledByUser" to true
+                        )
+                    )
+                }
+                return
+            }
+            reqWriteMedia -> {
+                val cb = pendingWriteResult
+                val path = pendingWritePath
+                val bytes = pendingWriteBytes
+                pendingWriteResult = null
+                pendingWritePath = null
+                pendingWriteBytes = null
+
+                if (path != null && bytes != null && resultCode == Activity.RESULT_OK) {
+                    var written = false
+                    val itemUri = findMediaStoreAudioUri(path)
+                    if (itemUri != null) {
+                        try {
+                            applicationContext.contentResolver.openOutputStream(itemUri, "rwt")
+                                ?.use { out ->
+                                    out.write(bytes)
+                                    out.flush()
+                                }
+                            written = true
+                        } catch (_: Exception) {
+                        }
+                    }
+                    if (!written) {
+                        try {
+                            FileOutputStream(File(path), false).use { out ->
+                                out.write(bytes)
+                                out.flush()
+                            }
+                            written = true
+                        } catch (_: Exception) {
+                        }
+                    }
+                    if (written) {
+                        scanMediaPath(path, "audio/mpeg")
+                    }
+                    val needsAllFiles = !written &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        !Environment.isExternalStorageManager()
+                    cb?.success(
+                        mapOf(
+                            "written" to written,
+                            "needsAllFilesAccess" to needsAllFiles,
+                            "cancelledByUser" to false
+                        )
+                    )
+                } else {
+                    val cancelled = resultCode == Activity.RESULT_CANCELED
+                    val needsAllFiles = !cancelled &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        !Environment.isExternalStorageManager()
+                    cb?.success(
+                        mapOf(
+                            "written" to false,
+                            "needsAllFilesAccess" to needsAllFiles,
+                            "cancelledByUser" to cancelled
+                        )
+                    )
+                }
+                return
+            }
+        }
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -1556,6 +2094,12 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        pendingAllFilesResult = null
+        pendingDeleteResult = null
+        pendingDeletePath = null
+        pendingWriteResult = null
+        pendingWritePath = null
+        pendingWriteBytes = null
         stopPreviewAudio(notifyFlutter = false, allowResumeLocal = false)
         stopLocalAudio(notifyFlutter = false, abandonFocus = true)
         ioExecutor.shutdownNow()
