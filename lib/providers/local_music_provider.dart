@@ -30,6 +30,28 @@ enum EmbeddedLyricsDisplayMode {
   plain,
 }
 
+/// Lightweight value object isolating 200ms (`5 Hz`) playback position updates
+/// so only Seekbar and MiniPlayer progress bar rebuild — NOT the 8 tabs!
+class PlaybackProgress {
+  final int positionMs;
+  final int durationMs;
+
+  const PlaybackProgress({
+    required this.positionMs,
+    required this.durationMs,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackProgress &&
+          positionMs == other.positionMs &&
+          durationMs == other.durationMs;
+
+  @override
+  int get hashCode => Object.hash(positionMs, durationMs);
+}
+
 class LocalMusicProvider extends ChangeNotifier {
   static const MethodChannel _systemChannel = MethodChannel(
     'com.spotmeta.downloader/system',
@@ -60,10 +82,59 @@ class LocalMusicProvider extends ChangeNotifier {
       List<String>.from(FolderService.defaultFolders);
   final Set<String> _favoritePaths = {};
   bool _isLoadingLibrary = false;
+  bool _isSyncingLibrary = false;
 
-  // Active Playback & Queue State
-  List<LocalSong> _queue = [];
+  // Memoized O(N log N) library groupings (invalidated ONLY when `_allSongs` or `_availableFolders` mutates)
+  Map<String, List<LocalSong>>? _cachedFolderSongsMap;
+  Map<String, List<LocalSong>>? _cachedAlbumSongsMap;
+  Map<String, List<LocalSong>>? _cachedArtistSongsMap;
+
+  void _invalidateGroupingCaches() {
+    _cachedFolderSongsMap = null;
+    _cachedAlbumSongsMap = null;
+    _cachedArtistSongsMap = null;
+  }
+
+  // Dedicated 200ms progress & active lyric notifiers to prevent 5 Hz global tree rebuilds
+  final ValueNotifier<PlaybackProgress> progressNotifier =
+      ValueNotifier<PlaybackProgress>(
+    const PlaybackProgress(positionMs: 0, durationMs: 0),
+  );
+  final ValueNotifier<int> activeLyricIndexNotifier = ValueNotifier<int>(-1);
+
+  void _syncProgressNotifiers() {
+    progressNotifier.value = PlaybackProgress(
+      positionMs: _positionMs,
+      durationMs: durationMs,
+    );
+    activeLyricIndexNotifier.value = activeSyncedLyricIndex;
+  }
+
+  @override
+  void dispose() {
+    progressNotifier.dispose();
+    activeLyricIndexNotifier.dispose();
+    super.dispose();
+  }
+
+  /// Optional 2-way sync callback so `DownloaderProvider` immediately updates
+  /// folder counts, duplicate badges, and history file paths without disk rescans.
+  void Function({
+    required List<LocalSong> songs,
+    required List<String> folders,
+    String? oldPath,
+    String? newPath,
+    LocalSong? updatedSong,
+  })? onLocalLibraryMutated;
+
+  // Active Playback & Musicolet True Queue-Order Shuffle State
+  int _nextQueueEntryCounter = 1;
+  List<QueueEntry> _queueEntries = [];
+  List<QueueEntry> _originalQueueEntries = [];
   int _currentIndex = -1;
+  int _playbackSessionId = 0;
+  int _lastCompletedSessionId = -1;
+  int _seekGuardUntilEpochMs = 0;
   bool _isPlaying = false;
   bool _hasPreparedNative = false;
   int _positionMs = 0;
@@ -71,6 +142,8 @@ class LocalMusicProvider extends ChangeNotifier {
   double _volume = 0.85;
   MusicoletPlayMode _playMode = MusicoletPlayMode.repeatAll;
   bool _isShuffle = false;
+
+  String _allocateQueueId() => 'qe_${_nextQueueEntryCounter++}';
 
   // Musicolet Now Playing Lyrics Overlay State
   bool _showLyricsOverlay = true;
@@ -93,12 +166,15 @@ class LocalMusicProvider extends ChangeNotifier {
   List<String> get availableFolders => List.unmodifiable(_availableFolders);
   bool get isLoadingLibrary => _isLoadingLibrary;
 
-  List<LocalSong> get queue => List.unmodifiable(_queue);
+  List<QueueEntry> get queueEntries => List.unmodifiable(_queueEntries);
+  List<LocalSong> get queue =>
+      List.unmodifiable(_queueEntries.map((e) => e.song));
   int get currentIndex => _currentIndex;
-  LocalSong? get currentSong =>
-      (_currentIndex >= 0 && _currentIndex < _queue.length)
-          ? _queue[_currentIndex]
+  QueueEntry? get currentQueueEntry =>
+      (_currentIndex >= 0 && _currentIndex < _queueEntries.length)
+          ? _queueEntries[_currentIndex]
           : null;
+  LocalSong? get currentSong => currentQueueEntry?.song;
 
   bool get isPlaying => _isPlaying;
   int get positionMs => _positionMs;
@@ -128,6 +204,9 @@ class LocalMusicProvider extends ChangeNotifier {
 
   /// Grouped songs per folder (always includes `Music Barat`, `Music Japan`, `Music Random`).
   Map<String, List<LocalSong>> get folderSongsMap {
+    final cached = _cachedFolderSongsMap;
+    if (cached != null) return cached;
+
     final map = <String, List<LocalSong>>{};
     for (final f in _availableFolders) {
       map[f] = [];
@@ -135,11 +214,15 @@ class LocalMusicProvider extends ChangeNotifier {
     for (final song in _allSongs) {
       map.putIfAbsent(song.folderName, () => []).add(song);
     }
+    _cachedFolderSongsMap = map;
     return map;
   }
 
   /// Grouped songs per Album.
   Map<String, List<LocalSong>> get albumSongsMap {
+    final cached = _cachedAlbumSongsMap;
+    if (cached != null) return cached;
+
     final map = <String, List<LocalSong>>{};
     for (final song in _allSongs) {
       final key = song.album.trim().isNotEmpty ? song.album.trim() : 'Single';
@@ -147,11 +230,16 @@ class LocalMusicProvider extends ChangeNotifier {
     }
     final sortedKeys = map.keys.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return {for (final k in sortedKeys) k: map[k]!};
+    final result = {for (final k in sortedKeys) k: map[k]!};
+    _cachedAlbumSongsMap = result;
+    return result;
   }
 
   /// Grouped songs per Artist.
   Map<String, List<LocalSong>> get artistSongsMap {
+    final cached = _cachedArtistSongsMap;
+    if (cached != null) return cached;
+
     final map = <String, List<LocalSong>>{};
     for (final song in _allSongs) {
       final key = song.artist.trim().isNotEmpty
@@ -161,7 +249,9 @@ class LocalMusicProvider extends ChangeNotifier {
     }
     final sortedKeys = map.keys.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return {for (final k in sortedKeys) k: map[k]!};
+    final result = {for (final k in sortedKeys) k: map[k]!};
+    _cachedArtistSongsMap = result;
+    return result;
   }
 
   /// Filtered local songs for the Search Lokal tab.
@@ -207,8 +297,17 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> _initialize() async {
     if (!Platform.isAndroid) return;
     await _loadFavorites();
+    final hydrated = await _loadLibraryAndSessionCache();
+    if (hydrated) {
+      _syncProgressNotifiers();
+      notifyListeners();
+      _notifyExternalSync();
+    }
     await _syncDeviceVolume();
-    await refreshLibrary(requestPermission: true);
+    await refreshLibrary(
+      requestPermission: true,
+      silentBackground: hydrated,
+    );
   }
 
   Future<void> _requestAudioReadPermissions() async {
@@ -227,47 +326,148 @@ class LocalMusicProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Scans `/storage/emulated/0/Music/*` and MediaStore via `MainActivity.kt`
-  /// to load all local MP3s along with their `APIC` covers, `USLT` lyrics,
-  /// and dominant ambient colors.
-  Future<void> refreshLibrary({bool requestPermission = false}) async {
+  /// Incrementally delta-syncs `/storage/emulated/0/Music/*` and MediaStore via
+  /// `MainActivity.kt` (`scanLocalMusicLibraryDelta`), inspecting only new or
+  /// modified MP3 files (`lastModifiedMs` + `sizeBytes` + persistent cover file)
+  /// and persisting `musicevee_library_cache_v1.json`.
+  Future<void> refreshLibrary({
+    bool requestPermission = false,
+    bool silentBackground = false,
+  }) async {
     if (!Platform.isAndroid) return;
-    if (_isLoadingLibrary) return;
+    if (_isSyncingLibrary) return;
 
-    _isLoadingLibrary = true;
-    notifyListeners();
+    _isSyncingLibrary = true;
+    final showLoadingSpinner = !silentBackground || _allSongs.isEmpty;
+    if (showLoadingSpinner) {
+      _isLoadingLibrary = true;
+      notifyListeners();
+    }
 
     try {
       if (requestPermission) {
         await _requestAudioReadPermissions();
       }
+      final prevFolders = List<String>.from(_availableFolders);
       _availableFolders = await _folderService.listAvailableFolders();
 
-      final rawList = await _systemChannel.invokeMethod<List<dynamic>>(
-        'scanLocalMusicLibrary',
-        {'folders': _availableFolders},
+      final cachedIndex = <String, Map<String, dynamic>>{
+        for (final s in _allSongs)
+          s.filePath: {
+            'lastModifiedMs': s.lastModifiedMs,
+            'sizeBytes': s.sizeBytes,
+            'coverFilePath': s.coverFilePath,
+          },
+      };
+
+      final deltaResult =
+          await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'scanLocalMusicLibraryDelta',
+        {
+          'folders': _availableFolders,
+          'cachedIndex': cachedIndex,
+        },
       );
 
-      final parsed = <LocalSong>[];
-      if (rawList != null) {
-        for (final item in rawList) {
+      List<LocalSong> nextSongs;
+      bool libraryMutated = false;
+
+      if (deltaResult != null) {
+        final rawPresent = deltaResult['presentPaths'] as List<dynamic>? ??
+            const <dynamic>[];
+        final rawUpdated = deltaResult['updatedTracks'] as List<dynamic>? ??
+            const <dynamic>[];
+
+        final presentSet = rawPresent
+            .map((e) => e?.toString() ?? '')
+            .where((p) => p.isNotEmpty)
+            .toSet();
+        final updatedByPath = <String, LocalSong>{};
+        for (final item in rawUpdated) {
           if (item is Map) {
             final song = LocalSong.fromNativeMap(item);
             if (song.filePath.isNotEmpty) {
-              parsed.add(song);
+              updatedByPath[song.filePath] = song;
             }
           }
         }
+
+        final existingByPath = {for (final s in _allSongs) s.filePath: s};
+        final removedSongs = _allSongs
+            .where((s) => !presentSet.contains(s.filePath))
+            .toList();
+
+        if (updatedByPath.isNotEmpty ||
+            removedSongs.isNotEmpty ||
+            existingByPath.length != presentSet.length) {
+          libraryMutated = true;
+          final merged = <LocalSong>[];
+          for (final path in presentSet) {
+            final updated = updatedByPath[path];
+            if (updated != null) {
+              merged.add(updated);
+            } else {
+              final existing = existingByPath[path];
+              if (existing != null) {
+                merged.add(existing);
+              }
+            }
+          }
+          merged.sort((a, b) {
+            final cmp = b.lastModifiedMs.compareTo(a.lastModifiedMs);
+            if (cmp != 0) return cmp;
+            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+          });
+          nextSongs = merged;
+
+          // Clean up orphan covers for files removed externally outside MusicEvee
+          if (removedSongs.isNotEmpty) {
+            final activeCovers = nextSongs
+                .map((s) => s.coverFilePath)
+                .whereType<String>()
+                .toSet();
+            for (final rem in removedSongs) {
+              final cov = rem.coverFilePath;
+              if (cov != null && cov.isNotEmpty && !activeCovers.contains(cov)) {
+                try {
+                  final cf = File(cov);
+                  if (await cf.exists()) {
+                    await cf.delete();
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+        } else {
+          nextSongs = _allSongs;
+        }
+      } else {
+        // Fallback if native delta handler is unavailable
+        final rawList = await _systemChannel.invokeMethod<List<dynamic>>(
+          'scanLocalMusicLibrary',
+          {'folders': _availableFolders},
+        );
+        final parsed = <LocalSong>[];
+        if (rawList != null) {
+          for (final item in rawList) {
+            if (item is Map) {
+              final song = LocalSong.fromNativeMap(item);
+              if (song.filePath.isNotEmpty) {
+                parsed.add(song);
+              }
+            }
+          }
+        }
+        parsed.sort((a, b) {
+          final cmp = b.lastModifiedMs.compareTo(a.lastModifiedMs);
+          if (cmp != 0) return cmp;
+          return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+        });
+        nextSongs = parsed;
+        libraryMutated = true;
       }
 
-      // Sort newest modified first within library, or title-sorted
-      parsed.sort((a, b) {
-        final cmp = b.lastModifiedMs.compareTo(a.lastModifiedMs);
-        if (cmp != 0) return cmp;
-        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-      });
-
-      _allSongs = parsed;
+      _allSongs = nextSongs;
 
       // Ensure any extra folder names discovered are in _availableFolders
       final seenLower = _availableFolders.map((f) => f.toLowerCase()).toSet();
@@ -279,22 +479,146 @@ class LocalMusicProvider extends ChangeNotifier {
         }
       }
 
-      // Refresh queue items with updated metadata if paths match
-      if (_queue.isNotEmpty) {
+      final foldersMutated = !listEquals(prevFolders, _availableFolders);
+      if (libraryMutated || foldersMutated) {
+        _invalidateGroupingCaches();
+      }
+
+      // Sync queue items with updated metadata & prune externally deleted files
+      if (_queueEntries.isNotEmpty) {
         final byPath = {for (final s in _allSongs) s.filePath: s};
-        _queue = _queue.map((q) => byPath[q.filePath] ?? q).toList();
+        final activeQueueId = currentQueueEntry?.queueId;
+        _queueEntries = _queueEntries
+            .where((e) => byPath.containsKey(e.song.filePath))
+            .map((e) => e.copyWith(song: byPath[e.song.filePath]!))
+            .toList();
+        _originalQueueEntries = _originalQueueEntries
+            .where((e) => byPath.containsKey(e.song.filePath))
+            .map((e) => e.copyWith(song: byPath[e.song.filePath]!))
+            .toList();
+
+        if (_queueEntries.isEmpty) {
+          if (_allSongs.isNotEmpty) {
+            _setQueueFromSongs(_allSongs);
+            _durationMs = _queueEntries.first.song.durationMs;
+            _hasPreparedNative = false;
+          } else {
+            _currentIndex = -1;
+            _positionMs = 0;
+            _durationMs = 0;
+            _hasPreparedNative = false;
+          }
+        } else if (activeQueueId != null) {
+          final restoredIdx = _queueEntries.indexWhere(
+            (e) => e.queueId == activeQueueId,
+          );
+          _currentIndex = restoredIdx != -1
+              ? restoredIdx
+              : _currentIndex.clamp(0, _queueEntries.length - 1);
+        }
       } else if (_allSongs.isNotEmpty) {
         // Pre-populate queue with all local songs ready to play on first launch
-        _queue = List<LocalSong>.from(_allSongs);
-        _currentIndex = 0;
-        _durationMs = _queue.first.durationMs;
+        _setQueueFromSongs(_allSongs);
+        _durationMs = _queueEntries.first.song.durationMs;
         _hasPreparedNative = false;
+      }
+
+      _syncProgressNotifiers();
+      if (libraryMutated || foldersMutated) {
+        await _saveLibraryCache();
+        await _savePlayerSession();
+      }
+      if (libraryMutated || foldersMutated || !silentBackground) {
+        _notifyExternalSync();
       }
     } catch (e) {
       debugPrint('[MusicEvee] refreshLibrary gagal: $e');
     } finally {
+      _isSyncingLibrary = false;
+      final wasLoading = _isLoadingLibrary;
       _isLoadingLibrary = false;
-      notifyListeners();
+      if (wasLoading || !silentBackground) {
+        notifyListeners();
+      } else {
+        notifyListeners();
+      }
+    }
+  }
+
+  void _notifyExternalSync({
+    String? oldPath,
+    String? newPath,
+    LocalSong? updatedSong,
+  }) {
+    onLocalLibraryMutated?.call(
+      songs: _allSongs,
+      folders: _availableFolders,
+      oldPath: oldPath,
+      newPath: newPath,
+      updatedSong: updatedSong,
+    );
+  }
+
+  void _fisherYatesShuffle(List<QueueEntry> list) {
+    for (int i = list.length - 1; i > 0; i--) {
+      final j = _random.nextInt(i + 1);
+      if (i != j) {
+        final tmp = list[i];
+        list[i] = list[j];
+        list[j] = tmp;
+      }
+    }
+  }
+
+  void _setQueueFromSongs(
+    List<LocalSong> songs, {
+    LocalSong? startWithSong,
+    bool? forceShuffle,
+  }) {
+    final baseEntries = songs
+        .map((s) => QueueEntry(queueId: _allocateQueueId(), song: s))
+        .toList();
+
+    int chosenIdx = 0;
+    if (startWithSong != null) {
+      chosenIdx = baseEntries.indexWhere(
+        (e) => e.song.filePath == startWithSong.filePath,
+      );
+      if (chosenIdx == -1) {
+        baseEntries.insert(
+          0,
+          QueueEntry(queueId: _allocateQueueId(), song: startWithSong),
+        );
+        chosenIdx = 0;
+      }
+    }
+
+    _originalQueueEntries = List<QueueEntry>.from(baseEntries);
+    if (forceShuffle != null) {
+      _isShuffle = forceShuffle;
+    }
+
+    if (_isShuffle && baseEntries.length > 1) {
+      if (startWithSong != null) {
+        final active = baseEntries[chosenIdx];
+        final rest = <QueueEntry>[
+          for (int i = 0; i < baseEntries.length; i++)
+            if (i != chosenIdx) baseEntries[i],
+        ];
+        _fisherYatesShuffle(rest);
+        _queueEntries = [active, ...rest];
+        _currentIndex = 0;
+      } else {
+        final shuffled = List<QueueEntry>.from(baseEntries);
+        _fisherYatesShuffle(shuffled);
+        _queueEntries = shuffled;
+        _currentIndex = 0;
+      }
+    } else {
+      _queueEntries = List<QueueEntry>.from(baseEntries);
+      _currentIndex = startWithSong != null
+          ? chosenIdx
+          : (baseEntries.isNotEmpty ? 0 : -1);
     }
   }
 
@@ -305,60 +629,144 @@ class LocalMusicProvider extends ChangeNotifier {
     required int positionMs,
     required int durationMs,
     required bool isPlaying,
+    int? sessionId,
+    String? path,
   }) {
+    if (sessionId != null && sessionId > 0 && sessionId != _playbackSessionId) {
+      return;
+    }
+    final activeSong = currentSong;
+    if (path != null &&
+        path.isNotEmpty &&
+        activeSong != null &&
+        path != activeSong.filePath) {
+      return;
+    }
+
+    // 350ms seekbar snap-back guard: ignore stale pre-seek native ticks
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (nowMs < _seekGuardUntilEpochMs &&
+        (positionMs - _positionMs).abs() > 600) {
+      return;
+    }
+
+    final prevPlaying = _isPlaying;
     _positionMs = positionMs;
     if (durationMs > 0) {
       _durationMs = durationMs;
     }
     _isPlaying = isPlaying;
-    notifyListeners();
+    _syncProgressNotifiers();
+    if (prevPlaying != _isPlaying) {
+      notifyListeners();
+    }
   }
 
   void handleNativePlayerState({
     required bool isPlaying,
     required int positionMs,
     required int durationMs,
+    int? sessionId,
+    String? path,
   }) {
+    if (sessionId != null && sessionId > 0 && sessionId != _playbackSessionId) {
+      return;
+    }
+    final activeSong = currentSong;
+    if (path != null &&
+        path.isNotEmpty &&
+        activeSong != null &&
+        path != activeSong.filePath) {
+      return;
+    }
+
+    final wasPlaying = _isPlaying;
     _isPlaying = isPlaying;
-    if (positionMs >= 0 && (positionMs > 0 || !isPlaying)) {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final blockedBySeekGuard =
+        nowMs < _seekGuardUntilEpochMs &&
+        (positionMs - _positionMs).abs() > 600;
+    if (!blockedBySeekGuard &&
+        positionMs >= 0 &&
+        (positionMs > 0 || !isPlaying)) {
       _positionMs = positionMs;
     }
     if (durationMs > 0) {
       _durationMs = durationMs;
     }
+    _syncProgressNotifiers();
     notifyListeners();
+    if (wasPlaying && !isPlaying) {
+      _savePlayerSession();
+    }
   }
 
-  void handleNativeTrackCompleted() {
+  void handleNativeTrackCompleted({int? sessionId, String? path}) {
+    if (sessionId != null && sessionId > 0 && sessionId != _playbackSessionId) {
+      return;
+    }
+    final activeSong = currentSong;
+    if (path != null &&
+        path.isNotEmpty &&
+        activeSong != null &&
+        path != activeSong.filePath) {
+      return;
+    }
+    if (_lastCompletedSessionId == _playbackSessionId) {
+      return;
+    }
+    _lastCompletedSessionId = _playbackSessionId;
     playNext(fromAutoComplete: true);
   }
 
   // ===========================================================================
-  // PLAYBACK & QUEUE CONTROLS
+  // PLAYBACK & QUEUE CONTROLS (TRUE QUEUE-ORDER SHUFFLE)
   // ===========================================================================
   Future<void> playSong(
     LocalSong song, {
     List<LocalSong>? queueContext,
     int startPositionMs = 0,
+    bool? forceShuffle,
   }) async {
     if (queueContext != null && queueContext.isNotEmpty) {
-      _queue = List<LocalSong>.from(queueContext);
-      _currentIndex = _queue.indexWhere((s) => s.filePath == song.filePath);
-      if (_currentIndex == -1) {
-        _queue.insert(0, song);
-        _currentIndex = 0;
-      }
+      _setQueueFromSongs(
+        queueContext,
+        startWithSong: song,
+        forceShuffle: forceShuffle,
+      );
     } else {
-      final existingIdx = _queue.indexWhere((s) => s.filePath == song.filePath);
+      final existingIdx = _queueEntries.indexWhere(
+        (e) => e.song.filePath == song.filePath,
+      );
       if (existingIdx != -1) {
         _currentIndex = existingIdx;
-        _queue[existingIdx] = song;
+        _queueEntries[existingIdx] = _queueEntries[existingIdx].copyWith(
+          song: song,
+        );
+        final origIdx = _originalQueueEntries.indexWhere(
+          (e) => e.queueId == _queueEntries[existingIdx].queueId,
+        );
+        if (origIdx != -1) {
+          _originalQueueEntries[origIdx] = _originalQueueEntries[origIdx]
+              .copyWith(song: song);
+        }
       } else {
+        final entry = QueueEntry(queueId: _allocateQueueId(), song: song);
         final insertAt =
-            (_currentIndex >= 0 && _currentIndex + 1 <= _queue.length)
+            (_currentIndex >= 0 && _currentIndex + 1 <= _queueEntries.length)
                 ? _currentIndex + 1
-                : _queue.length;
-        _queue.insert(insertAt, song);
+                : _queueEntries.length;
+        _queueEntries.insert(insertAt, entry);
+        final activeId = currentQueueEntry?.queueId;
+        final origAnchor = activeId != null
+            ? _originalQueueEntries.indexWhere((e) => e.queueId == activeId)
+            : -1;
+        if (origAnchor != -1 &&
+            origAnchor + 1 <= _originalQueueEntries.length) {
+          _originalQueueEntries.insert(origAnchor + 1, entry);
+        } else {
+          _originalQueueEntries.add(entry);
+        }
         _currentIndex = insertAt;
       }
     }
@@ -367,29 +775,32 @@ class LocalMusicProvider extends ChangeNotifier {
     await _startCurrentQueueTrack(startPositionMs: startPositionMs);
   }
 
+  /// Plays [filePath] (e.g. from Download History) WITHOUT wiping out an active
+  /// playback queue: if a queue already exists, jumps to or inserts right after
+  /// the current track; if the queue is empty, initializes from its folder.
   Future<void> playSongByPath(String filePath) async {
+    LocalSong? targetSong;
     final idx = _allSongs.indexWhere((s) => s.filePath == filePath);
     if (idx != -1) {
-      await playSong(_allSongs[idx], queueContext: _allSongs);
-      return;
+      targetSong = _allSongs[idx];
+    } else if (Platform.isAndroid) {
+      targetSong = await upsertSingleSongByPath(filePath);
     }
-    if (Platform.isAndroid) {
-      try {
-        final details = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
-          'readLocalTrackDetails',
-          {'path': filePath},
-        );
-        if (details != null) {
-          final loaded = LocalSong.fromNativeMap(details);
-          _allSongs = [loaded, ..._allSongs];
-          await playSong(loaded, queueContext: _allSongs);
-        }
-      } catch (_) {}
+    if (targetSong == null) return;
+
+    if (_queueEntries.isEmpty) {
+      final sameFolder = folderSongsMap[targetSong.folderName] ?? const [];
+      await playSong(
+        targetSong,
+        queueContext: sameFolder.isNotEmpty ? sameFolder : [targetSong],
+      );
+    } else {
+      await playSong(targetSong);
     }
   }
 
   Future<void> playQueueIndex(int index) async {
-    if (index < 0 || index >= _queue.length) return;
+    if (index < 0 || index >= _queueEntries.length) return;
     _currentIndex = index;
     _localLyricsCandidates = const [];
     await _startCurrentQueueTrack();
@@ -398,31 +809,34 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> playFolder(String folderName, {bool shuffle = false}) async {
     final songs = folderSongsMap[folderName] ?? const [];
     if (songs.isEmpty) return;
-    _isShuffle = shuffle;
-    final startIdx = shuffle ? _random.nextInt(songs.length) : 0;
-    await playSong(songs[startIdx], queueContext: songs);
+    _setQueueFromSongs(songs, forceShuffle: shuffle);
+    _localLyricsCandidates = const [];
+    await _startCurrentQueueTrack();
   }
 
   Future<void> playAlbum(String albumName, {bool shuffle = false}) async {
     final songs = albumSongsMap[albumName] ?? const [];
     if (songs.isEmpty) return;
-    _isShuffle = shuffle;
-    final startIdx = shuffle ? _random.nextInt(songs.length) : 0;
-    await playSong(songs[startIdx], queueContext: songs);
+    _setQueueFromSongs(songs, forceShuffle: shuffle);
+    _localLyricsCandidates = const [];
+    await _startCurrentQueueTrack();
   }
 
   Future<void> playArtist(String artistName, {bool shuffle = false}) async {
     final songs = artistSongsMap[artistName] ?? const [];
     if (songs.isEmpty) return;
-    _isShuffle = shuffle;
-    final startIdx = shuffle ? _random.nextInt(songs.length) : 0;
-    await playSong(songs[startIdx], queueContext: songs);
+    _setQueueFromSongs(songs, forceShuffle: shuffle);
+    _localLyricsCandidates = const [];
+    await _startCurrentQueueTrack();
   }
 
   Future<void> _startCurrentQueueTrack({int startPositionMs = 0}) async {
     final song = currentSong;
     if (song == null) return;
 
+    final sessionId = ++_playbackSessionId;
+    _lastCompletedSessionId = -1;
+    _seekGuardUntilEpochMs = 0;
     _positionMs = startPositionMs;
     _durationMs = song.durationMs;
     _isPlaying = true;
@@ -430,7 +844,9 @@ class LocalMusicProvider extends ChangeNotifier {
     if (song.hasSyncedLyrics) {
       _lyricsDisplayMode = EmbeddedLyricsDisplayMode.synced;
     }
+    _syncProgressNotifiers();
     notifyListeners();
+    _savePlayerSession();
 
     if (!Platform.isAndroid) return;
     try {
@@ -439,17 +855,20 @@ class LocalMusicProvider extends ChangeNotifier {
         {
           'path': song.filePath,
           'positionMs': startPositionMs,
+          'sessionId': sessionId,
         },
       );
-      if (ok != true) {
+      if (ok != true && sessionId == _playbackSessionId) {
         _isPlaying = false;
         _hasPreparedNative = false;
         notifyListeners();
       }
     } catch (_) {
-      _isPlaying = false;
-      _hasPreparedNative = false;
-      notifyListeners();
+      if (sessionId == _playbackSessionId) {
+        _isPlaying = false;
+        _hasPreparedNative = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -465,6 +884,7 @@ class LocalMusicProvider extends ChangeNotifier {
     if (_isPlaying) {
       _isPlaying = false;
       notifyListeners();
+      _savePlayerSession();
       if (Platform.isAndroid) {
         try {
           await _systemChannel.invokeMethod<bool>('localPause');
@@ -493,8 +913,10 @@ class LocalMusicProvider extends ChangeNotifier {
 
   Future<void> seekTo(int targetMs) async {
     final clamped = targetMs.clamp(0, durationMs > 0 ? durationMs : 86400000);
+    _seekGuardUntilEpochMs = DateTime.now().millisecondsSinceEpoch + 350;
     _positionMs = clamped;
-    notifyListeners();
+    _syncProgressNotifiers();
+    _savePlayerSession();
 
     if (!Platform.isAndroid) return;
     if (!_hasPreparedNative && currentSong != null) {
@@ -509,7 +931,7 @@ class LocalMusicProvider extends ChangeNotifier {
   }
 
   Future<void> playNext({bool fromAutoComplete = false}) async {
-    if (_queue.isEmpty) return;
+    if (_queueEntries.isEmpty) return;
 
     if (fromAutoComplete) {
       if (_playMode == MusicoletPlayMode.playSingleStop) {
@@ -517,7 +939,9 @@ class LocalMusicProvider extends ChangeNotifier {
         _isPlaying = false;
         _positionMs = 0;
         _hasPreparedNative = false;
+        _syncProgressNotifiers();
         notifyListeners();
+        _savePlayerSession();
         return;
       }
       if (_playMode == MusicoletPlayMode.repeatOne) {
@@ -526,18 +950,8 @@ class LocalMusicProvider extends ChangeNotifier {
       }
     }
 
-    if (_isShuffle && _queue.length > 1) {
-      int nextIdx = _currentIndex;
-      for (int tries = 0; tries < 6 && nextIdx == _currentIndex; tries++) {
-        nextIdx = _random.nextInt(_queue.length);
-      }
-      _currentIndex = nextIdx;
-      _localLyricsCandidates = const [];
-      await _startCurrentQueueTrack();
-      return;
-    }
-
-    if (_currentIndex + 1 < _queue.length) {
+    // Always advance linearly along visual `_queueEntries` (`_currentIndex + 1`)
+    if (_currentIndex + 1 < _queueEntries.length) {
       _currentIndex++;
       _localLyricsCandidates = const [];
       await _startCurrentQueueTrack();
@@ -546,7 +960,9 @@ class LocalMusicProvider extends ChangeNotifier {
         _isPlaying = false;
         _positionMs = 0;
         _hasPreparedNative = false;
+        _syncProgressNotifiers();
         notifyListeners();
+        _savePlayerSession();
         return;
       }
       _currentIndex = 0;
@@ -556,39 +972,57 @@ class LocalMusicProvider extends ChangeNotifier {
   }
 
   Future<void> playPrevious() async {
-    if (_queue.isEmpty) return;
+    if (_queueEntries.isEmpty) return;
     if (_positionMs > 3500) {
       await seekTo(0);
       return;
     }
+    // Always step backward linearly along visual `_queueEntries` (`_currentIndex - 1`)
     if (_currentIndex > 0) {
       _currentIndex--;
     } else {
-      _currentIndex = _queue.length - 1;
+      _currentIndex = _queueEntries.length - 1;
     }
     _localLyricsCandidates = const [];
     await _startCurrentQueueTrack();
   }
 
   void addToQueue(LocalSong song, {bool playNext = false}) {
-    if (_queue.isEmpty) {
+    if (_queueEntries.isEmpty) {
       playSong(song, queueContext: [song]);
       return;
     }
-    if (playNext && _currentIndex >= 0 && _currentIndex + 1 <= _queue.length) {
-      _queue.insert(_currentIndex + 1, song);
+    final entry = QueueEntry(queueId: _allocateQueueId(), song: song);
+    if (playNext &&
+        _currentIndex >= 0 &&
+        _currentIndex + 1 <= _queueEntries.length) {
+      final activeId = currentQueueEntry?.queueId;
+      _queueEntries.insert(_currentIndex + 1, entry);
+      final origAnchor = activeId != null
+          ? _originalQueueEntries.indexWhere((e) => e.queueId == activeId)
+          : -1;
+      if (origAnchor != -1 &&
+          origAnchor + 1 <= _originalQueueEntries.length) {
+        _originalQueueEntries.insert(origAnchor + 1, entry);
+      } else {
+        _originalQueueEntries.add(entry);
+      }
     } else {
-      _queue.add(song);
+      _queueEntries.add(entry);
+      _originalQueueEntries.add(entry);
     }
     notifyListeners();
+    _savePlayerSession();
   }
 
   void removeFromQueue(int index) {
-    if (index < 0 || index >= _queue.length) return;
+    if (index < 0 || index >= _queueEntries.length) return;
+    final removedEntry = _queueEntries.removeAt(index);
+    _originalQueueEntries.removeWhere((e) => e.queueId == removedEntry.queueId);
     final removingCurrent = index == _currentIndex;
-    _queue.removeAt(index);
 
-    if (_queue.isEmpty) {
+    if (_queueEntries.isEmpty) {
+      _playbackSessionId++;
       _currentIndex = -1;
       _isPlaying = false;
       _positionMs = 0;
@@ -598,7 +1032,7 @@ class LocalMusicProvider extends ChangeNotifier {
         _systemChannel.invokeMethod<bool>('localStop');
       }
     } else if (removingCurrent) {
-      if (_currentIndex >= _queue.length) {
+      if (_currentIndex >= _queueEntries.length) {
         _currentIndex = 0;
       }
       if (_isPlaying) {
@@ -611,20 +1045,28 @@ class LocalMusicProvider extends ChangeNotifier {
     } else if (index < _currentIndex) {
       _currentIndex--;
     }
+    _syncProgressNotifiers();
     notifyListeners();
+    _savePlayerSession();
   }
 
   void reorderQueueItem(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _queue.length) return;
-    if (newIndex < 0 || newIndex >= _queue.length) return;
+    if (oldIndex < 0 || oldIndex >= _queueEntries.length) return;
+    if (newIndex < 0 || newIndex >= _queueEntries.length) return;
 
-    final currentPath = currentSong?.filePath;
-    final moved = _queue.removeAt(oldIndex);
-    _queue.insert(newIndex, moved);
-    if (currentPath != null) {
-      _currentIndex = _queue.indexWhere((s) => s.filePath == currentPath);
+    final activeQueueId = currentQueueEntry?.queueId;
+    final moved = _queueEntries.removeAt(oldIndex);
+    _queueEntries.insert(newIndex, moved);
+    if (!_isShuffle) {
+      _originalQueueEntries = List<QueueEntry>.from(_queueEntries);
+    }
+    if (activeQueueId != null) {
+      _currentIndex = _queueEntries.indexWhere(
+        (e) => e.queueId == activeQueueId,
+      );
     }
     notifyListeners();
+    _savePlayerSession();
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
@@ -633,7 +1075,9 @@ class LocalMusicProvider extends ChangeNotifier {
   }
 
   void clearQueue() {
-    _queue = [];
+    _playbackSessionId++;
+    _queueEntries = [];
+    _originalQueueEntries = [];
     _currentIndex = -1;
     _isPlaying = false;
     _positionMs = 0;
@@ -642,7 +1086,9 @@ class LocalMusicProvider extends ChangeNotifier {
     if (Platform.isAndroid) {
       _systemChannel.invokeMethod<bool>('localStop');
     }
+    _syncProgressNotifiers();
     notifyListeners();
+    _savePlayerSession();
   }
 
   // ===========================================================================
@@ -664,33 +1110,76 @@ class LocalMusicProvider extends ChangeNotifier {
         break;
     }
     notifyListeners();
+    _savePlayerSession();
   }
 
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
+    if (_queueEntries.length > 1) {
+      final active = currentQueueEntry;
+      if (_isShuffle) {
+        if (_originalQueueEntries.isEmpty) {
+          _originalQueueEntries = List<QueueEntry>.from(_queueEntries);
+        }
+        if (active != null) {
+          final rest = _queueEntries
+              .where((e) => e.queueId != active.queueId)
+              .toList();
+          _fisherYatesShuffle(rest);
+          _queueEntries = [active, ...rest];
+          _currentIndex = 0;
+        } else {
+          final shuffled = List<QueueEntry>.from(_queueEntries);
+          _fisherYatesShuffle(shuffled);
+          _queueEntries = shuffled;
+        }
+      } else {
+        final currentById = {for (final e in _queueEntries) e.queueId: e};
+        final restored = <QueueEntry>[];
+        for (final orig in _originalQueueEntries) {
+          final match = currentById.remove(orig.queueId);
+          if (match != null) {
+            restored.add(match);
+          }
+        }
+        restored.addAll(currentById.values);
+        _queueEntries = restored;
+        _originalQueueEntries = List<QueueEntry>.from(restored);
+        if (active != null) {
+          _currentIndex = _queueEntries.indexWhere(
+            (e) => e.queueId == active.queueId,
+          );
+        }
+      }
+    }
     notifyListeners();
+    _savePlayerSession();
   }
 
   void setShowLyricsOverlay(bool visible) {
     if (_showLyricsOverlay == visible) return;
     _showLyricsOverlay = visible;
     notifyListeners();
+    _savePlayerSession();
   }
 
   void setLyricsDisplayMode(EmbeddedLyricsDisplayMode mode) {
     if (_lyricsDisplayMode == mode) return;
     _lyricsDisplayMode = mode;
     notifyListeners();
+    _savePlayerSession();
   }
 
   void toggleAutoScrollLyrics() {
     _autoScrollLyrics = !_autoScrollLyrics;
     notifyListeners();
+    _savePlayerSession();
   }
 
   void cycleLyricsFontSize() {
     _fontSizeIndex = (_fontSizeIndex + 1) % fontSizePresets.length;
     notifyListeners();
+    _savePlayerSession();
   }
 
   void setLocalSearchQuery(String query) {
@@ -923,6 +1412,128 @@ class LocalMusicProvider extends ChangeNotifier {
     }
   }
 
+  /// Registers a newly created folder without rescanning the entire audio disk.
+  void registerFolder(String folderName) {
+    final trimmed = folderName.trim();
+    if (trimmed.isEmpty) return;
+    final exists = _availableFolders.any(
+      (f) => f.toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (!exists) {
+      _availableFolders = [..._availableFolders, trimmed];
+      _invalidateGroupingCaches();
+      notifyListeners();
+      _notifyExternalSync();
+      _saveLibraryCache();
+    }
+  }
+
+  /// Prepares `LocalMusicProvider` before `DownloaderProvider` mutates (retags
+  /// or moves) an existing local MP3 file so Android releases its file handle
+  /// if [targetPath] is currently loaded in `MediaPlayer`.
+  Future<Map<String, dynamic>?> prepareForExternalFileMutation(
+    String targetPath,
+  ) async {
+    final isCurrent = currentSong?.filePath == targetPath;
+    if (!isCurrent) return null;
+
+    final snapshot = <String, dynamic>{
+      'wasPlaying': _isPlaying,
+      'positionMs': _positionMs,
+    };
+    if (Platform.isAndroid) {
+      _playbackSessionId++;
+      await _systemChannel.invokeMethod<bool>('localStop');
+      _hasPreparedNative = false;
+    }
+    return snapshot;
+  }
+
+  /// Completes an external file mutation (retag/rename/move from Download History)
+  /// and keeps `_allSongs`, `_queueEntries`, `_favoritePaths`, and active playback
+  /// 100% synchronized.
+  Future<void> completeExternalFileMutation({
+    required String oldPath,
+    required String newPath,
+    Map<String, dynamic>? snapshot,
+  }) async {
+    if (_favoritePaths.remove(oldPath)) {
+      _favoritePaths.add(newPath);
+      await _saveFavorites();
+    }
+    await _reloadSingleSongInMemory(
+      oldPath: oldPath,
+      newPath: newPath,
+      wasPlaying: snapshot?['wasPlaying'] == true,
+      resumePositionMs: (snapshot?['positionMs'] as int?) ?? 0,
+      notifyExternal: false,
+    );
+  }
+
+  /// Reads metadata for a single newly downloaded or updated MP3 file and upserts
+  /// it into memory without rescanning the entire library.
+  Future<LocalSong?> upsertSingleSongByPath(String filePath) async {
+    if (!Platform.isAndroid || filePath.trim().isEmpty) return null;
+    try {
+      final map = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'readLocalTrackDetails',
+        {'path': filePath},
+      );
+      if (map == null) return null;
+      final refreshed = LocalSong.fromNativeMap(map);
+      if (refreshed.filePath.isEmpty) return null;
+
+      final existingIdx = _allSongs.indexWhere(
+        (s) => s.filePath == refreshed.filePath,
+      );
+      if (existingIdx != -1) {
+        _allSongs[existingIdx] = refreshed;
+      } else {
+        _allSongs = [refreshed, ..._allSongs];
+      }
+
+      if (refreshed.folderName.isNotEmpty &&
+          !_availableFolders.any(
+            (f) => f.toLowerCase() == refreshed.folderName.toLowerCase(),
+          )) {
+        _availableFolders = [..._availableFolders, refreshed.folderName];
+      }
+
+      for (int i = 0; i < _queueEntries.length; i++) {
+        if (_queueEntries[i].song.filePath == refreshed.filePath) {
+          _queueEntries[i] = _queueEntries[i].copyWith(song: refreshed);
+        }
+      }
+      for (int i = 0; i < _originalQueueEntries.length; i++) {
+        if (_originalQueueEntries[i].song.filePath == refreshed.filePath) {
+          _originalQueueEntries[i] = _originalQueueEntries[i].copyWith(
+            song: refreshed,
+          );
+        }
+      }
+
+      if (_queueEntries.isEmpty) {
+        _setQueueFromSongs(_allSongs);
+        _durationMs = _queueEntries.first.song.durationMs;
+        _hasPreparedNative = false;
+      }
+
+      _invalidateGroupingCaches();
+      _syncProgressNotifiers();
+      notifyListeners();
+      _notifyExternalSync(
+        oldPath: refreshed.filePath,
+        newPath: refreshed.filePath,
+        updatedSong: refreshed,
+      );
+      await _saveLibraryCache();
+      await _savePlayerSession();
+      return refreshed;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<String> moveLocalSongToFolder({
     required LocalSong song,
     required String targetFolderName,
@@ -932,6 +1543,7 @@ class LocalMusicProvider extends ChangeNotifier {
     final savedPos = isCurrent ? _positionMs : 0;
 
     if (isCurrent && Platform.isAndroid) {
+      _playbackSessionId++;
       await _systemChannel.invokeMethod<bool>('localStop');
       _hasPreparedNative = false;
     }
@@ -961,16 +1573,82 @@ class LocalMusicProvider extends ChangeNotifier {
   }
 
   Future<bool> deleteLocalSong(LocalSong song) async {
-    final idxInQueue = _queue.indexWhere((s) => s.filePath == song.filePath);
-    if (idxInQueue != -1) {
-      removeFromQueue(idxInQueue);
+    final targetPath = song.filePath;
+    final wasCurrent = currentSong?.filePath == targetPath;
+    final wasPlayingCurrent = wasCurrent && _isPlaying;
+
+    // Remove ALL occurrences of `targetPath` in `_queueEntries` & `_originalQueueEntries`
+    int removedBeforeCurrent = 0;
+    final filteredQueue = <QueueEntry>[];
+    for (int i = 0; i < _queueEntries.length; i++) {
+      if (_queueEntries[i].song.filePath == targetPath) {
+        if (i < _currentIndex) {
+          removedBeforeCurrent++;
+        }
+      } else {
+        filteredQueue.add(_queueEntries[i]);
+      }
     }
-    _allSongs.removeWhere((s) => s.filePath == song.filePath);
-    if (_favoritePaths.remove(song.filePath)) {
+    _queueEntries = filteredQueue;
+    _originalQueueEntries.removeWhere((e) => e.song.filePath == targetPath);
+
+    if (_queueEntries.isEmpty) {
+      _playbackSessionId++;
+      _currentIndex = -1;
+      _isPlaying = false;
+      _positionMs = 0;
+      _durationMs = 0;
+      _hasPreparedNative = false;
+      if (Platform.isAndroid) {
+        _systemChannel.invokeMethod<bool>('localStop');
+      }
+    } else {
+      _currentIndex = (_currentIndex - removedBeforeCurrent).clamp(
+        0,
+        _queueEntries.length - 1,
+      );
+      if (wasCurrent) {
+        if (wasPlayingCurrent) {
+          _startCurrentQueueTrack();
+        } else {
+          _playbackSessionId++;
+          _positionMs = 0;
+          _durationMs = currentSong?.durationMs ?? 0;
+          _hasPreparedNative = false;
+          if (Platform.isAndroid) {
+            _systemChannel.invokeMethod<bool>('localStop');
+          }
+        }
+      }
+    }
+
+    _allSongs.removeWhere((s) => s.filePath == targetPath);
+    if (_favoritePaths.remove(targetPath)) {
       await _saveFavorites();
     }
+
+    // Remove orphan extracted cover thumbnail if no other track shares it
+    if (song.coverFilePath != null && song.coverFilePath!.isNotEmpty) {
+      final sharedCover = _allSongs.any(
+        (s) => s.coverFilePath == song.coverFilePath,
+      );
+      if (!sharedCover) {
+        try {
+          final coverFile = File(song.coverFilePath!);
+          if (await coverFile.exists()) {
+            await coverFile.delete();
+          }
+        } catch (_) {}
+      }
+    }
+
+    _invalidateGroupingCaches();
+    _syncProgressNotifiers();
     notifyListeners();
-    return _folderService.deleteMediaFile(song.filePath);
+    _notifyExternalSync(oldPath: targetPath, newPath: null);
+    await _saveLibraryCache();
+    await _savePlayerSession();
+    return _folderService.deleteMediaFile(targetPath);
   }
 
   Future<void> _reloadSingleSongInMemory({
@@ -978,25 +1656,48 @@ class LocalMusicProvider extends ChangeNotifier {
     required String newPath,
     required bool wasPlaying,
     required int resumePositionMs,
+    bool notifyExternal = true,
   }) async {
     if (!Platform.isAndroid) return;
+    LocalSong? refreshed;
     try {
       final map = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
         'readLocalTrackDetails',
         {'path': newPath},
       );
       if (map != null) {
-        final refreshed = LocalSong.fromNativeMap(map);
+        refreshed = LocalSong.fromNativeMap(map);
         final libIdx = _allSongs.indexWhere((s) => s.filePath == oldPath);
         if (libIdx != -1) {
           _allSongs[libIdx] = refreshed;
         } else {
-          _allSongs.insert(0, refreshed);
+          final newIdx = _allSongs.indexWhere((s) => s.filePath == newPath);
+          if (newIdx != -1) {
+            _allSongs[newIdx] = refreshed;
+          } else {
+            _allSongs.insert(0, refreshed);
+          }
         }
 
-        for (int i = 0; i < _queue.length; i++) {
-          if (_queue[i].filePath == oldPath || _queue[i].filePath == newPath) {
-            _queue[i] = refreshed;
+        if (refreshed.folderName.isNotEmpty &&
+            !_availableFolders.any(
+              (f) => f.toLowerCase() == refreshed!.folderName.toLowerCase(),
+            )) {
+          _availableFolders = [..._availableFolders, refreshed.folderName];
+        }
+
+        for (int i = 0; i < _queueEntries.length; i++) {
+          final p = _queueEntries[i].song.filePath;
+          if (p == oldPath || p == newPath) {
+            _queueEntries[i] = _queueEntries[i].copyWith(song: refreshed);
+          }
+        }
+        for (int i = 0; i < _originalQueueEntries.length; i++) {
+          final p = _originalQueueEntries[i].song.filePath;
+          if (p == oldPath || p == newPath) {
+            _originalQueueEntries[i] = _originalQueueEntries[i].copyWith(
+              song: refreshed,
+            );
           }
         }
 
@@ -1010,12 +1711,199 @@ class LocalMusicProvider extends ChangeNotifier {
         }
       }
     } catch (_) {}
+    _invalidateGroupingCaches();
+    _syncProgressNotifiers();
     notifyListeners();
+    await _saveLibraryCache();
+    await _savePlayerSession();
+    if (notifyExternal) {
+      _notifyExternalSync(
+        oldPath: oldPath,
+        newPath: newPath,
+        updatedSong: refreshed,
+      );
+    }
   }
 
   // ===========================================================================
-  // FAVORITES PERSISTENCE
+  // INCREMENTAL LIBRARY CACHE, PLAYER SESSION & FAVORITES PERSISTENCE
   // ===========================================================================
+  Future<bool> _loadLibraryAndSessionCache() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final libFile = File('${docs.path}/musicevee_library_cache_v1.json');
+      if (!await libFile.exists()) return false;
+
+      final rawLib = await libFile.readAsString();
+      final decodedLib = jsonDecode(rawLib);
+      if (decodedLib is! Map) return false;
+
+      final rawFolders = decodedLib['folders'];
+      if (rawFolders is List) {
+        final folders = rawFolders
+            .map((e) => e.toString().trim())
+            .where((f) => f.isNotEmpty)
+            .toList();
+        if (folders.isNotEmpty) {
+          _availableFolders = folders;
+        }
+      }
+
+      final rawSongs = decodedLib['songs'];
+      final hydratedSongs = <LocalSong>[];
+      if (rawSongs is List) {
+        for (final item in rawSongs) {
+          if (item is Map) {
+            final song = LocalSong.fromJson(Map<String, dynamic>.from(item));
+            if (song.filePath.isNotEmpty) {
+              hydratedSongs.add(song);
+            }
+          }
+        }
+      }
+      if (hydratedSongs.isEmpty) return false;
+
+      _allSongs = hydratedSongs;
+      _invalidateGroupingCaches();
+      final byPath = {for (final s in _allSongs) s.filePath: s};
+
+      // Restore last Musicolet player session & queue order
+      final sessionFile = File('${docs.path}/musicevee_player_session.json');
+      bool restoredQueue = false;
+      if (await sessionFile.exists()) {
+        final rawSession = await sessionFile.readAsString();
+        final sess = jsonDecode(rawSession);
+        if (sess is Map) {
+          final modeIdx = (sess['playMode'] as num?)?.toInt();
+          if (modeIdx != null &&
+              modeIdx >= 0 &&
+              modeIdx < MusicoletPlayMode.values.length) {
+            _playMode = MusicoletPlayMode.values[modeIdx];
+          }
+          _isShuffle = sess['isShuffle'] == true;
+          if (sess['showLyricsOverlay'] is bool) {
+            _showLyricsOverlay = sess['showLyricsOverlay'] as bool;
+          }
+          final lyrMode = (sess['lyricsDisplayMode'] as num?)?.toInt();
+          if (lyrMode != null &&
+              lyrMode >= 0 &&
+              lyrMode < EmbeddedLyricsDisplayMode.values.length) {
+            _lyricsDisplayMode = EmbeddedLyricsDisplayMode.values[lyrMode];
+          }
+          if (sess['autoScrollLyrics'] is bool) {
+            _autoScrollLyrics = sess['autoScrollLyrics'] as bool;
+          }
+          final fIdx = (sess['fontSizeIndex'] as num?)?.toInt();
+          if (fIdx != null && fIdx >= 0 && fIdx < fontSizePresets.length) {
+            _fontSizeIndex = fIdx;
+          }
+
+          final qPaths = (sess['queuePaths'] as List?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              const <String>[];
+          final origPaths = (sess['originalQueuePaths'] as List?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              const <String>[];
+
+          final builtQueue = <QueueEntry>[];
+          for (final p in qPaths) {
+            final song = byPath[p];
+            if (song != null) {
+              builtQueue.add(QueueEntry(queueId: _allocateQueueId(), song: song));
+            }
+          }
+          if (builtQueue.isNotEmpty) {
+            _queueEntries = builtQueue;
+            // Rebuild `_originalQueueEntries` reusing matching `queueId`s where possible
+            final poolByPath = <String, List<QueueEntry>>{};
+            for (final e in builtQueue) {
+              poolByPath.putIfAbsent(e.song.filePath, () => []).add(e);
+            }
+            final builtOrig = <QueueEntry>[];
+            for (final p in origPaths) {
+              final pool = poolByPath[p];
+              if (pool != null && pool.isNotEmpty) {
+                builtOrig.add(pool.removeAt(0));
+              } else {
+                final song = byPath[p];
+                if (song != null) {
+                  builtOrig.add(
+                    QueueEntry(queueId: _allocateQueueId(), song: song),
+                  );
+                }
+              }
+            }
+            for (final remaining in poolByPath.values) {
+              builtOrig.addAll(remaining);
+            }
+            _originalQueueEntries = builtOrig.isNotEmpty
+                ? builtOrig
+                : List<QueueEntry>.from(builtQueue);
+
+            final savedIdx = (sess['currentIndex'] as num?)?.toInt() ?? 0;
+            _currentIndex = savedIdx.clamp(0, _queueEntries.length - 1);
+            final activeDur = _queueEntries[_currentIndex].song.durationMs;
+            final savedPos = (sess['positionMs'] as num?)?.toInt() ?? 0;
+            _positionMs = activeDur > 0
+                ? savedPos.clamp(0, activeDur)
+                : savedPos.clamp(0, 86400000);
+            _durationMs = activeDur;
+            _hasPreparedNative = false;
+            _isPlaying = false;
+            restoredQueue = true;
+          }
+        }
+      }
+
+      if (!restoredQueue) {
+        _setQueueFromSongs(_allSongs);
+        _durationMs = _queueEntries.first.song.durationMs;
+        _positionMs = 0;
+        _hasPreparedNative = false;
+        _isPlaying = false;
+      }
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _saveLibraryCache() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final libFile = File('${docs.path}/musicevee_library_cache_v1.json');
+      final payload = <String, dynamic>{
+        'version': 1,
+        'folders': _availableFolders,
+        'songs': _allSongs.map((s) => s.toJson()).toList(),
+      };
+      await libFile.writeAsString(jsonEncode(payload));
+    } catch (_) {}
+  }
+
+  Future<void> _savePlayerSession() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final sessionFile = File('${docs.path}/musicevee_player_session.json');
+      final payload = <String, dynamic>{
+        'playMode': _playMode.index,
+        'isShuffle': _isShuffle,
+        'showLyricsOverlay': _showLyricsOverlay,
+        'lyricsDisplayMode': _lyricsDisplayMode.index,
+        'autoScrollLyrics': _autoScrollLyrics,
+        'fontSizeIndex': _fontSizeIndex,
+        'currentIndex': _currentIndex,
+        'positionMs': _positionMs,
+        'queuePaths': _queueEntries.map((e) => e.song.filePath).toList(),
+        'originalQueuePaths':
+            _originalQueueEntries.map((e) => e.song.filePath).toList(),
+      };
+      await sessionFile.writeAsString(jsonEncode(payload));
+    } catch (_) {}
+  }
   Future<void> _loadFavorites() async {
     try {
       final docs = await getApplicationDocumentsDirectory();

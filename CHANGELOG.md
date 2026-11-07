@@ -6,6 +6,30 @@ Seluruh riwayat perubahan penting pada proyek **MusicEvee** (sebelumnya *MusEvee
 
 ---
 
+## [v4.1] — 2026-11-07 (True Queue-Order Shuffle, Incremental Library Cache, 200ms Ticker Isolation & Native AudioFocus)
+
+### Diperbaiki & Dioptimalkan (Fixed & Optimized)
+- **True Queue-Order Shuffle & `QueueEntry` Stabil (Bug #1 & #2 — `lib/models/local_song.dart`, `lib/providers/local_music_provider.dart`, `lib/widgets/local_library_views.dart`):**
+  - Mengganti representasi antrean mentah dengan `QueueEntry(queueId, song)` ber-ID unik sehingga lagu duplikat di Queue tidak memicu bentrokan `ValueKey` dan mendukung *drag-and-drop* mulus (`buildDefaultDragHandles: false` + `ReorderableDragStartListener`).
+  - Menyimpan cadangan `_originalQueueEntries` dan menerapkan **Musicolet True Queue-Order Shuffle** berbasis algoritma *Fisher-Yates* yang mengacak urutan fisik `_queueEntries` secara langsung (menjaga lagu aktif di indeks `0`) serta mengembalikan urutan asli saat Shuffle dimatikan.
+  - Memastikan `playNext()` dan `playPrevious()` selalu bergerak linier mengikuti urutan daftar Queue visual (`_currentIndex + 1` dan `_currentIndex - 1`), serta memperbaiki `playSongByPath()` agar tidak menimpa Queue aktif saat memutar lagu dari tab Riwayat Unduhan.
+- **Session Guard, Native `AudioFocusRequest` & Auto-Resume Preview 30s (Bug #2 & #6 — `android/app/src/main/kotlin/com/example/spotmeta_downloader/MainActivity.kt`, `lib/screens/home_screen.dart`):**
+  - Menambahkan `playbackSessionId` monotonik serta validasi instance `mp === localPlayer` dan kecocokan `path` pada `OnPreparedListener`, `OnCompletionListener`, dan `positionTicker` untuk mencegah *race condition* atau *double-skip* saat berganti lagu cepat.
+  - Mengimplementasikan manajemen `AudioFocusRequest` (`AUDIOFOCUS_GAIN` untuk pemutar lokal dan `AUDIOFOCUS_GAIN_TRANSIENT` untuk preview 30s) lengkap dengan *auto-pause* saat ada panggilan telepon/aplikasi media lain, *volume ducking* saat notifikasi masuk, serta `resumeLocalAfterPreview` agar lagu lokal otomatis lanjut berputar setelah preview 30 detik selesai.
+- **Seekbar Snap-Back Guard & Sinkronisasi 2 Arah Instan (Bug #7 — `lib/providers/local_music_provider.dart`, `lib/providers/downloader_provider.dart`, `lib/widgets/now_playing_view.dart`, `lib/main.dart`):**
+  - Menambahkan masa tenggang *seek guard* (`350ms`) pada `seekTo()` dan memperbaiki urutan `onChangeEnd` pada slider `NowPlayingView` agar thumb seekbar tidak memantul kembali ke posisi lama.
+  - Menghubungkan sinkronisasi dua arah instan (`< 1ms` tanpa *rebuild storm* `ChangeNotifierProxyProvider`) antara `LocalMusicProvider` dan `DownloaderProvider` untuk seluruh operasi *download selesai (`upsertSingleSongByPath`), retag, rename, pindah folder,* maupun *hapus file* (termasuk pelepasan file handle `MediaPlayer` aktif dan pembersihan seluruh kemunculan lagu di Queue).
+- **Instant Startup Hydrate (`< 50ms`) & Incremental Delta Sync Cache (Bug #3 — `MainActivity.kt`, `lib/providers/local_music_provider.dart`):**
+  - Memindahkan penyimpanan thumbnail Cover Art dari `cacheDir/covers` ke direktori persisten `filesDir/covers` (dilengkapi pembersihan otomatis revisi cover lama) agar tidak dihapus sepihak oleh sistem Android.
+  - Menyimpan indeks metadata perpustakaan lokal di `musicevee_library_cache_v1.json` serta sesi antrean/posisi putar terakhir di `musicevee_player_session.json` untuk *instant startup hydration* tanpa *loading spinner*.
+  - Menambahkan metode native `scanLocalMusicLibraryDelta` yang membandingkan `lastModifiedMs` + `sizeBytes` + keberadaan file cover sehingga hanya file MP3 baru atau berubah yang menjalankan `MediaMetadataRetriever` dan ekstraksi tag ID3v2.
+- **Isolasi Ticker 200ms (`ValueNotifier`), Memoisasi Koleksi & Optimasi RAM Bitmap/ID3v2 (Bug #4 & #5 — `local_music_provider.dart`, `local_song.dart`, `now_playing_view.dart`, `musicolet_mini_player.dart`, `local_library_views.dart`, `MainActivity.kt`):**
+  - Mengisolasi pembaruan posisi `200ms` (`5 Hz`) ke `progressNotifier` (`ValueListenableBuilder<PlaybackProgress>`) dan `activeLyricIndexNotifier` (`ValueListenableBuilder<int>`) sehingga ke-8 tab di `IndexedStack` tidak lagi mengalami *global rebuild* 5 kali per detik.
+  - Mememoisasi `folderSongsMap`, `albumSongsMap`, `artistSongsMap`, serta `Expando` `parsedSyncedLyrics`/`plainLyricLines`, dan menghapus seluruh pemanggilan sinkron `File.existsSync()` dari metode `build()`.
+  - Menambahkan `cacheWidth` proporsional (`~144px` untuk thumbnail list/MiniPlayer dan `960px` untuk `NowPlayingView`) pada `Image.file()` serta mengoptimalkan `parseId3v2Tags` di `MainActivity.kt` agar membaca header frame secara *streaming* dan melompati payload gambar `APIC`/`PIC` besar menggunakan `raf.seek()` tanpa alokasi buffer multi-megabyte.
+
+---
+
 ## [v4.0] — 2026-11-07 (MusicEvee: 1:1 Musicolet UI/UX Reverse Engineering + Integrated Downloader + Anti Double-Romaji)
 
 ### Ditambahkan & Dirombak (Added & Changed)

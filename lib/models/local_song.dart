@@ -17,7 +17,35 @@ class SyncedLyricEntry {
   }
 }
 
+/// Unique queue item wrapper so duplicate songs in the playback queue keep
+/// distinct widget keys (`ValueKey(entry.queueId)`) and stable active indices
+/// during drag-and-drop reorder or shuffle/unshuffle transitions.
+class QueueEntry {
+  final String queueId;
+  final LocalSong song;
+
+  const QueueEntry({
+    required this.queueId,
+    required this.song,
+  });
+
+  QueueEntry copyWith({
+    String? queueId,
+    LocalSong? song,
+  }) {
+    return QueueEntry(
+      queueId: queueId ?? this.queueId,
+      song: song ?? this.song,
+    );
+  }
+}
+
 class LocalSong {
+  static final Expando<List<SyncedLyricEntry>> _syncedLyricsMemo =
+      Expando<List<SyncedLyricEntry>>('syncedLyricsMemo');
+  static final Expando<List<String>> _plainLinesMemo =
+      Expando<List<String>>('plainLinesMemo');
+
   static final RegExp _lrcLineTimeRegex = RegExp(
     r'\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]',
   );
@@ -99,9 +127,35 @@ class LocalSong {
       sampleRateHz: parseInt(map['sampleRateHz'], 44100),
       coverFilePath: rawCover.isNotEmpty ? rawCover : null,
       usltLyrics: rawUslt.isNotEmpty ? rawUslt : null,
-      dominantColorValue: parseInt(map['dominantColor'], 0xFF1E222B),
+      dominantColorValue: parseInt(
+        map['dominantColor'] ?? map['dominantColorValue'],
+        0xFF1E222B,
+      ),
       lastModifiedMs: parseInt(map['lastModifiedMs']),
     );
+  }
+
+  factory LocalSong.fromJson(Map<String, dynamic> json) =>
+      LocalSong.fromNativeMap(json);
+
+  Map<String, dynamic> toJson() {
+    return {
+      'filePath': filePath,
+      'fileName': fileName,
+      'folderName': folderName,
+      'title': title,
+      'artist': artist,
+      'album': album,
+      'year': year,
+      'durationMs': durationMs,
+      'sizeBytes': sizeBytes,
+      'bitrateKbps': bitrateKbps,
+      'sampleRateHz': sampleRateHz,
+      'coverFilePath': coverFilePath,
+      'usltLyrics': usltLyrics,
+      'dominantColor': dominantColorValue,
+      'lastModifiedMs': lastModifiedMs,
+    };
   }
 
   LocalSong copyWith({
@@ -172,6 +226,9 @@ class LocalSong {
   /// Parses embedded LRC timestamps `[mm:ss.xx]` into sorted [SyncedLyricEntry] items.
   List<SyncedLyricEntry> get parsedSyncedLyrics {
     if (!hasSyncedLyrics) return const [];
+    final cached = _syncedLyricsMemo[this];
+    if (cached != null) return cached;
+
     final raw = usltLyrics!
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n');
@@ -214,12 +271,17 @@ class LocalSong {
     }
 
     entries.sort((a, b) => a.timeMs.compareTo(b.timeMs));
-    return entries;
+    final unmodifiable = List<SyncedLyricEntry>.unmodifiable(entries);
+    _syncedLyricsMemo[this] = unmodifiable;
+    return unmodifiable;
   }
 
   /// Returns clean plain lyrics lines (without timestamps or LRC headers).
   List<String> get plainLyricLines {
     if (!hasLyrics) return const [];
+    final cached = _plainLinesMemo[this];
+    if (cached != null) return cached;
+
     final raw = usltLyrics!
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n');
@@ -233,7 +295,9 @@ class LocalSong {
       final cleaned = trimmed.replaceAll(_lrcLineTimeRegex, '').trim();
       out.add(cleaned);
     }
-    return out;
+    final unmodifiable = List<String>.unmodifiable(out);
+    _plainLinesMemo[this] = unmodifiable;
+    return unmodifiable;
   }
 
   /// Converts this [LocalSong] to [TrackMetadata] for compatibility with

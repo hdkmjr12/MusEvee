@@ -21,7 +21,7 @@ void main() {
 
 typedef SpotMetaApp = MusicEveeApp;
 
-class MusicEveeApp extends StatelessWidget {
+class MusicEveeApp extends StatefulWidget {
   const MusicEveeApp({super.key});
 
   // Palet Musicolet Reverse-Engineered Dark UI
@@ -35,21 +35,62 @@ class MusicEveeApp extends StatelessWidget {
   static final Color hairlineBorder = Colors.white.withValues(alpha: 0.09);
 
   @override
+  State<MusicEveeApp> createState() => _MusicEveeAppState();
+}
+
+class _MusicEveeAppState extends State<MusicEveeApp> {
+  late final LocalMusicProvider _localMusicProvider;
+  late final DownloaderProvider _downloaderProvider;
+
+  @override
+  void initState() {
+    super.initState();
+    _localMusicProvider = LocalMusicProvider();
+    _downloaderProvider = DownloaderProvider();
+
+    // Wire 2-way instant synchronization without ChangeNotifierProxyProvider rebuild overhead
+    _localMusicProvider.onLocalLibraryMutated = _downloaderProvider.syncWithLocalLibrary;
+    _downloaderProvider.onLibraryChanged = () {
+      _localMusicProvider.refreshLibrary();
+    };
+    _downloaderProvider.onFolderCreated = (folderName) {
+      _localMusicProvider.registerFolder(folderName);
+    };
+    _downloaderProvider.onSongSaved = (savedPath) async {
+      await _localMusicProvider.upsertSingleSongByPath(savedPath);
+    };
+    _downloaderProvider.onBeforeFileMutation = (path) {
+      return _localMusicProvider.prepareForExternalFileMutation(path);
+    };
+    _downloaderProvider.onFileMutated = ({
+      required String oldPath,
+      required String newPath,
+      Map<String, dynamic>? snapshot,
+    }) {
+      return _localMusicProvider.completeExternalFileMutation(
+        oldPath: oldPath,
+        newPath: newPath,
+        snapshot: snapshot,
+      );
+    };
+  }
+
+  @override
+  void dispose() {
+    _localMusicProvider.dispose();
+    _downloaderProvider.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider<LocalMusicProvider>(
-          create: (_) => LocalMusicProvider(),
+        ChangeNotifierProvider<LocalMusicProvider>.value(
+          value: _localMusicProvider,
         ),
-        ChangeNotifierProxyProvider<LocalMusicProvider, DownloaderProvider>(
-          create: (_) => DownloaderProvider(),
-          update: (_, localMusic, downloader) {
-            final d = downloader ?? DownloaderProvider();
-            d.onLibraryChanged = () {
-              localMusic.refreshLibrary();
-            };
-            return d;
-          },
+        ChangeNotifierProvider<DownloaderProvider>.value(
+          value: _downloaderProvider,
         ),
       ],
       child: MaterialApp(
@@ -64,6 +105,14 @@ class MusicEveeApp extends StatelessWidget {
   }
 
   ThemeData _buildDarkTheme() {
+    const bgCanvas = MusicEveeApp.bgCanvas;
+    const surfaceCard = MusicEveeApp.surfaceCard;
+    const surfaceSubtle = MusicEveeApp.surfaceSubtle;
+    const primaryAccent = MusicEveeApp.primaryAccent;
+    const primaryAccentDark = MusicEveeApp.primaryAccentDark;
+    const textLight = MusicEveeApp.textLight;
+    const textMuted = MusicEveeApp.textMuted;
+    final hairlineBorder = MusicEveeApp.hairlineBorder;
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,

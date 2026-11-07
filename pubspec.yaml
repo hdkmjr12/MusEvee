@@ -1,7 +1,7 @@
 name: spotmeta_downloader
 description: "MusicEvee - Pemutar musik lokal bergaya Musicolet (Embedded USLT Lyrics) terintegrasi dengan All-in-One Music & Spotify Downloader."
 publish_to: 'none'
-version: 4.0.0+4
+version: 4.1.0+5
 
 environment:
   sdk: '>=3.2.0 <4.0.0'

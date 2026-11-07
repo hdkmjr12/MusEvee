@@ -36,7 +36,7 @@ class PlaybackQueueView extends StatelessWidget {
 
     return Consumer<LocalMusicProvider>(
       builder: (context, localProvider, _) {
-        final queue = localProvider.queue;
+        final entries = localProvider.queueEntries;
         final currentIdx = localProvider.currentIndex;
 
         return Container(
@@ -61,9 +61,9 @@ class PlaybackQueueView extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      queue.isEmpty
+                      entries.isEmpty
                           ? 'Now Playing Queue (0)'
-                          : 'Queue (${currentIdx >= 0 ? currentIdx + 1 : 0}/${queue.length})',
+                          : 'Queue (${currentIdx >= 0 ? currentIdx + 1 : 0}/${entries.length})',
                       style: const TextStyle(
                         color: _kText,
                         fontSize: 14,
@@ -72,7 +72,7 @@ class PlaybackQueueView extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
-                    if (queue.isNotEmpty) ...[
+                    if (entries.isNotEmpty) ...[
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         tooltip: 'Acak (Shuffle)',
@@ -100,7 +100,7 @@ class PlaybackQueueView extends StatelessWidget {
               ),
 
               Expanded(
-                child: queue.isEmpty
+                child: entries.isEmpty
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
@@ -169,14 +169,16 @@ class PlaybackQueueView extends StatelessWidget {
                       )
                     : ReorderableListView.builder(
                         padding: const EdgeInsets.symmetric(vertical: 6),
-                        itemCount: queue.length,
+                        buildDefaultDragHandles: false,
+                        itemCount: entries.length,
                         onReorderItem: localProvider.reorderQueueItem,
                         itemBuilder: (context, index) {
-                          final song = queue[index];
+                          final entry = entries[index];
+                          final song = entry.song;
                           final isCurrent = index == currentIdx;
 
                           return Material(
-                            key: ValueKey('q_${index}_${song.filePath}'),
+                            key: ValueKey(entry.queueId),
                             color: isCurrent
                                 ? _kAccent.withValues(alpha: 0.12)
                                 : Colors.transparent,
@@ -1335,20 +1337,19 @@ class _LocalCoverThumb extends StatelessWidget {
         : BorderRadius.circular(5);
 
     if (coverPath != null && coverPath!.isNotEmpty) {
-      final f = File(coverPath!);
-      if (f.existsSync()) {
-        return ClipRRect(
-          borderRadius: radius,
-          child: Image.file(
-            f,
-            width: size,
-            height: size,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) => _fallback(radius),
-          ),
-        );
-      }
+      final targetCachePx = (size * 3).round().clamp(96, 256);
+      return ClipRRect(
+        borderRadius: radius,
+        child: Image.file(
+          File(coverPath!),
+          width: size,
+          height: size,
+          cacheWidth: targetCachePx,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) => _fallback(radius),
+        ),
+      );
     }
     return _fallback(radius);
   }

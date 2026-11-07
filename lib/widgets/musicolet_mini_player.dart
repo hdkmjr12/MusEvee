@@ -22,11 +22,6 @@ class MusicoletMiniPlayer extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        final total = localProvider.durationMs > 0
-            ? localProvider.durationMs
-            : 1;
-        final progress = (localProvider.positionMs / total).clamp(0.0, 1.0);
-
         return Material(
           color: const Color(0xFF14171E),
           child: InkWell(
@@ -43,13 +38,24 @@ class MusicoletMiniPlayer extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Thin Musicolet top progress hairline
-                  LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 2.0,
-                    backgroundColor: Colors.white.withValues(alpha: 0.10),
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(Colors.white),
+                  // Thin Musicolet top progress hairline (isolated to 200ms ValueNotifier)
+                  ValueListenableBuilder<PlaybackProgress>(
+                    valueListenable: localProvider.progressNotifier,
+                    builder: (context, prog, _) {
+                      final total = prog.durationMs > 0
+                          ? prog.durationMs
+                          : (localProvider.durationMs > 0
+                              ? localProvider.durationMs
+                              : 1);
+                      final progress = (prog.positionMs / total).clamp(0.0, 1.0);
+                      return LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 2.0,
+                        backgroundColor: Colors.white.withValues(alpha: 0.10),
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(Colors.white),
+                      );
+                    },
                   ),
                   SizedBox(
                     height: 50,
@@ -144,17 +150,15 @@ class MusicoletMiniPlayer extends StatelessWidget {
 
   Widget _buildMiniCover(String? path) {
     if (path != null && path.isNotEmpty) {
-      final f = File(path);
-      if (f.existsSync()) {
-        return Image.file(
-          f,
-          width: 38,
-          height: 38,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) => _placeholder(),
-        );
-      }
+      return Image.file(
+        File(path),
+        width: 38,
+        height: 38,
+        cacheWidth: 144,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) => _placeholder(),
+      );
     }
     return _placeholder();
   }

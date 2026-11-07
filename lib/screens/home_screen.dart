@@ -100,6 +100,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   positionMs: (args['positionMs'] as num?)?.toInt() ?? 0,
                   durationMs: (args['durationMs'] as num?)?.toInt() ?? 0,
                   isPlaying: args['isPlaying'] == true,
+                  sessionId: (args['sessionId'] as num?)?.toInt(),
+                  path: args['path']?.toString(),
                 );
           }
           break;
@@ -111,12 +113,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   isPlaying: args['isPlaying'] == true,
                   positionMs: (args['positionMs'] as num?)?.toInt() ?? 0,
                   durationMs: (args['durationMs'] as num?)?.toInt() ?? 0,
+                  sessionId: (args['sessionId'] as num?)?.toInt(),
+                  path: args['path']?.toString(),
                 );
           }
           break;
 
         case 'onLocalTrackCompleted':
-          context.read<LocalMusicProvider>().handleNativeTrackCompleted();
+          final args = call.arguments;
+          context.read<LocalMusicProvider>().handleNativeTrackCompleted(
+                sessionId:
+                    args is Map ? (args['sessionId'] as num?)?.toInt() : null,
+                path: args is Map ? args['path']?.toString() : null,
+              );
           break;
       }
     });
@@ -289,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (createdName != null && createdName.isNotEmpty && mounted) {
       final result = await provider.createAndSelectFolder(createdName);
       if (mounted) {
-        await context.read<LocalMusicProvider>().refreshLibrary();
+        context.read<LocalMusicProvider>().registerFolder(result);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -367,7 +376,6 @@ class _HomeScreenState extends State<HomeScreen> {
         song: song,
         targetFolderName: targetFolder,
       );
-      await downloader.refreshFolders();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -664,7 +672,7 @@ class _HomeScreenState extends State<HomeScreen> {
               border: Border.all(color: hairline, width: 0.8),
             ),
             child: const Text(
-              'v4.0',
+              'v4.1',
               style: TextStyle(
                 color: _primaryAccent,
                 fontSize: 9.5,

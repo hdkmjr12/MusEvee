@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/download_item.dart';
+import '../models/local_song.dart';
 import '../models/track_metadata.dart';
 import '../services/audio_service.dart';
 import '../services/folder_service.dart';
@@ -377,6 +380,11 @@ class DownloaderProvider extends ChangeNotifier {
   }
 
   Future<void> refreshFolders() async {
+    await _refreshFolderCountsOnly();
+    onLibraryChanged?.call();
+  }
+
+  Future<void> _refreshFolderCountsOnly() async {
     final folders = await _folderService.listAvailableFolders();
     if (!folders.contains(_selectedFolder) && _selectedFolder.isNotEmpty) {
       _availableFolders = [...folders, _selectedFolder];
@@ -386,10 +394,113 @@ class DownloaderProvider extends ChangeNotifier {
     _folderSongCounts =
         await _folderService.getFolderSongCounts(_availableFolders);
     notifyListeners();
-    onLibraryChanged?.call();
   }
 
   VoidCallback? onLibraryChanged;
+  Future<void> Function(String savedFilePath)? onSongSaved;
+  Future<Map<String, dynamic>?> Function(String path)? onBeforeFileMutation;
+  Future<void> Function({
+    required String oldPath,
+    required String newPath,
+    Map<String, dynamic>? snapshot,
+  })? onFileMutated;
+  void Function(String folderName)? onFolderCreated;
+
+  /// Instant `< 1ms` in-memory two-way sync handler triggered whenever
+  /// `LocalMusicProvider` scans, retags, renames, moves, or deletes songs.
+  void syncWithLocalLibrary({
+    required List<LocalSong> songs,
+    required List<String> folders,
+    String? oldPath,
+    String? newPath,
+    LocalSong? updatedSong,
+  }) {
+    final mergedFolders = List<String>.from(folders);
+    if (_selectedFolder.isNotEmpty &&
+        !mergedFolders.any(
+          (f) => f.toLowerCase() == _selectedFolder.toLowerCase(),
+        )) {
+      mergedFolders.add(_selectedFolder);
+    }
+    _availableFolders = mergedFolders;
+
+    final counts = <String, int>{for (final f in _availableFolders) f: 0};
+    final dupMap = <String, String>{};
+    final suffixRegex = RegExp(r'\s\(\d+\)$');
+
+    for (final s in songs) {
+      if (s.folderName.isNotEmpty) {
+        counts[s.folderName] = (counts[s.folderName] ?? 0) + 1;
+      }
+      final fileName = s.filePath
+          .split(Platform.pathSeparator)
+          .last
+          .split('/')
+          .last
+          .toLowerCase();
+      if (fileName.endsWith('.mp3') && s.folderName.isNotEmpty) {
+        final exactKey = fileName;
+        dupMap.putIfAbsent(exactKey, () => s.folderName);
+        final stem = fileName.substring(0, fileName.length - 4);
+        final baseStem = stem.replaceFirst(suffixRegex, '');
+        if (baseStem != stem) {
+          dupMap.putIfAbsent('$baseStem.mp3', () => s.folderName);
+        }
+      }
+    }
+    _folderSongCounts = counts;
+    _duplicateFolderMap
+      ..clear()
+      ..addAll(dupMap);
+
+    if (oldPath != null && oldPath.isNotEmpty) {
+      if (newPath == null || newPath.isEmpty) {
+        // Song was deleted from Local Player -> clean matching Download History items
+        _queueItems.removeWhere((e) => e.savedFilePath == oldPath);
+        if (_savedFilePath == oldPath) {
+          _savedFilePath = null;
+        }
+      } else {
+        // Song was retagged / renamed / moved in Local Player -> sync History items
+        for (int i = 0; i < _queueItems.length; i++) {
+          final item = _queueItems[i];
+          if (item.savedFilePath == oldPath || item.savedFilePath == newPath) {
+            TrackMetadata nextMeta = item.metadata;
+            if (updatedSong != null) {
+              nextMeta = nextMeta.copyWith(
+                title: updatedSong.title,
+                artist: updatedSong.artist,
+                album: updatedSong.album,
+                releaseYear: updatedSong.year.isNotEmpty
+                    ? updatedSong.year
+                    : nextMeta.releaseYear,
+                syncedLyrics: updatedSong.hasSyncedLyrics
+                    ? updatedSong.usltLyrics
+                    : null,
+                plainLyrics: updatedSong.hasLyrics
+                    ? RomajiService.stripTimestamps(updatedSong.usltLyrics!)
+                    : '',
+                clearSyncedLyrics: !updatedSong.hasSyncedLyrics,
+              );
+            }
+            _queueItems[i] = item.copyWith(
+              metadata: nextMeta,
+              targetFolderName: updatedSong != null &&
+                      updatedSong.folderName.isNotEmpty
+                  ? updatedSong.folderName
+                  : item.targetFolderName,
+              savedFilePath: newPath,
+            );
+          }
+        }
+        if (_savedFilePath == oldPath) {
+          _savedFilePath = newPath;
+        }
+      }
+    }
+
+    notifyListeners();
+  }
 
   Future<void> selectFolder(String folderName) async {
     final trimmed = folderName.trim();
@@ -404,8 +515,9 @@ class DownloaderProvider extends ChangeNotifier {
 
   Future<String> createAndSelectFolder(String rawName) async {
     final created = await _folderService.createCustomFolder(rawName);
-    await refreshFolders();
+    await _refreshFolderCountsOnly();
     await selectFolder(created);
+    onFolderCreated?.call(created);
     return created;
   }
 
@@ -793,7 +905,8 @@ class DownloaderProvider extends ChangeNotifier {
       _savedFilePath = outputPath;
       _duplicateFolderMap[workingMeta.sanitizedFileName.toLowerCase()] =
           targetFolder;
-      await refreshFolders();
+      await _refreshFolderCountsOnly();
+      await onSongSaved?.call(outputPath);
 
       // Record in history list
       final historyItem = DownloadItem(
@@ -914,7 +1027,8 @@ class DownloaderProvider extends ChangeNotifier {
 
           _duplicateFolderMap[meta.sanitizedFileName.toLowerCase()] =
               currentItem.targetFolderName;
-          await refreshFolders();
+          await _refreshFolderCountsOnly();
+          await onSongSaved?.call(savedPath);
 
           _updateQueueItem(
             currentItem.id,
@@ -1031,6 +1145,8 @@ class DownloaderProvider extends ChangeNotifier {
         ? true
         : preferSyncedLyrics;
 
+    final snapshot = await onBeforeFileMutation?.call(currentPath);
+
     final newPath = await _taggingService.retagExistingMp3(
       filePath: currentPath,
       updatedMetadata: updatedMeta,
@@ -1040,13 +1156,22 @@ class DownloaderProvider extends ChangeNotifier {
     _duplicateFolderMap.remove(oldKey);
     _duplicateFolderMap[updatedMeta.sanitizedFileName.toLowerCase()] =
         item.targetFolderName;
-    await refreshFolders();
+    await _refreshFolderCountsOnly();
 
     _queueItems[idx] = item.copyWith(
       metadata: updatedMeta,
       savedFilePath: newPath,
       preferSyncedLyrics: effectivePreferSynced,
       statusDetail: 'Selesai',
+    );
+    if (_savedFilePath == currentPath) {
+      _savedFilePath = newPath;
+    }
+
+    await onFileMutated?.call(
+      oldPath: currentPath,
+      newPath: newPath,
+      snapshot: snapshot,
     );
 
     notifyListeners();
@@ -1069,6 +1194,8 @@ class DownloaderProvider extends ChangeNotifier {
       throw Exception('File tidak tersedia.');
     }
 
+    final snapshot = await onBeforeFileMutation?.call(currentPath);
+
     final movedPath = await _folderService.moveDownloadedFile(
       currentFilePath: currentPath,
       targetFolderName: newFolderName,
@@ -1076,7 +1203,7 @@ class DownloaderProvider extends ChangeNotifier {
 
     _duplicateFolderMap[item.metadata.sanitizedFileName.toLowerCase()] =
         newFolderName;
-    await refreshFolders();
+    await _refreshFolderCountsOnly();
 
     _queueItems[idx] = item.copyWith(
       targetFolderName: newFolderName,
@@ -1088,6 +1215,12 @@ class DownloaderProvider extends ChangeNotifier {
       _savedFilePath = movedPath;
       _statusMessage = 'Selesai';
     }
+
+    await onFileMutated?.call(
+      oldPath: currentPath,
+      newPath: movedPath,
+      snapshot: snapshot,
+    );
 
     notifyListeners();
     return movedPath;

@@ -177,19 +177,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final panelHeight = constraints.maxHeight;
-        final activeIdx = localProvider.activeSyncedLyricIndex;
-
-        if (showOverlay &&
-            localProvider.lyricsDisplayMode ==
-                EmbeddedLyricsDisplayMode.synced &&
-            song.hasSyncedLyrics) {
-          _syncAutoScrollIfNeeded(
-            song: song,
-            activeIndex: activeIdx,
-            autoScroll: localProvider.autoScrollLyrics,
-            viewportHeight: (panelHeight - 40).clamp(120.0, 800.0),
-          );
-        }
+        final viewportHeight = (panelHeight - 40).clamp(120.0, 800.0);
 
         return ClipRRect(
           borderRadius: BorderRadius.circular(6),
@@ -267,14 +255,29 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                         color: Colors.white.withValues(alpha: 0.12),
                       ),
                       Expanded(
-                        child: _buildLyricsOverlayBody(
-                          context: context,
-                          localProvider: localProvider,
-                          downloaderProvider: downloaderProvider,
-                          song: song,
-                          activeIndex: activeIdx,
-                          viewportHeight:
-                              (panelHeight - 40).clamp(120.0, 800.0),
+                        child: ValueListenableBuilder<int>(
+                          valueListenable:
+                              localProvider.activeLyricIndexNotifier,
+                          builder: (context, activeIdx, _) {
+                            if (localProvider.lyricsDisplayMode ==
+                                    EmbeddedLyricsDisplayMode.synced &&
+                                song.hasSyncedLyrics) {
+                              _syncAutoScrollIfNeeded(
+                                song: song,
+                                activeIndex: activeIdx,
+                                autoScroll: localProvider.autoScrollLyrics,
+                                viewportHeight: viewportHeight,
+                              );
+                            }
+                            return _buildLyricsOverlayBody(
+                              context: context,
+                              localProvider: localProvider,
+                              downloaderProvider: downloaderProvider,
+                              song: song,
+                              activeIndex: activeIdx,
+                              viewportHeight: viewportHeight,
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -317,16 +320,15 @@ class _NowPlayingViewState extends State<NowPlayingView> {
 
   Widget _buildCoverArtImage(LocalSong song) {
     if (song.hasCover) {
-      final file = File(song.coverFilePath!);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) =>
-              _buildDefaultCoverArt(song),
-        );
-      }
+      return Image.file(
+        File(song.coverFilePath!),
+        fit: BoxFit.cover,
+        cacheWidth: 960,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildDefaultCoverArt(song),
+      );
     }
     return _buildDefaultCoverArt(song);
   }
@@ -1091,72 +1093,79 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   // BOTTOM SECTION: SEEKBAR & TRANSPORT CONTROLS
   // ---------------------------------------------------------------------------
   Widget _buildSeekbarRow(LocalMusicProvider localProvider, LocalSong? song) {
-    final totalMs = localProvider.durationMs > 0 ? localProvider.durationMs : 1;
-    final currentMs = (_dragSeekMs ?? localProvider.positionMs.toDouble())
-        .clamp(0.0, totalMs.toDouble());
+    return ValueListenableBuilder<PlaybackProgress>(
+      valueListenable: localProvider.progressNotifier,
+      builder: (context, progress, _) {
+        final rawTotal =
+            progress.durationMs > 0 ? progress.durationMs : localProvider.durationMs;
+        final totalMs = rawTotal > 0 ? rawTotal : 1;
+        final currentMs = (_dragSeekMs ?? progress.positionMs.toDouble())
+            .clamp(0.0, totalMs.toDouble());
 
-    return Row(
-      children: [
-        SizedBox(
-          width: 38,
-          child: Text(
-            LocalSong.formatMillis(currentMs.round()),
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11.5,
-              fontFeatures: [FontFeature.tabularFigures()],
+        return Row(
+          children: [
+            SizedBox(
+              width: 38,
+              child: Text(
+                LocalSong.formatMillis(currentMs.round()),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11.5,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
             ),
-          ),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2.4,
-              activeTrackColor: Colors.white,
-              inactiveTrackColor: Colors.white.withValues(alpha: 0.24),
-              thumbColor: Colors.white,
-              overlayColor: Colors.white.withValues(alpha: 0.14),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.2),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2.4,
+                  activeTrackColor: Colors.white,
+                  inactiveTrackColor: Colors.white.withValues(alpha: 0.24),
+                  thumbColor: Colors.white,
+                  overlayColor: Colors.white.withValues(alpha: 0.14),
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6.2),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 14),
+                ),
+                child: Slider(
+                  min: 0.0,
+                  max: totalMs.toDouble(),
+                  value: song == null ? 0.0 : currentMs,
+                  onChangeStart: song == null
+                      ? null
+                      : (val) {
+                          setState(() => _dragSeekMs = val);
+                        },
+                  onChanged: song == null
+                      ? null
+                      : (val) {
+                          setState(() => _dragSeekMs = val);
+                        },
+                  onChangeEnd: song == null
+                      ? null
+                      : (val) {
+                          localProvider.seekTo(val.round());
+                          setState(() => _dragSeekMs = null);
+                        },
+                ),
+              ),
             ),
-            child: Slider(
-              min: 0.0,
-              max: totalMs.toDouble(),
-              value: song == null ? 0.0 : currentMs,
-              onChangeStart: song == null
-                  ? null
-                  : (val) {
-                      setState(() => _dragSeekMs = val);
-                    },
-              onChanged: song == null
-                  ? null
-                  : (val) {
-                      setState(() => _dragSeekMs = val);
-                    },
-              onChangeEnd: song == null
-                  ? null
-                  : (val) {
-                      setState(() => _dragSeekMs = null);
-                      localProvider.seekTo(val.round());
-                    },
+            SizedBox(
+              width: 38,
+              child: Text(
+                song != null ? LocalSong.formatMillis(rawTotal) : '0:00',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11.5,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
             ),
-          ),
-        ),
-        SizedBox(
-          width: 38,
-          child: Text(
-            song != null
-                ? LocalSong.formatMillis(localProvider.durationMs)
-                : '0:00',
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11.5,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 

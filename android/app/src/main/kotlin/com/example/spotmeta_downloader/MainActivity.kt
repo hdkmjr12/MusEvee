@@ -5,11 +5,13 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.MediaScannerConnection
 import android.media.audiofx.AudioEffect
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -31,18 +33,85 @@ class MainActivity : FlutterActivity() {
     // 30s Preview MediaPlayer (Downloader feature)
     private var previewPlayer: MediaPlayer? = null
     private var currentPreviewUrl: String? = null
+    private var previewFocusRequest: AudioFocusRequest? = null
 
     // Primary Local Music MediaPlayer (Musicolet player engine)
     private var localPlayer: MediaPlayer? = null
     private var currentLocalPath: String? = null
+    private var currentLocalSessionId: Int = 0
     private var isLocalPrepared: Boolean = false
+    private var currentNormalizedVolume: Float = 0.85f
+    private var localFocusRequest: AudioFocusRequest? = null
+    private var resumeLocalOnFocusGain: Boolean = false
+    private var resumeLocalAfterPreview: Boolean = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
 
+    private val playbackAudioAttributes: AudioAttributes by lazy {
+        AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .build()
+    }
+
+    private val localAudioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        // Ignore self-inflicted transient loss while our own 30s preview is active
+        if (previewPlayer != null) return@OnAudioFocusChangeListener
+
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                resumeLocalOnFocusGain = false
+                resumeLocalAfterPreview = false
+                pauseLocalAudioInternal(abandonFocus = true)
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                val wasPlaying = try {
+                    isLocalPrepared && localPlayer?.isPlaying == true
+                } catch (_: Exception) {
+                    false
+                }
+                if (wasPlaying) {
+                    resumeLocalOnFocusGain = true
+                    pauseLocalAudioInternal(abandonFocus = false)
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                try {
+                    val duckGain = (currentNormalizedVolume * 0.25f).coerceIn(0f, 1f)
+                    localPlayer?.setVolume(duckGain, duckGain)
+                } catch (_: Exception) {
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                try {
+                    val gain = currentNormalizedVolume.coerceIn(0f, 1f)
+                    localPlayer?.setVolume(gain, gain)
+                } catch (_: Exception) {
+                }
+                if (resumeLocalOnFocusGain && previewPlayer == null) {
+                    resumeLocalOnFocusGain = false
+                    resumeLocalAudio()
+                }
+            }
+        }
+    }
+
+    private val previewAudioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                resumeLocalAfterPreview = false
+                stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
+            }
+        }
+    }
+
     private val positionTicker = object : Runnable {
         override fun run() {
             val mp = localPlayer
+            val activeSession = currentLocalSessionId
+            val activePath = currentLocalPath
             if (mp != null && isLocalPrepared) {
                 try {
                     if (mp.isPlaying) {
@@ -54,7 +123,8 @@ class MainActivity : FlutterActivity() {
                                 "positionMs" to pos,
                                 "durationMs" to dur,
                                 "isPlaying" to true,
-                                "path" to currentLocalPath
+                                "path" to activePath,
+                                "sessionId" to activeSession
                             )
                         )
                         mainHandler.postDelayed(this, 200L)
@@ -142,13 +212,14 @@ class MainActivity : FlutterActivity() {
                     if (url.isNullOrEmpty()) {
                         result.success(false)
                     } else {
-                        // Pause local player gently so 30s preview doesn't overlap
-                        pauseLocalAudioIfPlaying()
+                        // Pause local player gently so 30s preview doesn't overlap,
+                        // and remember if it was playing so we resume after preview ends.
+                        pauseLocalAudioForPreview()
                         playPreviewAudio(url, result)
                     }
                 }
                 "stopPreview" -> {
-                    stopPreviewAudio(notifyFlutter = true)
+                    stopPreviewAudio(notifyFlutter = true, allowResumeLocal = true)
                     result.success(true)
                 }
                 "isPreviewPlaying" -> {
@@ -166,14 +237,15 @@ class MainActivity : FlutterActivity() {
                 "localPlayFile" -> {
                     val path = call.argument<String>("path")?.trim()
                     val startPositionMs = call.argument<Int>("positionMs") ?: 0
+                    val sessionId = call.argument<Int>("sessionId") ?: 0
                     if (path.isNullOrEmpty()) {
                         result.success(false)
                     } else {
-                        playLocalAudioFile(path, startPositionMs, result)
+                        playLocalAudioFile(path, startPositionMs, sessionId, result)
                     }
                 }
                 "localPause" -> {
-                    pauseLocalAudio()
+                    pauseLocalAudioByUser()
                     result.success(true)
                 }
                 "localResume" -> {
@@ -186,7 +258,7 @@ class MainActivity : FlutterActivity() {
                     result.success(ok)
                 }
                 "localStop" -> {
-                    stopLocalAudio(notifyFlutter = true)
+                    stopLocalAudio(notifyFlutter = true, abandonFocus = true)
                     result.success(true)
                 }
                 "getVolume" -> {
@@ -196,13 +268,16 @@ class MainActivity : FlutterActivity() {
                         val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                         val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                             .coerceAtLeast(1)
-                        result.success(current.toDouble() / max.toDouble())
+                        val norm = (current.toDouble() / max.toDouble()).coerceIn(0.0, 1.0)
+                        currentNormalizedVolume = norm.toFloat()
+                        result.success(norm)
                     } else {
-                        result.success(0.8)
+                        result.success(currentNormalizedVolume.toDouble())
                     }
                 }
                 "setVolume" -> {
                     val normalized = (call.argument<Double>("volume") ?: 0.8).coerceIn(0.0, 1.0)
+                    currentNormalizedVolume = normalized.toFloat()
                     val audioManager =
                         applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
                     if (audioManager != null) {
@@ -212,7 +287,7 @@ class MainActivity : FlutterActivity() {
                         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
                     }
                     try {
-                        val gain = normalized.toFloat().coerceIn(0f, 1f)
+                        val gain = currentNormalizedVolume.coerceIn(0f, 1f)
                         localPlayer?.setVolume(gain, gain)
                     } catch (_: Exception) {
                     }
@@ -234,6 +309,27 @@ class MainActivity : FlutterActivity() {
                             mainHandler.post { result.success(tracks) }
                         } catch (e: Exception) {
                             mainHandler.post { result.success(emptyList<Map<String, Any?>>()) }
+                        }
+                    }
+                }
+                "scanLocalMusicLibraryDelta" -> {
+                    val requestedFolders = call.argument<List<String>>("folders")
+                    @Suppress("UNCHECKED_CAST")
+                    val cachedIndex =
+                        call.argument<Map<String, Map<String, Any?>>>("cachedIndex")
+                    ioExecutor.execute {
+                        try {
+                            val delta = scanLocalLibraryDeltaInternal(requestedFolders, cachedIndex)
+                            mainHandler.post { result.success(delta) }
+                        } catch (_: Exception) {
+                            mainHandler.post {
+                                result.success(
+                                    mapOf(
+                                        "presentPaths" to emptyList<String>(),
+                                        "updatedTracks" to emptyList<Map<String, Any?>>()
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -264,24 +360,104 @@ class MainActivity : FlutterActivity() {
     }
 
     // =========================================================================
+    // AUDIO FOCUS HELPERS (LOCAL PLAYER + 30s PREVIEW)
+    // =========================================================================
+    @Suppress("DEPRECATION")
+    private fun requestLocalAudioFocus(): Boolean {
+        val audioManager =
+            applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                ?: return true
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val req = localFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(playbackAudioAttributes)
+                    .setWillPauseWhenDucked(false)
+                    .setOnAudioFocusChangeListener(localAudioFocusListener, mainHandler)
+                    .build()
+                    .also { localFocusRequest = it }
+                audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                audioManager.requestAudioFocus(
+                    localAudioFocusListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun abandonLocalAudioFocus() {
+        val audioManager =
+            applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                localFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+            } else {
+                audioManager.abandonAudioFocus(localAudioFocusListener)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun requestPreviewAudioFocus(): Boolean {
+        val audioManager =
+            applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                ?: return true
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val req = previewFocusRequest
+                    ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                        .setAudioAttributes(playbackAudioAttributes)
+                        .setOnAudioFocusChangeListener(previewAudioFocusListener, mainHandler)
+                        .build()
+                        .also { previewFocusRequest = it }
+                audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                audioManager.requestAudioFocus(
+                    previewAudioFocusListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun abandonPreviewAudioFocus() {
+        val audioManager =
+            applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                previewFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+            } else {
+                audioManager.abandonAudioFocus(previewAudioFocusListener)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    // =========================================================================
     // 30s PREVIEW AUDIO IMPLEMENTATION
     // =========================================================================
     private fun playPreviewAudio(url: String, result: MethodChannel.Result) {
         try {
-            stopPreviewAudio(notifyFlutter = false)
+            stopPreviewAudio(notifyFlutter = false, allowResumeLocal = false)
+            requestPreviewAudioFocus()
             currentPreviewUrl = url
 
             val player = MediaPlayer()
             previewPlayer = player
 
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
+            player.setAudioAttributes(playbackAudioAttributes)
             player.setDataSource(url)
             player.setOnPreparedListener { mp ->
+                if (mp !== previewPlayer) return@setOnPreparedListener
                 try {
                     mp.start()
                     methodChannel?.invokeMethod(
@@ -289,25 +465,31 @@ class MainActivity : FlutterActivity() {
                         mapOf("isPlaying" to true, "url" to url)
                     )
                 } catch (_: Exception) {
-                    stopPreviewAudio(notifyFlutter = true)
+                    stopPreviewAudio(notifyFlutter = true, allowResumeLocal = true)
                 }
             }
-            player.setOnCompletionListener {
-                stopPreviewAudio(notifyFlutter = true)
+            player.setOnCompletionListener { mp ->
+                if (mp !== previewPlayer) return@setOnCompletionListener
+                stopPreviewAudio(notifyFlutter = true, allowResumeLocal = true)
             }
-            player.setOnErrorListener { _, _, _ ->
-                stopPreviewAudio(notifyFlutter = true)
+            player.setOnErrorListener { mp, _, _ ->
+                if (mp === previewPlayer) {
+                    stopPreviewAudio(notifyFlutter = true, allowResumeLocal = true)
+                }
                 true
             }
             player.prepareAsync()
             result.success(true)
         } catch (_: Exception) {
-            stopPreviewAudio(notifyFlutter = true)
+            stopPreviewAudio(notifyFlutter = true, allowResumeLocal = true)
             result.success(false)
         }
     }
 
-    private fun stopPreviewAudio(notifyFlutter: Boolean) {
+    private fun stopPreviewAudio(
+        notifyFlutter: Boolean,
+        allowResumeLocal: Boolean = true
+    ) {
         val player = previewPlayer
         previewPlayer = null
         currentPreviewUrl = null
@@ -324,11 +506,16 @@ class MainActivity : FlutterActivity() {
             } catch (_: Exception) {
             }
         }
+        abandonPreviewAudioFocus()
         if (notifyFlutter) {
             methodChannel?.invokeMethod(
                 "onPreviewStateChanged",
                 mapOf("isPlaying" to false, "url" to null)
             )
+        }
+        if (allowResumeLocal && resumeLocalAfterPreview) {
+            resumeLocalAfterPreview = false
+            resumeLocalAudio()
         }
     }
 
@@ -338,6 +525,7 @@ class MainActivity : FlutterActivity() {
     private fun playLocalAudioFile(
         path: String,
         startPositionMs: Int,
+        requestedSessionId: Int,
         result: MethodChannel.Result
     ) {
         val file = File(path)
@@ -346,23 +534,34 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        stopPreviewAudio(notifyFlutter = true)
-        stopLocalAudio(notifyFlutter = false)
+        resumeLocalAfterPreview = false
+        resumeLocalOnFocusGain = false
+        stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
+        stopLocalAudio(notifyFlutter = false, abandonFocus = false)
+
+        val capturedSessionId = if (requestedSessionId > 0) {
+            requestedSessionId
+        } else {
+            currentLocalSessionId + 1
+        }
+        currentLocalSessionId = capturedSessionId
+        val capturedPath = path
 
         try {
+            requestLocalAudioFocus()
             val player = MediaPlayer()
             localPlayer = player
-            currentLocalPath = path
+            currentLocalPath = capturedPath
             isLocalPrepared = false
 
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
-            player.setDataSource(path)
+            player.setAudioAttributes(playbackAudioAttributes)
+            val gain = currentNormalizedVolume.coerceIn(0f, 1f)
+            player.setVolume(gain, gain)
+            player.setDataSource(capturedPath)
             player.setOnPreparedListener { mp ->
+                if (mp !== localPlayer || capturedSessionId != currentLocalSessionId) {
+                    return@setOnPreparedListener
+                }
                 isLocalPrepared = true
                 try {
                     if (startPositionMs > 0 && startPositionMs < mp.duration) {
@@ -372,12 +571,17 @@ class MainActivity : FlutterActivity() {
                     notifyLocalPlayerState(isPlaying = true)
                     startPositionTicker()
                 } catch (_: Exception) {
-                    stopLocalAudio(notifyFlutter = true)
+                    stopLocalAudio(notifyFlutter = true, abandonFocus = true)
                 }
             }
             player.setOnCompletionListener { mp ->
+                if (mp !== localPlayer ||
+                    capturedSessionId != currentLocalSessionId ||
+                    !isLocalPrepared
+                ) {
+                    return@setOnCompletionListener
+                }
                 stopPositionTicker()
-                val completedPath = currentLocalPath
                 val dur = try {
                     mp.duration
                 } catch (_: Exception) {
@@ -386,27 +590,31 @@ class MainActivity : FlutterActivity() {
                 methodChannel?.invokeMethod(
                     "onLocalTrackCompleted",
                     mapOf(
-                        "path" to completedPath,
+                        "path" to capturedPath,
+                        "sessionId" to capturedSessionId,
                         "durationMs" to dur
                     )
                 )
             }
-            player.setOnErrorListener { _, _, _ ->
-                stopLocalAudio(notifyFlutter = true)
+            player.setOnErrorListener { mp, _, _ ->
+                if (mp === localPlayer && capturedSessionId == currentLocalSessionId) {
+                    stopLocalAudio(notifyFlutter = true, abandonFocus = true)
+                }
                 true
             }
             player.prepareAsync()
             result.success(true)
         } catch (_: Exception) {
-            stopLocalAudio(notifyFlutter = true)
+            stopLocalAudio(notifyFlutter = true, abandonFocus = true)
             result.success(false)
         }
     }
 
-    private fun pauseLocalAudioIfPlaying() {
+    private fun pauseLocalAudioForPreview() {
         val mp = localPlayer ?: return
         try {
             if (isLocalPrepared && mp.isPlaying) {
+                resumeLocalAfterPreview = true
                 mp.pause()
                 stopPositionTicker()
                 notifyLocalPlayerState(isPlaying = false)
@@ -415,7 +623,13 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun pauseLocalAudio() {
+    private fun pauseLocalAudioByUser() {
+        resumeLocalOnFocusGain = false
+        resumeLocalAfterPreview = false
+        pauseLocalAudioInternal(abandonFocus = true)
+    }
+
+    private fun pauseLocalAudioInternal(abandonFocus: Boolean) {
         val mp = localPlayer ?: return
         try {
             if (isLocalPrepared && mp.isPlaying) {
@@ -424,6 +638,9 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
         }
         stopPositionTicker()
+        if (abandonFocus) {
+            abandonLocalAudioFocus()
+        }
         notifyLocalPlayerState(isPlaying = false)
     }
 
@@ -431,7 +648,11 @@ class MainActivity : FlutterActivity() {
         val mp = localPlayer ?: return false
         if (!isLocalPrepared) return false
         return try {
-            stopPreviewAudio(notifyFlutter = true)
+            resumeLocalAfterPreview = false
+            stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
+            requestLocalAudioFocus()
+            val gain = currentNormalizedVolume.coerceIn(0f, 1f)
+            mp.setVolume(gain, gain)
             if (!mp.isPlaying) {
                 mp.start()
             }
@@ -456,7 +677,8 @@ class MainActivity : FlutterActivity() {
                     "positionMs" to clamped,
                     "durationMs" to dur,
                     "isPlaying" to mp.isPlaying,
-                    "path" to currentLocalPath
+                    "path" to currentLocalPath,
+                    "sessionId" to currentLocalSessionId
                 )
             )
             true
@@ -465,12 +687,17 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun stopLocalAudio(notifyFlutter: Boolean) {
+    private fun stopLocalAudio(notifyFlutter: Boolean, abandonFocus: Boolean = true) {
         stopPositionTicker()
+        if (notifyFlutter) {
+            resumeLocalOnFocusGain = false
+            resumeLocalAfterPreview = false
+        }
         val mp = localPlayer
         localPlayer = null
         isLocalPrepared = false
         val prevPath = currentLocalPath
+        val prevSession = currentLocalSessionId
         currentLocalPath = null
         if (mp != null) {
             try {
@@ -485,12 +712,16 @@ class MainActivity : FlutterActivity() {
             } catch (_: Exception) {
             }
         }
+        if (abandonFocus) {
+            abandonLocalAudioFocus()
+        }
         if (notifyFlutter) {
             methodChannel?.invokeMethod(
                 "onLocalPlayerState",
                 mapOf(
                     "isPlaying" to false,
                     "path" to prevPath,
+                    "sessionId" to prevSession,
                     "positionMs" to 0,
                     "durationMs" to 0,
                     "audioSessionId" to 0
@@ -521,6 +752,7 @@ class MainActivity : FlutterActivity() {
             mapOf(
                 "isPlaying" to isPlaying,
                 "path" to currentLocalPath,
+                "sessionId" to currentLocalSessionId,
                 "positionMs" to pos,
                 "durationMs" to dur,
                 "audioSessionId" to sessionId
@@ -564,7 +796,7 @@ class MainActivity : FlutterActivity() {
     // =========================================================================
     // LOCAL LIBRARY SCANNER & ID3v2 (USLT + APIC) METADATA EXTRACTOR
     // =========================================================================
-    private fun scanLocalLibraryInternal(requestedFolders: List<String>?): List<Map<String, Any?>> {
+    private fun discoverLocalAudioFiles(requestedFolders: List<String>?): LinkedHashMap<String, File> {
         val audioExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "opus")
         val discoveredFiles = LinkedHashMap<String, File>()
 
@@ -612,6 +844,11 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
         }
 
+        return discoveredFiles
+    }
+
+    private fun scanLocalLibraryInternal(requestedFolders: List<String>?): List<Map<String, Any?>> {
+        val discoveredFiles = discoverLocalAudioFiles(requestedFolders)
         val results = ArrayList<Map<String, Any?>>(discoveredFiles.size)
         for (file in discoveredFiles.values) {
             try {
@@ -620,6 +857,57 @@ class MainActivity : FlutterActivity() {
             }
         }
         return results
+    }
+
+    /**
+     * Incremental delta scanner: checks `lastModifiedMs` + `sizeBytes` + persistent cover file
+     * in `filesDir/covers` before running `MediaMetadataRetriever` or `parseId3v2Tags`.
+     * Unchanged files skip heavy I/O and Bitmap decoding 100%.
+     */
+    private fun scanLocalLibraryDeltaInternal(
+        requestedFolders: List<String>?,
+        cachedIndex: Map<String, Map<String, Any?>>?
+    ): Map<String, Any?> {
+        val discoveredFiles = discoverLocalAudioFiles(requestedFolders)
+        val presentPaths = ArrayList<String>(discoveredFiles.size)
+        val updatedTracks = ArrayList<Map<String, Any?>>()
+        val persistentCoversRoot = File(applicationContext.filesDir, "covers").absolutePath
+
+        for ((path, file) in discoveredFiles) {
+            presentPaths.add(path)
+            val cached = cachedIndex?.get(path)
+            var isUpToDate = false
+            if (cached != null) {
+                val cachedMod = (cached["lastModifiedMs"] as? Number)?.toLong() ?: -1L
+                val cachedSize = (cached["sizeBytes"] as? Number)?.toLong() ?: -1L
+                if (cachedMod == file.lastModified() && cachedSize == file.length()) {
+                    val cachedCoverPath = (cached["coverFilePath"] as? String)?.trim()
+                    if (cachedCoverPath.isNullOrEmpty()) {
+                        isUpToDate = true
+                    } else {
+                        val covFile = File(cachedCoverPath)
+                        if (covFile.exists() &&
+                            covFile.length() > 0L &&
+                            covFile.parentFile?.absolutePath == persistentCoversRoot
+                        ) {
+                            isUpToDate = true
+                        }
+                    }
+                }
+            }
+
+            if (!isUpToDate) {
+                try {
+                    updatedTracks.add(extractTrackMetadataMap(file))
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        return mapOf(
+            "presentPaths" to presentPaths,
+            "updatedTracks" to updatedTracks
+        )
     }
 
     private fun collectAudioFilesRecursively(
@@ -723,15 +1011,27 @@ class MainActivity : FlutterActivity() {
         var dominantColor = 0xFF1E222B.toInt()
 
         if (coverBytes != null && coverBytes.isNotEmpty()) {
-            val coversDir = File(applicationContext.cacheDir, "covers")
+            // Store extracted cover artwork in persistent `filesDir/covers` so Android OS
+            // cache cleanup never deletes cover thumbnails behind the library cache's back.
+            val coversDir = File(applicationContext.filesDir, "covers")
             if (!coversDir.exists()) {
                 coversDir.mkdirs()
             }
             val safeHash = file.absolutePath.hashCode().toUInt().toString(16)
-            val cachedCover = File(coversDir, "cov_${safeHash}_${file.lastModified()}.jpg")
+            val prefix = "cov_${safeHash}_"
+            val cachedCover = File(coversDir, "${prefix}${file.lastModified()}.jpg")
             try {
                 if (!cachedCover.exists() || cachedCover.length() == 0L) {
                     cachedCover.writeBytes(coverBytes)
+                }
+                // Prune any older cover file revisions for this same audio path
+                coversDir.listFiles()?.forEach { existing ->
+                    if (existing.name.startsWith(prefix) && existing.name != cachedCover.name) {
+                        try {
+                            existing.delete()
+                        } catch (_: Exception) {
+                        }
+                    }
                 }
                 coverFilePath = cachedCover.absolutePath
             } catch (_: Exception) {
@@ -762,9 +1062,10 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Reads ONLY the ID3v2 header region of an MP3 file via RandomAccessFile
-     * and extracts `USLT` (UTF-8 / UTF-16 / UTF-16BE / ISO-8859-1), text frames,
-     * and optional `APIC` image bytes.
+     * Streams ID3v2 frames via `RandomAccessFile` and extracts `USLT`
+     * (UTF-8 / UTF-16 / UTF-16BE / ISO-8859-1), text frames, and optional `APIC`
+     * image bytes — skipping `APIC`/`PIC` and unneeded binary frames via `raf.seek()`
+     * instead of allocating multi-megabyte byte arrays when `needApic == false`.
      */
     private fun parseId3v2Tags(file: File, needApic: Boolean): ParsedId3Tags {
         if (!file.exists() || file.length() < 14L) {
@@ -796,121 +1097,245 @@ class MainActivity : FlutterActivity() {
                     return ParsedId3Tags(null, null, null, null, null, null)
                 }
 
-                val maxRead = minOf(tagSize.toLong(), file.length() - 10L, 6L * 1024L * 1024L).toInt()
-                if (maxRead <= 0) {
-                    return ParsedId3Tags(null, null, null, null, null, null)
-                }
-
-                var tagBytes = ByteArray(maxRead)
-                raf.readFully(tagBytes)
-
-                // Whole-tag unsynchronisation (ID3v2.2 / v2.3)
+                // Fallback to whole-tag buffer ONLY when legacy whole-tag unsynchronisation (0x80) is set
                 if (versionMajor <= 3 && (headerFlags and 0x80) != 0) {
+                    val maxRead = minOf(tagSize.toLong(), file.length() - 10L, 6L * 1024L * 1024L).toInt()
+                    if (maxRead <= 0) {
+                        return ParsedId3Tags(null, null, null, null, null, null)
+                    }
+                    var tagBytes = ByteArray(maxRead)
+                    raf.readFully(tagBytes)
                     tagBytes = removeUnsynchronisation(tagBytes)
+                    return parseId3v2FromBuffer(tagBytes, versionMajor, headerFlags, needApic)
                 }
 
-                var offset = 0
+                val tagEndPos = 10L + minOf(
+                    tagSize.toLong(),
+                    file.length() - 10L,
+                    16L * 1024L * 1024L
+                )
+
                 // Skip extended header if present
-                if ((headerFlags and 0x40) != 0 && tagBytes.size >= 4) {
+                if ((headerFlags and 0x40) != 0 && raf.filePointer + 4L <= tagEndPos) {
+                    val extBuf = ByteArray(4)
+                    raf.readFully(extBuf)
                     val extSize = if (versionMajor == 4) {
-                        readSyncsafeInt(tagBytes, 0)
+                        readSyncsafeInt(extBuf, 0).toLong()
                     } else {
-                        readBigEndianInt(tagBytes, 0) + 4
+                        readBigEndianInt(extBuf, 0).toLong() + 4L
                     }
-                    if (extSize in 4 until tagBytes.size) {
-                        offset += extSize
+                    val nextAfterExt = 10L + extSize
+                    if (extSize >= 4L && nextAfterExt < tagEndPos) {
+                        raf.seek(nextAfterExt)
+                    } else {
+                        raf.seek(10L)
                     }
                 }
 
                 if (versionMajor == 2) {
-                    while (offset + 6 <= tagBytes.size) {
-                        if (tagBytes[offset] == 0.toByte()) break
-                        val frameId = String(tagBytes, offset, 3, StandardCharsets.ISO_8859_1)
-                        val frameSize = ((tagBytes[offset + 3].toInt() and 0xFF) shl 16) or
-                            ((tagBytes[offset + 4].toInt() and 0xFF) shl 8) or
-                            (tagBytes[offset + 5].toInt() and 0xFF)
-                        if (frameSize <= 0 || offset + 6 + frameSize > tagBytes.size) break
-                        val payload = tagBytes.copyOfRange(offset + 6, offset + 6 + frameSize)
-                        when (frameId) {
-                            "TT2" -> title = decodeTextFrame(payload)
-                            "TP1" -> artist = decodeTextFrame(payload)
-                            "TAL" -> album = decodeTextFrame(payload)
-                            "TYE" -> year = decodeTextFrame(payload)
-                            "ULT" -> usltLyrics = decodeUsltFrame(payload)
-                            "PIC" -> if (needApic && apicBytes == null) {
-                                apicBytes = extractImageFromBytes(payload)
+                    val fh = ByteArray(6)
+                    while (raf.filePointer + 6L <= tagEndPos) {
+                        raf.readFully(fh)
+                        if (fh[0] == 0.toByte()) break
+                        val frameId = String(fh, 0, 3, StandardCharsets.ISO_8859_1)
+                        val frameSize = ((fh[3].toInt() and 0xFF) shl 16) or
+                            ((fh[4].toInt() and 0xFF) shl 8) or
+                            (fh[5].toInt() and 0xFF)
+                        val dataStart = raf.filePointer
+                        val nextFramePos = dataStart + frameSize.toLong()
+                        if (frameSize <= 0 || nextFramePos > tagEndPos) break
+
+                        val wantFrame = when (frameId) {
+                            "TT2", "TP1", "TAL", "TYE" -> frameSize <= 64 * 1024
+                            "ULT" -> frameSize <= 1024 * 1024
+                            "PIC" -> needApic && apicBytes == null && frameSize <= 6 * 1024 * 1024
+                            else -> false
+                        }
+
+                        if (!wantFrame) {
+                            raf.seek(nextFramePos)
+                        } else {
+                            val payload = ByteArray(frameSize)
+                            raf.readFully(payload)
+                            when (frameId) {
+                                "TT2" -> title = decodeTextFrame(payload)
+                                "TP1" -> artist = decodeTextFrame(payload)
+                                "TAL" -> album = decodeTextFrame(payload)
+                                "TYE" -> year = decodeTextFrame(payload)
+                                "ULT" -> usltLyrics = decodeUsltFrame(payload)
+                                "PIC" -> if (needApic && apicBytes == null) {
+                                    apicBytes = extractImageFromBytes(payload)
+                                }
                             }
                         }
-                        offset += 6 + frameSize
                     }
                 } else {
-                    // ID3v2.3 & ID3v2.4 (10-byte frame headers)
-                    while (offset + 10 <= tagBytes.size) {
-                        if (tagBytes[offset] == 0.toByte()) break
-                        val frameId = String(tagBytes, offset, 4, StandardCharsets.ISO_8859_1)
+                    // ID3v2.3 & ID3v2.4 streaming 10-byte frame header reader
+                    val fh = ByteArray(10)
+                    val peekBuf = ByteArray(4)
+                    while (raf.filePointer + 10L <= tagEndPos) {
+                        raf.readFully(fh)
+                        if (fh[0] == 0.toByte()) break
+                        val frameId = String(fh, 0, 4, StandardCharsets.ISO_8859_1)
                         if (!frameId.all { it in 'A'..'Z' || it in '0'..'9' }) break
 
+                        val dataStart = raf.filePointer
                         val frameSize = if (versionMajor == 4) {
-                            val syncSize = readSyncsafeInt(tagBytes, offset + 4)
-                            val beSize = readBigEndianInt(tagBytes, offset + 4)
-                            // Guard against non-compliant v2.4 encoders that wrote non-syncsafe sizes
+                            val syncSize = readSyncsafeInt(fh, 4)
+                            val beSize = readBigEndianInt(fh, 4)
                             if (syncSize != beSize &&
-                                offset + 10 + syncSize + 4 <= tagBytes.size &&
-                                !isLikelyFrameHeaderOrPadding(tagBytes, offset + 10 + syncSize) &&
-                                offset + 10 + beSize <= tagBytes.size &&
-                                isLikelyFrameHeaderOrPadding(tagBytes, offset + 10 + beSize)
+                                beSize > 0 &&
+                                dataStart + syncSize.toLong() + 4L <= tagEndPos &&
+                                dataStart + beSize.toLong() <= tagEndPos
                             ) {
-                                beSize
+                                raf.seek(dataStart + syncSize.toLong())
+                                raf.readFully(peekBuf)
+                                val syncValidNext = isLikelyFrameHeaderOrPadding(peekBuf, 0)
+                                var beValidNext = true
+                                if (!syncValidNext && dataStart + beSize.toLong() + 4L <= tagEndPos) {
+                                    raf.seek(dataStart + beSize.toLong())
+                                    raf.readFully(peekBuf)
+                                    beValidNext = isLikelyFrameHeaderOrPadding(peekBuf, 0)
+                                }
+                                raf.seek(dataStart)
+                                if (!syncValidNext && beValidNext) beSize else syncSize
                             } else {
                                 syncSize
                             }
                         } else {
-                            readBigEndianInt(tagBytes, offset + 4)
+                            readBigEndianInt(fh, 4)
                         }
 
-                        if (frameSize <= 0 || offset + 10 + frameSize > tagBytes.size) break
+                        val nextFramePos = dataStart + frameSize.toLong()
+                        if (frameSize <= 0 || nextFramePos > tagEndPos) break
 
-                        val formatFlags = tagBytes[offset + 9].toInt() and 0xFF
-                        var payloadStart = offset + 10
-                        val payloadEnd = offset + 10 + frameSize
-
-                        // Data length indicator in ID3v2.4 adds 4 syncsafe bytes before payload
-                        if (versionMajor == 4 && (formatFlags and 0x01) != 0 && payloadStart + 4 <= payloadEnd) {
-                            payloadStart += 4
+                        val wantFrame = when (frameId) {
+                            "TIT2", "TPE1", "TPE2", "TALB", "TDRC", "TYER" -> frameSize <= 64 * 1024
+                            "USLT" -> frameSize <= 1024 * 1024
+                            "APIC" -> needApic && apicBytes == null && frameSize <= 6 * 1024 * 1024
+                            else -> false
                         }
 
-                        var payload = tagBytes.copyOfRange(payloadStart, payloadEnd)
-                        if (versionMajor == 4 && (formatFlags and 0x02) != 0) {
-                            payload = removeUnsynchronisation(payload)
-                        }
-
-                        when (frameId) {
-                            "TIT2" -> title = decodeTextFrame(payload)
-                            "TPE1" -> if (artist.isNullOrBlank()) artist = decodeTextFrame(payload)
-                            "TPE2" -> if (artist.isNullOrBlank()) artist = decodeTextFrame(payload)
-                            "TALB" -> album = decodeTextFrame(payload)
-                            "TDRC", "TYER" -> if (year.isNullOrBlank()) year = decodeTextFrame(payload)
-                            "USLT" -> {
-                                val decoded = decodeUsltFrame(payload)
-                                if (!decoded.isNullOrBlank()) {
-                                    // Prefer synced LRC lyrics if multiple USLT frames exist
-                                    if (usltLyrics.isNullOrBlank() || decoded.contains("[0")) {
-                                        usltLyrics = decoded
+                        if (!wantFrame) {
+                            raf.seek(nextFramePos)
+                        } else {
+                            val formatFlags = fh[9].toInt() and 0xFF
+                            var readLen = frameSize
+                            if (versionMajor == 4 && (formatFlags and 0x01) != 0 && readLen >= 4) {
+                                raf.skipBytes(4)
+                                readLen -= 4
+                            }
+                            if (readLen > 0) {
+                                var payload = ByteArray(readLen)
+                                raf.readFully(payload)
+                                if (versionMajor == 4 && (formatFlags and 0x02) != 0) {
+                                    payload = removeUnsynchronisation(payload)
+                                }
+                                when (frameId) {
+                                    "TIT2" -> title = decodeTextFrame(payload)
+                                    "TPE1" -> if (artist.isNullOrBlank()) artist = decodeTextFrame(payload)
+                                    "TPE2" -> if (artist.isNullOrBlank()) artist = decodeTextFrame(payload)
+                                    "TALB" -> album = decodeTextFrame(payload)
+                                    "TDRC", "TYER" -> if (year.isNullOrBlank()) year = decodeTextFrame(payload)
+                                    "USLT" -> {
+                                        val decoded = decodeUsltFrame(payload)
+                                        if (!decoded.isNullOrBlank()) {
+                                            if (usltLyrics.isNullOrBlank() || decoded.contains("[0")) {
+                                                usltLyrics = decoded
+                                            }
+                                        }
+                                    }
+                                    "APIC" -> if (needApic && apicBytes == null) {
+                                        apicBytes = extractImageFromBytes(payload)
                                     }
                                 }
                             }
-                            "APIC" -> if (needApic && apicBytes == null) {
-                                apicBytes = extractImageFromBytes(payload)
-                            }
+                            raf.seek(nextFramePos)
                         }
-
-                        offset += 10 + frameSize
                     }
                 }
             }
         } catch (_: Exception) {
         }
 
+        return ParsedId3Tags(title, artist, album, year, usltLyrics, apicBytes)
+    }
+
+    private fun parseId3v2FromBuffer(
+        tagBytes: ByteArray,
+        versionMajor: Int,
+        headerFlags: Int,
+        needApic: Boolean
+    ): ParsedId3Tags {
+        var title: String? = null
+        var artist: String? = null
+        var album: String? = null
+        var year: String? = null
+        var usltLyrics: String? = null
+        var apicBytes: ByteArray? = null
+
+        var offset = 0
+        if ((headerFlags and 0x40) != 0 && tagBytes.size >= 4) {
+            val extSize = if (versionMajor == 4) {
+                readSyncsafeInt(tagBytes, 0)
+            } else {
+                readBigEndianInt(tagBytes, 0) + 4
+            }
+            if (extSize in 4 until tagBytes.size) {
+                offset += extSize
+            }
+        }
+
+        if (versionMajor == 2) {
+            while (offset + 6 <= tagBytes.size) {
+                if (tagBytes[offset] == 0.toByte()) break
+                val frameId = String(tagBytes, offset, 3, StandardCharsets.ISO_8859_1)
+                val frameSize = ((tagBytes[offset + 3].toInt() and 0xFF) shl 16) or
+                    ((tagBytes[offset + 4].toInt() and 0xFF) shl 8) or
+                    (tagBytes[offset + 5].toInt() and 0xFF)
+                if (frameSize <= 0 || offset + 6 + frameSize > tagBytes.size) break
+                val payload = tagBytes.copyOfRange(offset + 6, offset + 6 + frameSize)
+                when (frameId) {
+                    "TT2" -> title = decodeTextFrame(payload)
+                    "TP1" -> artist = decodeTextFrame(payload)
+                    "TAL" -> album = decodeTextFrame(payload)
+                    "TYE" -> year = decodeTextFrame(payload)
+                    "ULT" -> usltLyrics = decodeUsltFrame(payload)
+                    "PIC" -> if (needApic && apicBytes == null) {
+                        apicBytes = extractImageFromBytes(payload)
+                    }
+                }
+                offset += 6 + frameSize
+            }
+        } else {
+            while (offset + 10 <= tagBytes.size) {
+                if (tagBytes[offset] == 0.toByte()) break
+                val frameId = String(tagBytes, offset, 4, StandardCharsets.ISO_8859_1)
+                if (!frameId.all { it in 'A'..'Z' || it in '0'..'9' }) break
+                val frameSize = readBigEndianInt(tagBytes, offset + 4)
+                if (frameSize <= 0 || offset + 10 + frameSize > tagBytes.size) break
+                val payload = tagBytes.copyOfRange(offset + 10, offset + 10 + frameSize)
+                when (frameId) {
+                    "TIT2" -> title = decodeTextFrame(payload)
+                    "TPE1" -> if (artist.isNullOrBlank()) artist = decodeTextFrame(payload)
+                    "TPE2" -> if (artist.isNullOrBlank()) artist = decodeTextFrame(payload)
+                    "TALB" -> album = decodeTextFrame(payload)
+                    "TDRC", "TYER" -> if (year.isNullOrBlank()) year = decodeTextFrame(payload)
+                    "USLT" -> {
+                        val decoded = decodeUsltFrame(payload)
+                        if (!decoded.isNullOrBlank()) {
+                            if (usltLyrics.isNullOrBlank() || decoded.contains("[0")) {
+                                usltLyrics = decoded
+                            }
+                        }
+                    }
+                    "APIC" -> if (needApic && apicBytes == null) {
+                        apicBytes = extractImageFromBytes(payload)
+                    }
+                }
+                offset += 10 + frameSize
+            }
+        }
         return ParsedId3Tags(title, artist, album, year, usltLyrics, apicBytes)
     }
 
@@ -1131,8 +1556,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        stopPreviewAudio(notifyFlutter = false)
-        stopLocalAudio(notifyFlutter = false)
+        stopPreviewAudio(notifyFlutter = false, allowResumeLocal = false)
+        stopLocalAudio(notifyFlutter = false, abandonFocus = true)
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
