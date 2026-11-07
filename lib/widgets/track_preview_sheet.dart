@@ -117,6 +117,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
             provider.isPreviewPlaying && provider.activePreviewUrl == previewUrl;
 
         final hasJapanese = RomajiService.trackHasJapanese(track);
+        final hasJapaneseLyrics = RomajiService.trackLyricsHasJapanese(track) ||
+            RomajiService.containsJapanese(previewLyricsText);
         final selectedCandidate = provider.selectedYoutubeCandidate;
 
         return SafeArea(
@@ -647,39 +649,93 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                           ],
                         ),
 
-                        // Toggle: Lirik Berjalan | Lirik Biasa
+                        // Toggle: Lirik Berjalan | Lirik Biasa + Auto-Romaji Lirik
                         if (!isFetchingLyrics && hasAnyLyrics) ...[
                           const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: _surfaceCard,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: hairline, width: 0.8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildLyricsModeSegment(
-                                  label: 'Lirik Berjalan',
-                                  selected: useSynced,
-                                  enabled: hasSynced,
-                                  onTap: hasSynced
-                                      ? () => provider.setPreferSyncedLyrics(
-                                            true,
-                                          )
-                                      : null,
-                                ),
-                                _buildLyricsModeSegment(
-                                  label: 'Lirik Biasa',
-                                  selected: !useSynced,
-                                  enabled: true,
-                                  onTap: () => provider.setPreferSyncedLyrics(
-                                    false,
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: BoxDecoration(
+                                  color: _surfaceCard,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: hairline,
+                                    width: 0.8,
                                   ),
                                 ),
-                              ],
-                            ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildLyricsModeSegment(
+                                      label: 'Lirik Berjalan',
+                                      selected: useSynced,
+                                      enabled: hasSynced,
+                                      onTap: hasSynced
+                                          ? () =>
+                                              provider.setPreferSyncedLyrics(
+                                                true,
+                                              )
+                                          : null,
+                                    ),
+                                    _buildLyricsModeSegment(
+                                      label: 'Lirik Biasa',
+                                      selected: !useSynced,
+                                      enabled: true,
+                                      onTap: () =>
+                                          provider.setPreferSyncedLyrics(
+                                        false,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Spacer(),
+                              if (hasJapaneseLyrics)
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: provider.isRomanizing
+                                      ? null
+                                      : () async {
+                                          final ok = await provider
+                                              .autoRomanizeCurrentLyrics();
+                                          if (ok && context.mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  'Lirik berhasil dikonversi ke Romaji.',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: _surfaceCard,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: hairline,
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      provider.isRomanizing
+                                          ? 'Mengonversi...'
+                                          : '✨ Auto-Romaji',
+                                      style: const TextStyle(
+                                        color: _primaryBlue,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ],
 

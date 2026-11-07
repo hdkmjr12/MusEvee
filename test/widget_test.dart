@@ -6,9 +6,8 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(const SpotMetaApp());
 
-    expect(find.text('SpotMeta Downloader'), findsOneWidget);
-    expect(find.text('Cek Lagu'), findsOneWidget);
-    expect(find.text('Paste'), findsOneWidget);
+    expect(find.text('MusEvee'), findsOneWidget);
+    expect(find.text('YOASOBI - Idol'), findsOneWidget);
   });
 }
 

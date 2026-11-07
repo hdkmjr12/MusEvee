@@ -252,9 +252,40 @@ class DownloaderProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final romanized = await _romajiService.romanizeTrackInfo(current);
+      var romanized = await _romajiService.romanizeTrackInfo(current);
+      if (RomajiService.trackLyricsHasJapanese(romanized)) {
+        romanized = await _romajiService.romanizeTrackLyrics(romanized);
+        if (romanized.hasSyncedLyrics) {
+          _preferSyncedLyrics = true;
+        }
+      }
       _trackMetadata = romanized;
       await _checkDuplicatesForTracks([romanized]);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _isRomanizing = false;
+      notifyListeners();
+    }
+  }
+
+  /// Converts the current track's lyrics (`syncedLyrics` and `plainLyrics`)
+  /// into Romaji while preserving `[mm:ss.xx]` timestamps and deriving
+  /// `plainLyrics` without duplicate API requests.
+  Future<bool> autoRomanizeCurrentLyrics() async {
+    final current = _trackMetadata;
+    if (current == null || _isRomanizing) return false;
+
+    _isRomanizing = true;
+    notifyListeners();
+
+    try {
+      final romanized = await _romajiService.romanizeTrackLyrics(current);
+      _trackMetadata = romanized;
+      if (romanized.hasSyncedLyrics) {
+        _preferSyncedLyrics = true;
+      }
       return true;
     } catch (_) {
       return false;
@@ -436,6 +467,7 @@ class DownloaderProvider extends ChangeNotifier {
     required String album,
     required String releaseYear,
     required String plainLyrics,
+    String? syncedLyrics,
   }) async {
     final current = _trackMetadata;
     if (current == null) return;
@@ -444,6 +476,26 @@ class DownloaderProvider extends ChangeNotifier {
     final hasLrcTimestamps =
         RegExp(r'\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]').hasMatch(trimmedLyrics);
 
+    String? resolvedSyncedLyrics;
+    String? resolvedPlainLyrics;
+    bool shouldClearSynced = false;
+
+    if (syncedLyrics != null && syncedLyrics.trim().isNotEmpty) {
+      resolvedSyncedLyrics = syncedLyrics.trim();
+      resolvedPlainLyrics = hasLrcTimestamps
+          ? RomajiService.stripTimestamps(resolvedSyncedLyrics)
+          : (trimmedLyrics.isNotEmpty
+              ? trimmedLyrics
+              : RomajiService.stripTimestamps(resolvedSyncedLyrics));
+    } else if (hasLrcTimestamps) {
+      resolvedSyncedLyrics = trimmedLyrics;
+      resolvedPlainLyrics = RomajiService.stripTimestamps(trimmedLyrics);
+    } else {
+      resolvedSyncedLyrics = current.syncedLyrics;
+      resolvedPlainLyrics = trimmedLyrics;
+      shouldClearSynced = !_preferSyncedLyrics;
+    }
+
     final updated = current.copyWith(
       title: title.trim().isNotEmpty ? title.trim() : current.title,
       artist: artist.trim().isNotEmpty ? artist.trim() : current.artist,
@@ -451,13 +503,14 @@ class DownloaderProvider extends ChangeNotifier {
       releaseYear: releaseYear.trim().isNotEmpty
           ? releaseYear.trim()
           : current.releaseYear,
-      syncedLyrics: hasLrcTimestamps ? trimmedLyrics : current.syncedLyrics,
-      plainLyrics: hasLrcTimestamps ? current.plainLyrics : trimmedLyrics,
-      clearSyncedLyrics: !hasLrcTimestamps && !_preferSyncedLyrics,
+      syncedLyrics: resolvedSyncedLyrics,
+      plainLyrics: resolvedPlainLyrics,
+      clearSyncedLyrics: shouldClearSynced,
     );
 
     _trackMetadata = updated;
-    if (hasLrcTimestamps) {
+    if (hasLrcTimestamps ||
+        (syncedLyrics != null && syncedLyrics.trim().isNotEmpty)) {
       _preferSyncedLyrics = true;
     }
     await _checkDuplicatesForTracks([updated]);
@@ -820,6 +873,7 @@ class DownloaderProvider extends ChangeNotifier {
     required String releaseYear,
     required String lyricsText,
     required bool preferSyncedLyrics,
+    String? syncedLyrics,
   }) async {
     final idx = _queueItems.indexWhere((e) => e.id == itemId);
     if (idx == -1) {
@@ -836,6 +890,26 @@ class DownloaderProvider extends ChangeNotifier {
     final hasLrcTimestamps =
         RegExp(r'\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]').hasMatch(trimmedLyrics);
 
+    String? resolvedSyncedLyrics;
+    String? resolvedPlainLyrics;
+    bool shouldClearSynced = false;
+
+    if (syncedLyrics != null && syncedLyrics.trim().isNotEmpty) {
+      resolvedSyncedLyrics = syncedLyrics.trim();
+      resolvedPlainLyrics = hasLrcTimestamps
+          ? RomajiService.stripTimestamps(resolvedSyncedLyrics)
+          : (trimmedLyrics.isNotEmpty
+              ? trimmedLyrics
+              : RomajiService.stripTimestamps(resolvedSyncedLyrics));
+    } else if (hasLrcTimestamps) {
+      resolvedSyncedLyrics = trimmedLyrics;
+      resolvedPlainLyrics = RomajiService.stripTimestamps(trimmedLyrics);
+    } else {
+      resolvedSyncedLyrics = item.metadata.syncedLyrics;
+      resolvedPlainLyrics = trimmedLyrics;
+      shouldClearSynced = !preferSyncedLyrics;
+    }
+
     final updatedMeta = item.metadata.copyWith(
       title: title.trim().isNotEmpty ? title.trim() : item.metadata.title,
       artist: artist.trim().isNotEmpty ? artist.trim() : item.metadata.artist,
@@ -843,12 +917,15 @@ class DownloaderProvider extends ChangeNotifier {
       releaseYear: releaseYear.trim().isNotEmpty
           ? releaseYear.trim()
           : item.metadata.releaseYear,
-      syncedLyrics: hasLrcTimestamps ? trimmedLyrics : item.metadata.syncedLyrics,
-      plainLyrics: hasLrcTimestamps ? item.metadata.plainLyrics : trimmedLyrics,
-      clearSyncedLyrics: !hasLrcTimestamps && !preferSyncedLyrics,
+      syncedLyrics: resolvedSyncedLyrics,
+      plainLyrics: resolvedPlainLyrics,
+      clearSyncedLyrics: shouldClearSynced,
     );
 
-    final effectivePreferSynced = hasLrcTimestamps ? true : preferSyncedLyrics;
+    final effectivePreferSynced = (hasLrcTimestamps ||
+            (syncedLyrics != null && syncedLyrics.trim().isNotEmpty))
+        ? true
+        : preferSyncedLyrics;
 
     final newPath = await _taggingService.retagExistingMp3(
       filePath: currentPath,

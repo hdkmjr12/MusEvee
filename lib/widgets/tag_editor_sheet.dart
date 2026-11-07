@@ -73,6 +73,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
   bool _preferSyncedLyrics = true;
   bool _isConvertingRomaji = false;
   bool _isSaving = false;
+  String? _syncedLyricsOverride;
 
   @override
   void initState() {
@@ -110,7 +111,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
       RomajiService.containsJapanese(_albumController.text);
 
   bool get _hasJapaneseInLyrics =>
-      RomajiService.containsJapanese(_lyricsController.text);
+      RomajiService.containsJapanese(_lyricsController.text) ||
+      RomajiService.trackLyricsHasJapanese(widget.track);
 
   Future<void> _convertFieldsToRomaji() async {
     if (_isConvertingRomaji) return;
@@ -140,12 +142,39 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
     if (_isConvertingRomaji) return;
     setState(() => _isConvertingRomaji = true);
     try {
-      final converted = await widget.provider.romajiService
-          .romanizeLyrics(_lyricsController.text);
-      if (!mounted) return;
-      setState(() {
-        _lyricsController.text = converted;
-      });
+      final currentEditorText = _lyricsController.text;
+      final hasLrcInEditor = RegExp(
+        r'\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]',
+      ).hasMatch(currentEditorText);
+
+      if (hasLrcInEditor) {
+        final romanizedSynced = await widget.provider.romajiService
+            .romanizeLyrics(currentEditorText);
+        if (!mounted) return;
+        setState(() {
+          _syncedLyricsOverride = romanizedSynced;
+          _preferSyncedLyrics = true;
+          _lyricsController.text = romanizedSynced;
+        });
+      } else if (widget.track.hasSyncedLyrics &&
+          RomajiService.containsJapanese(widget.track.syncedLyrics!)) {
+        final romanizedSynced = await widget.provider.romajiService
+            .romanizeLyrics(widget.track.syncedLyrics!);
+        if (!mounted) return;
+        setState(() {
+          _syncedLyricsOverride = romanizedSynced;
+          _preferSyncedLyrics = true;
+          _lyricsController.text = romanizedSynced;
+        });
+      } else {
+        final romanizedPlain = await widget.provider.romajiService
+            .romanizeLyrics(currentEditorText);
+        if (!mounted) return;
+        setState(() {
+          _syncedLyricsOverride = null;
+          _lyricsController.text = romanizedPlain;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _isConvertingRomaji = false);
@@ -167,6 +196,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
           releaseYear: _yearController.text,
           lyricsText: _lyricsController.text,
           preferSyncedLyrics: _preferSyncedLyrics,
+          syncedLyrics: _syncedLyricsOverride,
         );
         if (!mounted) return;
         Navigator.of(context).pop();
@@ -183,6 +213,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
           album: _albumController.text,
           releaseYear: _yearController.text,
           plainLyrics: _lyricsController.text,
+          syncedLyrics: _syncedLyricsOverride,
         );
         if (!mounted) return;
         Navigator.of(context).pop();
