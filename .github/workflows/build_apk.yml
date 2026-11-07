@@ -1,0 +1,48 @@
+name: Build MusEvee APK
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Release APK (ARM64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17 (Zulu)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter (Stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Ensure Gradle Wrapper & Restore MusEvee Android Config
+        run: |
+          flutter create . --platforms android
+          git checkout -- android/app/src/main/ android/app/build.gradle* android/build.gradle* android/settings.gradle*
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK (ARM64)
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Upload MusEvee-APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusEvee-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
