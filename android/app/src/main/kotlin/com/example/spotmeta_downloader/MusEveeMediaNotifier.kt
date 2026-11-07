@@ -17,7 +17,9 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import java.io.File
 
@@ -48,6 +50,7 @@ class MusEveeMediaNotifier(
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val session: MediaSession = MediaSession(appContext, "MusEveeSession")
 
     private var title: String = ""
@@ -114,6 +117,8 @@ class MusEveeMediaNotifier(
         ).apply {
             description = "Kontrol pemutaran musik MusEvee"
             setShowBadge(false)
+            setSound(null, null)
+            enableVibration(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         notificationManager.createNotificationChannel(channel)
@@ -192,8 +197,29 @@ class MusEveeMediaNotifier(
                 SystemClock.elapsedRealtime()
             )
             .build()
+        val wasActive = session.isActive
+        if (!wasActive) {
+            session.isActive = true
+        }
         session.setPlaybackState(state)
-        if (!session.isActive) session.isActive = true
+        if (!wasActive) {
+            // ZTE DynamicIslandManager registers its MediaController.Callback asynchronously
+            // inside onActiveSessionsChanged; re-emit PlaybackState once registered.
+            mainHandler.postDelayed({
+                if (hasTrack && session.isActive) {
+                    val refreshState = PlaybackState.Builder()
+                        .setActions(actions)
+                        .setState(
+                            if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                            positionMs,
+                            if (isPlaying) 1.0f else 0f,
+                            SystemClock.elapsedRealtime()
+                        )
+                        .build()
+                    session.setPlaybackState(refreshState)
+                }
+            }, 180L)
+        }
 
         postNotification()
     }
@@ -227,6 +253,7 @@ class MusEveeMediaNotifier(
             .setSubText(album.ifBlank { null })
             .setContentIntent(contentIntent())
             .setDeleteIntent(broadcastIntent(ACTION_STOP, 15))
+            .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
@@ -274,18 +301,20 @@ class MusEveeMediaNotifier(
         }
         MusEveePlaybackService.latestNotification = notification
         if (isPlaying) {
-            // Promote to foreground service so playback survives background / screen-off
-            try {
-                val intent = Intent(appContext, MusEveePlaybackService::class.java)
-                    .setAction(MusEveePlaybackService.ACTION_FOREGROUND)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    appContext.startForegroundService(intent)
-                } else {
-                    appContext.startService(intent)
+            if (!MusEveePlaybackService.isForeground) {
+                // Promote to foreground service so playback & Live Island survive background / screen-off
+                try {
+                    val intent = Intent(appContext, MusEveePlaybackService::class.java)
+                        .setAction(MusEveePlaybackService.ACTION_FOREGROUND)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        appContext.startForegroundService(intent)
+                    } else {
+                        appContext.startService(intent)
+                    }
+                    return
+                } catch (_: Exception) {
+                    // Background FGS start restricted -> fall back to notify() below
                 }
-                return
-            } catch (_: Exception) {
-                // Background FGS start restricted -> fall back to a plain notification
             }
         } else if (MusEveePlaybackService.isForeground) {
             try {
@@ -317,12 +346,14 @@ class MusEveeMediaNotifier(
             session.isActive = false
         } catch (_: Exception) {
         }
-        try {
-            appContext.startService(
-                Intent(appContext, MusEveePlaybackService::class.java)
-                    .setAction(MusEveePlaybackService.ACTION_STOP)
-            )
-        } catch (_: Exception) {
+        if (MusEveePlaybackService.isForeground || MusEveePlaybackService.isRunning) {
+            try {
+                appContext.startService(
+                    Intent(appContext, MusEveePlaybackService::class.java)
+                        .setAction(MusEveePlaybackService.ACTION_STOP)
+                )
+            } catch (_: Exception) {
+            }
         }
         MusEveePlaybackService.latestNotification = null
         try {
@@ -379,16 +410,25 @@ class MusEveePlaybackService : Service() {
 
         @Volatile
         var isForeground: Boolean = false
+
+        @Volatile
+        var isRunning: Boolean = false
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        isRunning = true
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        isRunning = true
         when (intent?.action) {
             ACTION_FOREGROUND -> {
                 val notification = latestNotification
                 if (notification == null) {
-                    stopSelf()
+                    if (!isForeground) stopSelf()
                     return START_NOT_STICKY
                 }
                 try {
@@ -422,6 +462,7 @@ class MusEveePlaybackService : Service() {
     }
 
     private fun detachForeground(removeNotification: Boolean) {
+        if (!isForeground) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 stopForeground(
@@ -444,6 +485,7 @@ class MusEveePlaybackService : Service() {
 
     override fun onDestroy() {
         isForeground = false
+        isRunning = false
         super.onDestroy()
     }
 }

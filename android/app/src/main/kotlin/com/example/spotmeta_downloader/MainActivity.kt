@@ -155,6 +155,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        syncPersistentAppState()
         super.onCreate(savedInstanceState)
         mediaNotifier = MusEveeMediaNotifier(this) { action, positionMs ->
             mainHandler.post {
@@ -162,6 +163,11 @@ class MainActivity : FlutterActivity() {
             }
         }
         extractSharedTextFromIntent(intent)
+    }
+
+    override fun onStop() {
+        syncPersistentAppState()
+        super.onStop()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -2215,5 +2221,49 @@ class MainActivity : FlutterActivity() {
             }
         }
         return null
+    }
+
+    /**
+     * Synchronizes persistent user state (`musicevee_playlists_v1.json`,
+     * `musevee_favorites.json`, `musevee_library_cache_v1.json`,
+     * `musevee_player_session.json`, and `FlutterSharedPreferences.xml`)
+     * with `/storage/emulated/0/Music/.musevee_state/` so playlists, favorites,
+     * and playback state seamlessly survive package ID migrations or reinstalls.
+     */
+    private fun syncPersistentAppState() {
+        try {
+            val backupDir = File("/storage/emulated/0/Music/.musevee_state")
+            if (!backupDir.exists()) {
+                backupDir.mkdirs()
+            }
+            if (!backupDir.exists() || !backupDir.canWrite()) return
+
+            val dataRoot = File(applicationInfo.dataDir)
+            val appFlutterDir = File(dataRoot, "app_flutter").apply { if (!exists()) mkdirs() }
+            val sharedPrefsDir = File(dataRoot, "shared_preferences").apply { if (!exists()) mkdirs() }
+
+            val trackedFiles = listOf(
+                File(appFlutterDir, "musicevee_playlists_v1.json") to File(backupDir, "musicevee_playlists_v1.json"),
+                File(appFlutterDir, "musevee_playlists_v1.json") to File(backupDir, "musevee_playlists_v1.json"),
+                File(appFlutterDir, "musevee_favorites.json") to File(backupDir, "musevee_favorites.json"),
+                File(appFlutterDir, "musicevee_favorites.json") to File(backupDir, "musicevee_favorites.json"),
+                File(appFlutterDir, "musevee_library_cache_v1.json") to File(backupDir, "musevee_library_cache_v1.json"),
+                File(appFlutterDir, "musicevee_library_cache_v1.json") to File(backupDir, "musicevee_library_cache_v1.json"),
+                File(appFlutterDir, "musevee_player_session.json") to File(backupDir, "musevee_player_session.json"),
+                File(appFlutterDir, "musicevee_player_session.json") to File(backupDir, "musicevee_player_session.json"),
+                File(sharedPrefsDir, "FlutterSharedPreferences.xml") to File(backupDir, "FlutterSharedPreferences.xml")
+            )
+
+            for ((internalFile, externalFile) in trackedFiles) {
+                val internalValid = internalFile.exists() && internalFile.length() > 2L
+                val externalValid = externalFile.exists() && externalFile.length() > 2L
+                if (internalValid && (!externalValid || internalFile.lastModified() >= externalFile.lastModified())) {
+                    internalFile.copyTo(externalFile, overwrite = true)
+                } else if (!internalValid && externalValid) {
+                    externalFile.copyTo(internalFile, overwrite = true)
+                }
+            }
+        } catch (_: Exception) {
+        }
     }
 }
