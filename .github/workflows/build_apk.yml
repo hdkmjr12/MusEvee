@@ -31,11 +31,34 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Cache Gradle Wrapper & Caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-v4.3-${{ hashFiles('android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-v4.3-
+            ${{ runner.os }}-gradle-
+
       - name: Ensure Gradle Wrapper & Restore MusEvee Android Config
         run: |
           flutter create . --platforms android
           git checkout -- android/app/src/main/ android/app/build.gradle* android/app/musevee-release.jks android/build.gradle* android/settings.gradle*
           rm -rf android/app/src/main/res/mipmap-anydpi-v26 android/app/src/main/kotlin/com/zte
+          if [ -f android/gradle/wrapper/gradle-wrapper.properties ]; then
+            sed -i 's/-all\.zip/-bin.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+            sed -i 's/networkTimeout=.*/networkTimeout=60000/g' android/gradle/wrapper/gradle-wrapper.properties
+          fi
+          for attempt in 1 2 3; do
+            echo "Pre-warming Gradle distribution (attempt $attempt)..."
+            if (cd android && ./gradlew --version --no-daemon); then
+              break
+            fi
+            echo "Gradle download transient failure, retrying in 10s..."
+            sleep 10
+          done
 
       - name: Install Dependencies
         run: flutter pub get
@@ -66,6 +89,7 @@ jobs:
             - **Kelola / Sembunyikan Folder (`musevee_hidden_folders_v1.json`):** Bottom sheet di tab `Folders` untuk menampilkan atau menyembunyikan folder tertentu beserta jumlah lagunya tanpa menghapus file fisik.
             - **Smart Default Folders:** Tidak lagi memaksa pembuatan 3 folder kosong di HP pengguna baru; otomatis mengenali subfolder yang sudah ada (`Music Barat`, `Music Japan`, `Music Random`, dll.) atau menyediakan 1 default netral (`MusEvee`).
             - **First-Run Permission Onboarding & Live Island Status Dialog:** Banner setup izin 1-klik (*All Files Access* & *POST_NOTIFICATIONS*) dengan deteksi otomatis saat kembali ke aplikasi (`AppLifecycleState.resumed`) serta dialog Info MusEvee & panduan ZTE/nubia Live Island.
+            - **Perbaikan Playlist Spotify Private & Dukungan Token `?pt=`:** Meneruskan parameter `?pt=` ke endpoint Spotify Embed/Web, menghapus fallback pencarian acak ke iTunes/Deezer saat playlist gagal diekstrak, dan menampilkan dialog peringatan edukatif.
           files: MusEvee-v4.3-arm64.apk
           draft: false
           prerelease: false
