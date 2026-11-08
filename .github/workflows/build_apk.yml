@@ -37,19 +37,29 @@ jobs:
           path: |
             ~/.gradle/wrapper
             ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-v4.3-${{ hashFiles('android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
+          key: ${{ runner.os }}-gradle-v4.3-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-gradle-v4.3-
             ${{ runner.os }}-gradle-
 
-      - name: Ensure Gradle Wrapper & Restore MusEvee Android Config
+      - name: Ensure Gradle Wrapper & Network Mirrors
         run: |
-          flutter create . --platforms android
-          git checkout -- android/app/src/main/ android/app/build.gradle* android/app/musevee-release.jks android/build.gradle* android/settings.gradle*
-          rm -rf android/app/src/main/res/mipmap-anydpi-v26 android/app/src/main/kotlin/com/zte
-          if [ -f android/gradle/wrapper/gradle-wrapper.properties ]; then
-            sed -i 's/-all\.zip/-bin.zip/g' android/gradle/wrapper/gradle-wrapper.properties
-            sed -i 's/networkTimeout=.*/networkTimeout=60000/g' android/gradle/wrapper/gradle-wrapper.properties
+          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            flutter create . --platforms android
+            git checkout -- android/
+            rm -rf android/app/src/main/res/mipmap-anydpi-v26 android/app/src/main/kotlin/com/zte
+          fi
+          sed -i 's/\r$//' android/gradlew
+          chmod +x android/gradlew
+          mkdir -p ~/.gradle
+          cat << 'EOF' >> ~/.gradle/gradle.properties
+          systemProp.org.gradle.internal.http.connectionTimeout=120000
+          systemProp.org.gradle.internal.http.socketTimeout=120000
+          systemProp.org.gradle.internal.repository.max.tentatives=10
+          systemProp.org.gradle.internal.repository.initial.backoff=2000
+          EOF
+          if [ -n "$FLUTTER_ROOT" ] && [ -f "$FLUTTER_ROOT/packages/flutter_tools/gradle/settings.gradle.kts" ]; then
+            sed -i 's|mavenCentral()|maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }\n        mavenCentral()|g' "$FLUTTER_ROOT/packages/flutter_tools/gradle/settings.gradle.kts"
           fi
           for attempt in 1 2 3; do
             echo "Pre-warming Gradle distribution (attempt $attempt)..."
@@ -64,7 +74,20 @@ jobs:
         run: flutter pub get
 
       - name: Build Release APK (ARM64 Lightweight ~20MB)
-        run: flutter build apk --release --split-per-abi --target-platform android-arm64
+        run: |
+          success=0
+          for attempt in 1 2 3; do
+            echo "Building Release APK (attempt $attempt/3)..."
+            if flutter build apk --release --split-per-abi --target-platform android-arm64; then
+              success=1
+              break
+            fi
+            echo "Build attempt $attempt failed, waiting 15s before retry..."
+            sleep 15
+          done
+          if [ "$success" -ne 1 ]; then
+            exit 1
+          fi
 
       - name: Prepare Named APK (`MusEvee-v4.3-arm64.apk`)
         run: |
