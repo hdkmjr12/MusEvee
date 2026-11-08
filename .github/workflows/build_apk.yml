@@ -37,8 +37,9 @@ jobs:
           path: |
             ~/.gradle/wrapper
             ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-v4.3-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
+          key: ${{ runner.os }}-gradle-v4.4-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-v4.4-
             ${{ runner.os }}-gradle-v4.3-
             ${{ runner.os }}-gradle-
 
@@ -89,31 +90,30 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare Named APK (`MusEvee-v4.3-arm64.apk`)
+      - name: Prepare Named APK (`MusEvee-v4.4-arm64.apk`)
         run: |
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.3-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.4-arm64.apk
 
       - name: Upload MusEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusEvee-v4.3-arm64-APK
-          path: MusEvee-v4.3-arm64.apk
+          name: MusEvee-v4.4-arm64-APK
+          path: MusEvee-v4.4-arm64.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release (`v4.3.0`)
+      - name: Publish GitHub Release (`v4.4.0`)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.3.0
-          name: "MusEvee v4.3 (Universal Folder Scanner + Folder Manager + Permission Onboarding)"
+          tag_name: v4.4.0
+          name: "MusEvee v4.4 (6-Tab Sliding Nav + Live Equalizer + Multi-Folder/Playlist Queue Merger)"
           body: |
-            ### MusEvee v4.3 — Release APK (Android ARM64 ~20 MB)
-            - **Universal Audio Folder Scanner + Strict Anti-Junk Filter:** Memindai seluruh folder musik di penyimpanan (`/Music/`, `/Download/`, `/Audio/`, `/Songs/`, dll.) dengan syarat durasi `>= 15s` (atau ukuran `>= 50 KB`) dan mem-blacklist folder non-musik (`WhatsApp Audio`, `Voice Notes`, `Recordings`, `CallRecord`, `Ringtones`, `Alarms`, `Notifications`, `/Android/*`, `/.`).
-            - **Kelola / Sembunyikan Folder (`musevee_hidden_folders_v1.json`):** Bottom sheet di tab `Folders` untuk menampilkan atau menyembunyikan folder tertentu beserta jumlah lagunya tanpa menghapus file fisik.
-            - **Smart Default Folders:** Tidak lagi memaksa pembuatan 3 folder kosong di HP pengguna baru; otomatis mengenali subfolder yang sudah ada (`Music Barat`, `Music Japan`, `Music Random`, dll.) atau menyediakan 1 default netral (`MusEvee`).
-            - **First-Run Permission Onboarding & Live Island Status Dialog:** Banner setup izin 1-klik (*All Files Access* & *POST_NOTIFICATIONS*) dengan deteksi otomatis saat kembali ke aplikasi (`AppLifecycleState.resumed`) serta dialog Info MusEvee & panduan ZTE/nubia Live Island.
-            - **Perbaikan Playlist Spotify Private & Dukungan Token `?pt=`:** Meneruskan parameter `?pt=` ke endpoint Spotify Embed/Web, menghapus fallback pencarian acak ke iTunes/Deezer saat playlist gagal diekstrak, dan menampilkan dialog peringatan edukatif.
-          files: MusEvee-v4.3-arm64.apk
+            ### MusEvee v4.4 — Release APK (Android ARM64 ~20 MB)
+            - **Navigasi Bawah 6 Tab + Modal Bottom Sheet Antrean Unduhan (`88%`):** Merampingkan bottom strip dari 7 menjadi 6 tab utama (`Queue`, `Now Playing`, `Folders`, `Playlists`, `Downloader`, `Search Lokal`), menambahkan tombol kompak **Antrean & Riwayat Unduhan** dengan *mini progress ring* & badge di sebelah kanan kolom pencarian Omnibox, serta membuka `QueueHistoryView` sebagai Modal Bottom Sheet `88%` tinggi layar.
+            - **Sliding Pill Indicator & Directional Slide-Fade Transition:** Indikator garis putih `2.5px` di bawah `MusicoletBottomStrip` kini meluncur mulus secara horizontal (`AnimatedPositioned`, `Curves.easeOutCubic`, `240ms`) dipadukan dengan transisi halaman geser-pudar searah (`dx: ±0.03`, `200ms`).
+            - **Live Animated Equalizer Bars (`AnimatedEqualizerIcon`):** Indikator 4 batang equalizer hidup berbalut `RepaintBoundary` pada baris lagu yang sedang aktif di tab **Queue**, **Folders**, **Playlists**, dan **Search Lokal** yang bergerak organik saat diputar dan otomatis mendatar saat dijeda.
+            - **Multi-Folder & Multi-Playlist Queue Merger (`playCombinedFolders` & `playCombinedPlaylists`):** Mode pilih banyak (*multi-select* via tombol header atau *long-press*) di tab `Folders` dan `Playlists` lengkap dengan **Floating Action Bar** (`▶ Putar`, `🔀 Shuffle Mix` Fisher-Yates merata lintas folder/playlist, dan `➕ + Queue` dengan deduplikasi `filePath` otomatis) serta opsi cepat **"+ Queue"** di menu titik tiga (`⋮`).
+          files: MusEvee-v4.4-arm64.apk
           draft: false
           prerelease: false
           make_latest: "true"

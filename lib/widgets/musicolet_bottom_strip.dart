@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 
-/// Musicolet's signature dense bottom icon strip with a crisp white bottom
-/// indicator line beneath the active tab:
+/// Musicolet's signature dense bottom icon strip with a smooth sliding white
+/// bottom pill indicator (`Curves.easeOutCubic`, `240ms`) across 6 main tabs:
 /// 0: Queue (`=♪`)
 /// 1: Now Playing (`▶` in circle)
 /// 2: Folders (`📁`)
 /// 3: Playlists (`♫` — Albums & Artists merged into user playlists)
-/// 4: Downloader (`⬇` Cloud Download)
-/// 5: Download Queue & History (`📋`)
-/// 6: Search Lokal (`🔍`)
+/// 4: Downloader (`⬇` Cloud Download + Queue/History sheet trigger)
+/// 5: Search Lokal (`🔍`)
 class MusicoletBottomStrip extends StatelessWidget {
-  static const int downloadHistoryTabIndex = 5;
+  static const int downloaderTabIndex = 4;
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
   final int activeDownloadBadgeCount;
@@ -50,11 +49,6 @@ class MusicoletBottomStrip extends StatelessWidget {
       activeIcon: Icons.cloud_download_rounded,
     ),
     (
-      tooltip: 'Download Queue & History',
-      icon: Icons.assignment_outlined,
-      activeIcon: Icons.assignment_rounded,
-    ),
-    (
       tooltip: 'Search Lokal (Cari di Memori)',
       icon: Icons.search_rounded,
       activeIcon: Icons.search_rounded,
@@ -63,6 +57,8 @@ class MusicoletBottomStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeIndex = selectedIndex.clamp(0, _tabs.length - 1);
+
     return Material(
       color: const Color(0xFF0A0C10),
       child: SafeArea(
@@ -77,69 +73,93 @@ class MusicoletBottomStrip extends StatelessWidget {
               ),
             ),
           ),
-          child: Row(
-            children: List.generate(_tabs.length, (idx) {
-              final tab = _tabs[idx];
-              final isSelected = idx == selectedIndex;
-              final showBadge = idx == downloadHistoryTabIndex &&
-                  activeDownloadBadgeCount > 0;
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final tabCount = _tabs.length;
+              final tabWidth = constraints.maxWidth / tabCount;
+              const pillInset = 10.0;
+              final pillWidth = (tabWidth - (pillInset * 2)).clamp(16.0, 72.0);
+              final pillLeft =
+                  (tabWidth * safeIndex) + ((tabWidth - pillWidth) * 0.5);
 
-              Widget iconWidget = Icon(
-                isSelected ? tab.activeIcon : tab.icon,
-                size: 21,
-                color: isSelected
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.48),
-              );
+              return Stack(
+                children: [
+                  Row(
+                    children: List.generate(tabCount, (idx) {
+                      final tab = _tabs[idx];
+                      final isSelected = idx == safeIndex;
+                      final showBadge = idx == downloaderTabIndex &&
+                          activeDownloadBadgeCount > 0;
 
-              if (showBadge) {
-                iconWidget = Badge(
-                  backgroundColor: const Color(0xFF3898EC),
-                  textColor: Colors.white,
-                  label: Text(
-                    '$activeDownloadBadgeCount',
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  child: iconWidget,
-                );
-              }
+                      Widget iconWidget = AnimatedScale(
+                        scale: isSelected ? 1.06 : 1.0,
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOutCubic,
+                        child: Icon(
+                          isSelected ? tab.activeIcon : tab.icon,
+                          size: 21,
+                          color: isSelected
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.48),
+                        ),
+                      );
 
-              return Expanded(
-                child: Tooltip(
-                  message: tab.tooltip,
-                  child: InkWell(
-                    onTap: () => onTabSelected(idx),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Center(child: iconWidget),
-                        // Musicolet signature white bottom indicator bar
-                        Positioned(
-                          left: 6,
-                          right: 6,
-                          bottom: 0,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            height: 2.5,
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Colors.white
-                                  : Colors.transparent,
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(2),
-                              ),
+                      if (showBadge) {
+                        iconWidget = Badge(
+                          backgroundColor: const Color(0xFF3898EC),
+                          textColor: Colors.white,
+                          label: Text(
+                            '$activeDownloadBadgeCount',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
+                          child: iconWidget,
+                        );
+                      }
+
+                      return Expanded(
+                        child: Tooltip(
+                          message: tab.tooltip,
+                          child: InkWell(
+                            onTap: () => onTabSelected(idx),
+                            child: Center(child: iconWidget),
+                          ),
                         ),
-                      ],
+                      );
+                    }),
+                  ),
+
+                  // Musicolet signature sliding white bottom pill indicator
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    left: pillLeft,
+                    bottom: 0,
+                    width: pillWidth,
+                    height: 2.5,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(2.5),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.28),
+                              blurRadius: 6,
+                              offset: const Offset(0, -1),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               );
-            }),
+            },
           ),
         ),
       ),

@@ -4,11 +4,17 @@ import 'package:spotmeta_downloader/main.dart';
 import 'package:spotmeta_downloader/models/local_song.dart';
 import 'package:spotmeta_downloader/providers/local_music_provider.dart';
 
-LocalSong _mockSong(int id, {String? lyrics}) {
+LocalSong _mockSong(
+  int id, {
+  String? lyrics,
+  String folderName = 'Music Japan',
+  String? customPath,
+}) {
+  final folderPath = '/storage/emulated/0/Music/$folderName';
   return LocalSong(
-    filePath: '/storage/emulated/0/Music/Music Japan/Song_$id.mp3',
+    filePath: customPath ?? '$folderPath/Song_$id.mp3',
     fileName: 'Song_$id.mp3',
-    folderName: 'Music Japan',
+    folderName: folderName,
     title: 'Song $id',
     artist: 'Artist $id',
     album: 'Album $id',
@@ -24,7 +30,7 @@ LocalSong _mockSong(int id, {String? lyrics}) {
 
 void main() {
   testWidgets(
-      'MusEveeApp renders Musicolet NowPlayingView and switches to Downloader tab',
+      'MusEveeApp renders 6-tab Musicolet UI, switches to Downloader tab, and opens Queue/History Modal Sheet',
       (WidgetTester tester) async {
     await tester.pumpWidget(const MusEveeApp());
     await tester.pump();
@@ -33,13 +39,19 @@ void main() {
     expect(find.text('MusEvee Player'), findsOneWidget);
     expect(find.text('Cari & Unduh Lagu'), findsOneWidget);
 
-    // Switch to Downloader tab (Tab 5: Cloud Download icon in MusicoletBottomStrip)
+    // Switch to Downloader tab (Tab 4: Cloud Download icon in MusicoletBottomStrip)
     await tester.tap(find.byIcon(Icons.cloud_download_outlined).last);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('MusEvee'), findsWidgets);
-    expect(find.text('v4.3'), findsOneWidget);
+    expect(find.text('v4.4'), findsOneWidget);
     expect(find.text('YOASOBI - Idol'), findsOneWidget);
+
+    // Tap the compact Queue & History button next to the Downloader Omnibox
+    await tester.tap(find.byTooltip('Antrean & Riwayat Unduhan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Antrean & Riwayat Unduhan'), findsOneWidget);
   });
 
   test(
@@ -119,5 +131,45 @@ void main() {
     expect(provider.progressNotifier.value.positionMs, 5200);
     expect(provider.activeLyricIndexNotifier.value, 1);
     expect(globalRebuilds, 0);
+  });
+
+  test(
+      'Multi-Folder & Multi-Playlist Queue Merger merges songs with filePath deduplication and append support',
+      () async {
+    final provider = LocalMusicProvider();
+    addTearDown(provider.dispose);
+
+    final barat1 = _mockSong(1, folderName: 'Music Barat');
+    final barat2 = _mockSong(2, folderName: 'Music Barat');
+    final random1 = _mockSong(3, folderName: 'Music Random');
+    final random2 = _mockSong(4, folderName: 'Music Random');
+    final japan1 = _mockSong(5, folderName: 'Music Japan');
+
+    provider.seedSongsForTesting([barat1, barat2, random1, random2, japan1]);
+
+    // Merge Music Barat + Music Random (excluding Music Japan)
+    final mergedCount = await provider.playCombinedFolders([
+      '/storage/emulated/0/Music/Music Barat',
+      '/storage/emulated/0/Music/Music Random',
+      '/storage/emulated/0/Music/Music Barat', // duplicate folder input
+    ]);
+
+    expect(mergedCount, 4);
+    expect(provider.queueEntries.length, 4);
+    expect(
+      provider.queueEntries.any((e) => e.song.folderName == 'Music Japan'),
+      isFalse,
+    );
+
+    // Append Music Japan + Music Barat to active queue -> only japan1 should be newly added!
+    final appendedCount = await provider.playCombinedFolders(
+      [
+        '/storage/emulated/0/Music/Music Barat',
+        '/storage/emulated/0/Music/Music Japan',
+      ],
+      appendToCurrentQueue: true,
+    );
+    expect(appendedCount, 1);
+    expect(provider.queueEntries.length, 5);
   });
 }

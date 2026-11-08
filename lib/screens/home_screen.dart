@@ -30,11 +30,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     'com.spotmeta.downloader/system',
   );
 
-  // Musicolet Tab Indices
+  // Musicolet 6-Tab Indices
   static const int _tabNowPlaying = 1;
   static const int _tabFolders = 2;
   static const int _tabDownloader = 4;
-  static const int _tabDownloadHistory = 5;
 
   // Dark Musicolet Surface Palette
   static const Color _bgCanvas = Color(0xFF0E1014);
@@ -658,7 +657,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Expanded(
                 child: AnimatedIndexedStack(
                   index: _selectedTabIndex,
-                  duration: const Duration(milliseconds: 180),
+                  duration: const Duration(milliseconds: 200),
                   children: [
                     // 0: Queue (`=♪`)
                     PlaybackQueueView(
@@ -677,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                     ),
 
-                    // 2: Folders (`📁`)
+                    // 2: Folders (`📁` + Multi-Folder Queue Merger)
                     LocalFoldersView(
                       onOpenNowPlaying: () =>
                           setState(() => _selectedTabIndex = _tabNowPlaying),
@@ -685,31 +684,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                     ),
 
-                    // 3: Playlists (`musicevee_playlists_v1.json`)
+                    // 3: Playlists (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger)
                     LocalPlaylistsView(
                       onOpenNowPlaying: () =>
                           setState(() => _selectedTabIndex = _tabNowPlaying),
                       onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                     ),
 
-                    // 4: Downloader (`⬇` Cloud Download — Smart Omnibox)
-                    _buildSearchAndDownloadTab(provider),
+                    // 4: Downloader (`⬇` Cloud Download — Smart Omnibox + Queue/History Sheet Trigger)
+                    _buildSearchAndDownloadTab(provider, totalActiveCount),
 
-                    // 5: Download Queue & History (`📋`)
-                    QueueHistoryView(
-                      provider: provider,
-                      onMoveFolder: _showMoveFolderSheet,
-                      onPlaySavedFile: (savedPath) async {
-                        await context
-                            .read<LocalMusicProvider>()
-                            .playSongByPath(savedPath);
-                        if (mounted) {
-                          setState(() => _selectedTabIndex = _tabNowPlaying);
-                        }
-                      },
-                    ),
-
-                    // 6: Search Lokal (`🔍`)
+                    // 5: Search Lokal (`🔍`)
                     LocalSearchView(
                       onOpenNowPlaying: () =>
                           setState(() => _selectedTabIndex = _tabNowPlaying),
@@ -924,7 +909,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'MusEvee v4.3',
+                          'MusEvee v4.4',
                           style: TextStyle(
                             color: _textPrimary,
                             fontSize: 15.5,
@@ -1181,7 +1166,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               border: Border.all(color: hairline, width: 0.8),
             ),
             child: const Text(
-              'v4.3',
+              'v4.4',
               style: TextStyle(
                 color: _primaryAccent,
                 fontSize: 9.5,
@@ -1193,8 +1178,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       actions: [
         if (provider.trackMetadata != null &&
-            (_selectedTabIndex == _tabDownloader ||
-                _selectedTabIndex == _tabDownloadHistory))
+            _selectedTabIndex == _tabDownloader)
           Padding(
             padding: const EdgeInsets.only(right: 4),
             child: OutlinedButton.icon(
@@ -1238,9 +1222,220 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // ===========================================================================
-  // TAB 5: DOWNLOADER (`⬇` — Smart Omnibox + Folder Chips + Search Results)
+  // MODAL BOTTOM SHEET: ANTREAN & RIWAYAT UNDUHAN (88% TINGGI LAYAR)
   // ===========================================================================
-  Widget _buildSearchAndDownloadTab(DownloaderProvider provider) {
+  Future<void> _openDownloadQueueHistorySheet() async {
+    if (!mounted) return;
+    final hairline = Colors.white.withValues(alpha: 0.09);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surfaceCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        return FractionallySizedBox(
+          heightFactor: 0.88,
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 10, 10, 8),
+                decoration: BoxDecoration(
+                  color: _surfaceCard,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                  border: Border(
+                    bottom: BorderSide(color: hairline, width: 0.8),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.downloading_rounded,
+                          size: 18,
+                          color: _primaryAccent,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Antrean & Riwayat Unduhan',
+                            style: TextStyle(
+                              color: _textPrimary,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: 'Tutup',
+                          onPressed: () => Navigator.of(sheetCtx).pop(),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            size: 19,
+                            color: _textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Consumer<DownloaderProvider>(
+                  builder: (ctx, dlProvider, _) {
+                    return QueueHistoryView(
+                      provider: dlProvider,
+                      onMoveFolder: _showMoveFolderSheet,
+                      onPlaySavedFile: (savedPath) async {
+                        if (Navigator.of(sheetCtx).canPop()) {
+                          Navigator.of(sheetCtx).pop();
+                        }
+                        await context
+                            .read<LocalMusicProvider>()
+                            .playSongByPath(savedPath);
+                        if (mounted) {
+                          setState(() => _selectedTabIndex = _tabNowPlaying);
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDownloadQueueButton(
+    DownloaderProvider provider,
+    int totalActiveCount,
+  ) {
+    final hairline = Colors.white.withValues(alpha: 0.10);
+    final hasHistory = provider.queueItems.isNotEmpty;
+    final isActive = totalActiveCount > 0 || provider.isBusy;
+
+    return PressableScale(
+      onTap: _openDownloadQueueHistorySheet,
+      child: Tooltip(
+        message: 'Antrean & Riwayat Unduhan',
+        child: Container(
+          width: 43,
+          height: 43,
+          decoration: BoxDecoration(
+            color: isActive
+                ? _primaryAccent.withValues(alpha: 0.16)
+                : _surfaceSubtle,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive
+                  ? _primaryAccent.withValues(alpha: 0.55)
+                  : hairline,
+              width: 0.8,
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              if (isActive)
+                SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    value: provider.progress > 0.02 && provider.progress < 0.99
+                        ? provider.progress.clamp(0.0, 1.0)
+                        : null,
+                    strokeWidth: 2.0,
+                    color: _primaryAccent,
+                    backgroundColor: Colors.white12,
+                  ),
+                ),
+              Icon(
+                isActive
+                    ? Icons.downloading_rounded
+                    : Icons.playlist_add_check_circle_outlined,
+                size: isActive ? 16 : 20,
+                color: isActive
+                    ? Colors.white
+                    : (hasHistory ? _textPrimary : _textMuted),
+              ),
+              if (totalActiveCount > 0)
+                Positioned(
+                  right: -3,
+                  top: -3,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4.5,
+                      vertical: 1,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 15,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _redDot,
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: _surfaceCard, width: 1.2),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      totalActiveCount > 99 ? '99+' : '$totalActiveCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                )
+              else if (hasHistory)
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: _primaryAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // TAB 4: DOWNLOADER (`⬇` — Smart Omnibox + Folder Chips + Search Results)
+  // ===========================================================================
+  Widget _buildSearchAndDownloadTab(
+    DownloaderProvider provider,
+    int totalActiveCount,
+  ) {
     final results = provider.searchResults;
     final rawText = _inputController.text.trim();
     final isSpotify =
@@ -1347,6 +1542,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       ),
                     ],
+                    const SizedBox(width: 8),
+                    _buildDownloadQueueButton(provider, totalActiveCount),
                   ],
                 ),
                 const SizedBox(height: 9),
@@ -1572,7 +1769,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Material(
       color: const Color(0xFF181C24),
       child: InkWell(
-        onTap: () => setState(() => _selectedTabIndex = _tabDownloadHistory),
+        onTap: _openDownloadQueueHistorySheet,
         child: Container(
           width: double.infinity,
           decoration: BoxDecoration(

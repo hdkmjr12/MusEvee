@@ -10,15 +10,14 @@
 ## 1. Status Terkini Proyek
 
 - **Nama Resmi & Permanen Aplikasi:** **`MusEvee`** (bukan *MusicEvee* / *SpotMeta Downloader*; `applicationId = "com.zte.as.music"` untuk dukungan native Live Island ZTE/nubia)
-- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.3`** (`pubspec.yaml` version `4.3.0+8`, badge UI `v4.3`)
-- **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`, `MusEvee-v4.3-arm64.apk`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), keystore permanen `android/app/musevee-release.jks`, wrapper Gradle (`gradle-wrapper.jar` + `gradle-9.3.1-bin.zip`) yang di-track langsung di Git bersama Google Cloud Maven Central mirror & HTTP retry hardening, serta publikasi otomatis ke **GitHub Releases (`v4.3.0`)** via `softprops/action-gh-release@v2`.
-- **Update Terakhir (`v4.3` — Universal Audio Folder Scanner + Strict Anti-Junk Filter, Custom Folder Management & Hide/Show Folders, Non-Forced Smart Default Folders, First-Run Permission Onboarding & Live Island Info Dialog, Spotify Private Playlist Guard & `?pt=` Token Support, Automated GitHub Releases):**
-  - **Perbaikan Ekstraksi Playlist Spotify Private & Dukungan Token `?pt=` (`metadata_service.dart`, `downloader_provider.dart`, `home_screen.dart`):** Menambahkan ekstraksi dan penerusan parameter query `?pt=` (*Private Token*) ke endpoint Spotify Embed (`https://open.spotify.com/embed/playlist/$id?pt=$ptToken`) dan Web (`https://open.spotify.com/playlist/$id?pt=$ptToken`), mendeteksi ketat respons gagal/private (`accounts.spotify.com`, `401`/`403`/`404`, `"Welcome back"`, `"Login - Spotify"`, atau `trackList` kosong) dengan melempar `SpotifyPrivateOrUnavailableException`, menghapus total fallback pencarian acak ke iTunes/Deezer saat ekstraksi koleksi gagal, serta menampilkan dialog peringatan edukatif tanpa membuka `BatchPlaylistSheet` palsu.
-  - **Universal Audio Folder Scanner + Filter Anti-Sampah Ketat (`MainActivity.kt`, `local_song.dart`):** Membuka pembatasan path `/Music/` di `discoverLocalAudioFiles()` agar dapat memindai seluruh folder musik di penyimpanan internal/eksternal (`/Music/`, `/Download/`, `/Audio/`, `/Songs/`, dll.) via `MediaStore.Audio.Media.EXTERNAL_CONTENT_URI`, dilengkapi filter ketat (durasi `>= 15000 ms` atau ukuran `>= 50 KB` bila durasi belum terindeks, ekstensi `.mp3`/`.flac`/`.m4a`/`.wav`/`.ogg`/`.aac`/`.opus`, `IS_MUSIC != 0`) serta *blacklist* otomatis folder non-musik (`/WhatsApp/`, `/WhatsApp Audio/`, `/WhatsApp Voice Notes/`, `/Telegram/Telegram Audio/`, `/Voice Notes/`, `/Recordings/`, `/CallRecord/`, `/SoundRecorder/`, `/Ringtones/`, `/Alarms/`, `/Notifications/`, `/Android/data/`, `/Android/media/`, `/Android/obb/`, dan folder tersembunyi `/.`).
-  - **Fitur "Kelola / Sembunyikan Folder" (`musevee_hidden_folders_v1.json`, `local_music_provider.dart`, `local_library_views.dart`):** Menyimpan daftar `hiddenFolderPaths` secara persisten (dan ikut di-backup ke `/storage/emulated/0/Music/.musevee_state/`), menyediakan bottom sheet **"Kelola / Sembunyikan Folder"** di `LocalFoldersView` berisi seluruh folder terdeteksi beserta path lengkap, jumlah lagu, dan *toggle switch* (Tampilkan / Sembunyikan) yang mengecualikan lagu dari pustaka aktif tanpa menghapus file fisik.
-  - **Penanganan Folder Default yang Tidak Memaksa (`folder_service.dart`, `downloader_provider.dart`, `local_music_provider.dart`):** Menghapus pembuatan paksa 3 folder kosong (`Music Barat`, `Music Japan`, `Music Random`) saat startup; otomatis memprioritaskan subfolder yang memang sudah ada di `/storage/emulated/0/Music/` (sehingga di perangkat yang sudah memiliki ketiga folder tersebut tetap tampil 100% seperti biasa), menyediakan 1 default netral (`MusEvee`) bagi pengguna baru, dan memastikan tab `Folders` hanya menampilkan folder yang benar-benar berisi lagu (`>= 1` lagu).
-  - **First-Run Permission Onboarding & Info Dialog Live Island (`MainActivity.kt`, `folder_service.dart`, `local_music_provider.dart`, `home_screen.dart`):** Menambahkan pengecekan dan permintaan izin via MethodChannel (`hasAllFilesAccess`, `hasNotificationPermission`, `requestNotificationPermission`, `openNotificationSettings`, `getPermissionsStatus`), menampilkan banner *Setup Izin Cepat* bergaya *Dark Minimalist* yang dapat di-dismiss dengan pemeriksaan ulang otomatis saat kembali ke aplikasi (`AppLifecycleState.resumed`), serta menambahkan tombol info (`info_outline`) di AppBar yang menampilkan dialog status izin & panduan **ZTE/nubia Live Island**.
-  - **Fitur Sebelumnya (`v4.2`):** Logo transparan baru (`assets/musevee_logo.png`), tab `Playlists` (`musicevee_playlists_v1.json`) + Spotify Batch Auto-Sync & Smart Deduplication, Native `MediaSession` Notification + ZTE/nubia Live Island Support (`applicationId = "com.zte.as.music"`), Micro-Animations, Scoped Storage Android 15, & Cross-Script Romaji J-Pop Search.
+- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.4`** (`pubspec.yaml` version `4.4.0+9`, badge UI `v4.4`)
+- **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`, `MusEvee-v4.4-arm64.apk`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), keystore permanen `android/app/musevee-release.jks`, wrapper Gradle (`gradle-wrapper.jar` + `gradle-9.3.1-bin.zip`) yang di-track langsung di Git bersama Google Cloud Maven Central mirror & HTTP retry hardening, serta publikasi otomatis ke **GitHub Releases (`v4.4.0`)** via `softprops/action-gh-release@v2`.
+- **Update Terakhir (`v4.4` — Navigasi 6 Tab + Sliding Pill Indicator, Modal Bottom Sheet Antrean Unduhan `88%`, Live Animated Equalizer Bars, & Multi-Folder / Multi-Playlist Queue Merger):**
+  - **Navigasi Bawah 6 Tab + Modal Bottom Sheet Antrean Unduhan (`musicolet_bottom_strip.dart`, `home_screen.dart`):** Merampingkan `MusicoletBottomStrip` dari 7 tab menjadi **6 tab utama** (`0: Queue`, `1: Now Playing`, `2: Folders`, `3: Playlists`, `4: Downloader`, `5: Search Lokal`), menambahkan tombol ikon kompak **Antrean & Riwayat Unduhan** di sebelah kanan kolom pencarian Omnibox (lengkap dengan *mini progress ring* & badge jumlah unduhan aktif), serta membuka `QueueHistoryView` sebagai **Modal Bottom Sheet (`88%` tinggi layar)** dengan *drag handle* halus.
+  - **Sliding Pill Indicator & Transisi Halaman Searah (`musicolet_bottom_strip.dart`, `pressable_scale.dart`):** Mengubah indikator aktif di `MusicoletBottomStrip` menjadi satu garis putih `2.5px` di dalam `LayoutBuilder` + `AnimatedPositioned` (`Curves.easeOutCubic`, `240ms`) yang meluncur mulus secara horizontal saat berpindah tab, dipadukan dengan efek *Subtle Slide + Fade* searah (`dx: ±0.03`, `Curves.easeOutCubic`, `200ms`) pada `AnimatedIndexedStack`.
+  - **Live Animated Equalizer Bars (`AnimatedEqualizerIcon` di `pressable_scale.dart`, `local_library_views.dart`):** Menambahkan widget ringan 4 batang vertikal berbalut `RepaintBoundary` yang bergerak naik-turun secara organik saat `localProvider.isPlaying == true` dan otomatis turun mendatar saat `isPlaying == false` pada baris lagu yang sedang aktif di tab **Queue**, **Folders**, **Playlists**, dan **Search Lokal**.
+  - **Multi-Folder & Multi-Playlist Queue Merger (`local_music_provider.dart`, `local_library_views.dart`):** Menambahkan method `playCombinedFolders(List<String> folderPaths, {bool shuffle = false, bool appendToCurrentQueue = false})` dan `playCombinedPlaylists(List<String> playlistIds, {bool shuffle = false, bool appendToCurrentQueue = false})` dengan **Smart Deduplication** berdasarkan `filePath` dan **True Shuffle Mix** (Fisher-Yates merata lintas folder/playlist), dilengkapi mode pilih banyak (*multi-select* via tombol **"Gabung / Pilih Banyak"** di header atau *long-press* kartu), **Floating Action Bar** (`▶ Putar`, `🔀 Shuffle Mix`, `➕ + Queue`), serta opsi cepat **"Tambahkan ke Antrean Saat Ini (+ Queue)"** di menu titik tiga (`⋮`).
+  - **Fitur Sebelumnya (`v4.3` & `v4.2`):** Universal Audio Folder Scanner + Strict Anti-Junk Filter (`>= 15s` / `>= 50 KB`, blacklist folder non-musik), fitur **"Kelola / Sembunyikan Folder"** (`musevee_hidden_folders_v1.json`), Smart Default Folders, First-Run Permission Onboarding & Info Dialog Live Island, perbaikan ekstraksi Playlist Spotify Private + dukungan token `?pt=`, logo transparan `assets/musevee_logo.png`, Native `MediaSession` Notification + ZTE/nubia Live Island Support (`applicationId = "com.zte.as.music"`), Scoped Storage Android 15, & Cross-Script Romaji J-Pop Search.
 
 ---
 
@@ -47,11 +46,11 @@
 ```text
 MusEvee/
 ├── AGENTS.md                                 # Cetak biru arsitektur MusEvee & SOP wajib AI Agent
-├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.3)
+├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.4)
 ├── .github/
 │   ├── copilot-instructions.md               # Instruksi otomatis GitHub Copilot / Remote Agent
 │   └── workflows/
-│       └── build_apk.yml                     # CI/CD otomatis build APK ARM64 (~20 MB) & GitHub Release (MusEvee-v4.3-arm64.apk)
+│       └── build_apk.yml                     # CI/CD otomatis build APK ARM64 (~20 MB) & GitHub Release (MusEvee-v4.4-arm64.apk)
 ├── .idx/
 │   └── airules.md                            # Instruksi otomatis Project IDX / Gemini Agent
 ├── android/
@@ -74,9 +73,9 @@ MusEvee/
 │   │   └── track_metadata.dart               # Model metadata unduhan, normalisasi identitas lintas-aksara, & pemilih payload USLT
 │   ├── providers/
 │   │   ├── downloader_provider.dart          # State management Downloader (pencarian katalog, lirik, Romaji, antrean unduh, Smart Deduplication, playlist sync)
-│   │   └── local_music_provider.dart         # State management Pemutar Lokal Musicolet (library scan, hidden folders, permission status, queue, playlists CRUD, play mode 1→, sync lirik, retag/pindah/hapus lokal)
+│   │   └── local_music_provider.dart         # State management Pemutar Lokal Musicolet (library scan, hidden folders, permission status, queue, Multi-Folder/Playlist Queue Merger, playlists CRUD, play mode 1→, sync lirik, retag/pindah/hapus lokal)
 │   ├── screens/
-│   │   └── home_screen.dart                  # Shell utama 7-Tab Musicolet + Permission Onboarding Banner + Info/Live Island Dialog + Smart Omnibox Downloader
+│   │   └── home_screen.dart                  # Shell utama 6-Tab Musicolet + Permission Onboarding Banner + Info/Live Island Dialog + Smart Omnibox Downloader + Modal Sheet Antrean Unduhan (88%)
 │   ├── services/
 │   │   ├── audio_service.dart                # Ekstraktor stream YouTube (YoutubeExplode multi-client) & 5 kandidat manual
 │   │   ├── folder_service.dart               # Manajemen folder (/storage/emulated/0/Music/*), Scoped Storage delete/write, permission checks, cross-folder duplicate checker, & MediaScanner
@@ -86,19 +85,19 @@ MusEvee/
 │   │   └── tagging_service.dart              # Konversi FFmpeg MP3 320kbps, injeksi biner ID3v2.4.0 (APIC + USLT \r\n), & retag instan (-c:a copy)
 │   └── widgets/
 │       ├── batch_playlist_sheet.dart         # Bottom sheet pemilihan lagu massal dari Album/Playlist Spotify + auto-sync playlist lokal
-│       ├── local_library_views.dart          # Tab lokal Musicolet: PlaybackQueueView, LocalFoldersView (+ Kelola/Sembunyikan Folder), LocalPlaylistsView, LocalSearchView
+│       ├── local_library_views.dart          # Tab lokal Musicolet: PlaybackQueueView, LocalFoldersView (+ Kelola/Sembunyikan Folder & Multi-Folder Merger), LocalPlaylistsView (+ Multi-Playlist Merger), LocalSearchView
 │       ├── musevee_logo.dart                 # Widget logo transparan MusEvee (`assets/musevee_logo.png`)
-│       ├── musicolet_bottom_strip.dart       # Deretan 7 ikon navigasi bawah khas Musicolet dengan garis indikator putih
+│       ├── musicolet_bottom_strip.dart       # Deretan 6 ikon navigasi bawah khas Musicolet dengan Sliding Pill Indicator (`AnimatedPositioned` 240ms)
 │       ├── musicolet_mini_player.dart        # Mini Player tipis ala Musicolet di atas bottom strip
 │       ├── now_playing_view.dart             # Layar utama 1:1 Musicolet Now Playing + Embedded Lyrics Ribbon + Tap-to-Seek
-│       ├── pressable_scale.dart              # Micro-animations: PressableScale (0.95 scale 100ms) & AnimatedIndexedStack (180ms)
-│       ├── queue_history_view.dart           # Tab Download Queue & History beserta tombol Putar (▶), Pindah Folder, & Edit Tag Ulang
+│       ├── pressable_scale.dart              # Micro-animations: PressableScale (0.95 scale 100ms), AnimatedIndexedStack (Slide+Fade 200ms), & AnimatedEqualizerIcon (4 batang hidup)
+│       ├── queue_history_view.dart           # View Antrean & Riwayat Unduhan beserta tombol Putar (▶), Pindah Folder, & Edit Tag Ulang
 │       ├── search_result_tile.dart           # Tile hasil pencarian katalog lagu dengan indikator duplikat folder
 │       ├── tag_editor_sheet.dart             # Modal editor tag ID3 & lirik (pra-unduh, riwayat unduhan, maupun lagu lokal yang sedang diputar!)
 │       └── track_preview_sheet.dart          # Modal detail unduhan: preview 30s, pilih sumber YouTube, Ganti Lirik LRCLIB, Auto-Romaji, & pilih folder
 └── test/
     ├── romaji_service_test.dart              # Unit test Romaji, deduplikasi bilingual, prioritas bahasa LyricsService, pencarian lintas-aksara, & parser USLT LocalSong
-    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, & navigasi 7-tab MusEvee
+    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, Multi-Folder Queue Merger, & navigasi 6-tab MusEvee
 ```
 
 ### Integrasi Native Android (`MainActivity.kt`)
@@ -114,8 +113,8 @@ Menggunakan satu `MethodChannel('com.spotmeta.downloader/system')` terpadu yang 
 
 1. **1:1 Musicolet Now Playing & Embedded Lyrics (`NowPlayingView` & `LocalMusicProvider`):**
    - Dynamic Ambient Background, panel `Embedded lyrics ⌄` dengan pita gelap aktif & *Tap-to-Seek*, tombol `✎`, `⊙`, `TT`, `✕`, baris utilitas (`♥`, `(i)`, `=+`, `[...]`, `1→` Play Mode, `🔀` Shuffle), seekbar putih bersih, kontrol transport tanpa lingkaran background pada tombol Play/Pause, dan Equalizer sistem Android.
-2. **7-Tab Musicolet Bottom Icon Strip + Mini Player (`MusicoletBottomStrip` & `MusicoletMiniPlayer`):**
-   - Tab `Queue`, `Now Playing`, `Folders` (+ Kelola/Sembunyikan Folder), `Playlists` (`musicevee_playlists_v1.json`), `Downloader`, `Download Queue & History`, dan `Search Lokal`.
+2. **6-Tab Musicolet Bottom Icon Strip + Sliding Pill Indicator + Mini Player (`MusicoletBottomStrip` & `MusicoletMiniPlayer`):**
+   - Tab `Queue`, `Now Playing`, `Folders` (+ Kelola/Sembunyikan Folder & Multi-Folder Queue Merger), `Playlists` (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger), `Downloader` (+ tombol kompak Modal Sheet Antrean & Riwayat Unduhan `88%`), dan `Search Lokal`. Indikator putih `2.5px` bergeser mulus (`AnimatedPositioned`) tanpa fitur swipe horizontal pada Mini Player.
 3. **100% Fitur All-in-One Downloader v3.x (`DownloaderProvider` & Services):**
    - Smart Omnibox (Deezer + iTunes + Link Spotify Track/Album/Playlist), chip folder tujuan (`Music Barat`, `Music Japan`, `Music Random`, atau `MusEvee` + `+ Baru`), deteksi duplikat lintas folder, Preview Audio 30s, Pemilih Sumber YouTube manual, `BatchPlaylistSheet`, Pindah Folder 1-klik, dan Retag MP3 instan (`-c:a copy` + biner ID3v2.4.0 `APIC` & `USLT` `\r\n` tanpa file `.lrc` eksternal).
 4. **Anti Double-Romaji & Prioritas Bahasa Asli (`RomajiService` & `LyricsService`):**

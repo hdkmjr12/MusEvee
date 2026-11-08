@@ -1223,6 +1223,139 @@ class LocalMusicProvider extends ChangeNotifier {
     await _startCurrentQueueTrack();
   }
 
+  /// Merges songs across multiple folders ([folderPaths] may contain folder names
+  /// like `'Music Barat'` or full folder paths like `'/storage/emulated/0/Music/Music Barat'`),
+  /// deduplicates by `filePath`, and either replaces the active Queue (with optional
+  /// Fisher-Yates True Shuffle Mix across all combined tracks) or appends to the end
+  /// of the current Queue without interrupting playback.
+  /// Returns the number of unique songs loaded/appended.
+  Future<int> playCombinedFolders(
+    List<String> folderPaths, {
+    bool shuffle = false,
+    bool appendToCurrentQueue = false,
+  }) async {
+    if (folderPaths.isEmpty) return 0;
+
+    final grouped = folderSongsMap;
+    final seenPaths = <String>{};
+    final combined = <LocalSong>[];
+
+    for (final rawTarget in folderPaths) {
+      final trimmed = rawTarget.trim();
+      if (trimmed.isEmpty) continue;
+      final normTarget = _normalizeFolderKey(trimmed);
+
+      // 1. Direct match by folderName key in folderSongsMap
+      final directKey = grouped.keys.firstWhere(
+        (k) => _normalizeFolderKey(k) == normTarget,
+        orElse: () => '',
+      );
+      if (directKey.isNotEmpty) {
+        for (final song in grouped[directKey]!) {
+          if (seenPaths.add(song.filePath)) {
+            combined.add(song);
+          }
+        }
+        continue;
+      }
+
+      // 2. Match by full folderPath or folderName across visible songs
+      for (final song in _allSongs) {
+        if (_normalizeFolderKey(song.folderPath) == normTarget ||
+            _normalizeFolderKey(song.folderName) == normTarget) {
+          if (seenPaths.add(song.filePath)) {
+            combined.add(song);
+          }
+        }
+      }
+    }
+
+    return _mergeAndPlayOrAppendSongs(
+      combined,
+      shuffle: shuffle,
+      appendToCurrentQueue: appendToCurrentQueue,
+    );
+  }
+
+  /// Merges songs across multiple playlists ([playlistIds]), deduplicates by `filePath`,
+  /// and either replaces the active Queue (with optional Fisher-Yates True Shuffle Mix
+  /// across all combined tracks) or appends to the end of the current Queue.
+  /// Returns the number of unique songs loaded/appended.
+  Future<int> playCombinedPlaylists(
+    List<String> playlistIds, {
+    bool shuffle = false,
+    bool appendToCurrentQueue = false,
+  }) async {
+    if (playlistIds.isEmpty) return 0;
+
+    final seenPaths = <String>{};
+    final combined = <LocalSong>[];
+
+    for (final rawId in playlistIds) {
+      final id = rawId.trim();
+      if (id.isEmpty) continue;
+      final playlist = playlistById(id);
+      if (playlist == null) continue;
+      final songs = songsForPlaylist(playlist);
+      for (final song in songs) {
+        if (seenPaths.add(song.filePath)) {
+          combined.add(song);
+        }
+      }
+    }
+
+    return _mergeAndPlayOrAppendSongs(
+      combined,
+      shuffle: shuffle,
+      appendToCurrentQueue: appendToCurrentQueue,
+    );
+  }
+
+  Future<int> _mergeAndPlayOrAppendSongs(
+    List<LocalSong> uniqueSongs, {
+    required bool shuffle,
+    required bool appendToCurrentQueue,
+  }) async {
+    if (uniqueSongs.isEmpty) return 0;
+
+    if (appendToCurrentQueue && _queueEntries.isNotEmpty) {
+      final existingPaths = _queueEntries.map((e) => e.song.filePath).toSet();
+      final toAppend = uniqueSongs
+          .where((s) => existingPaths.add(s.filePath))
+          .toList();
+      if (toAppend.isEmpty) return 0;
+
+      final newEntries = toAppend
+          .map((s) => QueueEntry(queueId: _allocateQueueId(), song: s))
+          .toList();
+      _originalQueueEntries.addAll(newEntries);
+
+      if (shuffle || _isShuffle) {
+        final shuffledAppend = List<QueueEntry>.from(newEntries);
+        _fisherYatesShuffle(shuffledAppend);
+        _queueEntries.addAll(shuffledAppend);
+      } else {
+        _queueEntries.addAll(newEntries);
+      }
+
+      notifyListeners();
+      _savePlayerSession();
+      return toAppend.length;
+    }
+
+    _setQueueFromSongs(uniqueSongs, forceShuffle: shuffle);
+    _localLyricsCandidates = const [];
+    await _startCurrentQueueTrack();
+    return uniqueSongs.length;
+  }
+
+  @visibleForTesting
+  void seedSongsForTesting(List<LocalSong> songs) {
+    _discoveredSongs = List<LocalSong>.from(songs);
+    _rebuildVisibleSongs();
+    notifyListeners();
+  }
+
   Future<void> _startCurrentQueueTrack({int startPositionMs = 0}) async {
     final song = currentSong;
     if (song == null) return;

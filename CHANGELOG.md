@@ -6,6 +6,29 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.4] — 2026-11-08 (6-Tab Sliding Bottom Navigation + Download Queue Modal Sheet, Live Animated Equalizer Bars, & Multi-Folder / Multi-Playlist Queue Merger)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Navigasi Bawah 6 Tab + Modal Bottom Sheet Antrean Unduhan (`lib/widgets/musicolet_bottom_strip.dart`, `lib/screens/home_screen.dart`):**
+  - Merampingkan `MusicoletBottomStrip` dari 7 tab menjadi **6 tab utama** (`0: Queue`, `1: Now Playing`, `2: Folders`, `3: Playlists`, `4: Downloader`, `5: Search Lokal`) sehingga proporsi ikon bawah lebih lega dan bersih.
+  - Menambahkan tombol ikon kompak **Antrean & Riwayat Unduhan** di sebelah kanan kolom pencarian Omnibox pada tab `Downloader`, dilengkapi *mini circular progress ring* saat ada unduhan aktif, badge jumlah antrean aktif, atau titik indikator riwayat (serta tetap mempertahankan badge pada ikon tab `Downloader` di bottom strip).
+  - Membuka `QueueHistoryView` sebagai **Modal Bottom Sheet (`88%` tinggi layar)** dengan *drag handle* halus saat tombol antrean maupun banner progres tipis diketuk, sehingga pengguna dapat mengintip progres/riwayat unduhan lalu *swipe* turun tanpa kehilangan hasil pencarian di belakangnya.
+- **Sliding Pill Indicator & Transisi Halaman Searah (`lib/widgets/musicolet_bottom_strip.dart`, `lib/widgets/pressable_scale.dart`):**
+  - Mengubah garis indikator putih `2.5px` di bawah `MusicoletBottomStrip` menggunakan `LayoutBuilder` + satu `AnimatedPositioned` (`Curves.easeOutCubic`, `240ms`) agar meluncur mulus secara horizontal mengikuti perpindahan tab.
+  - Memperbarui `AnimatedIndexedStack` dengan efek *Subtle Slide + Fade* searah (`dx: ±0.03`, `Curves.easeOutCubic`, `200ms`) tanpa menambahkan gesture swipe horizontal pada `MusicoletMiniPlayer` agar tidak bentrok dengan tombol kontrol.
+- **Live Animated Equalizer Bars (`AnimatedEqualizerIcon` di `lib/widgets/pressable_scale.dart`, `lib/widgets/local_library_views.dart`):**
+  - Membuat widget ringan `AnimatedEqualizerIcon` (4 batang vertikal berbalut `RepaintBoundary` + `CustomPainter`) yang bergerak naik-turun secara organik saat `localProvider.isPlaying == true` dan otomatis turun mendatar saat `isPlaying == false`.
+  - Memasang indikator equalizer hidup ini pada baris lagu yang sedang aktif di tab **Queue** (`PlaybackQueueView`), **Folders** (`LocalFoldersView`), **Playlists** (`LocalPlaylistsView`), dan **Search Lokal** (`LocalSearchView`).
+- **Fitur Baru: Multi-Folder & Multi-Playlist Queue Merger (`lib/providers/local_music_provider.dart`, `lib/widgets/local_library_views.dart`, `test/widget_test.dart`):**
+  - Menambahkan method `playCombinedFolders(List<String> folderPaths, {bool shuffle = false, bool appendToCurrentQueue = false})` dan `playCombinedPlaylists(List<String> playlistIds, {bool shuffle = false, bool appendToCurrentQueue = false})` di `LocalMusicProvider`.
+  - **Smart Deduplication di Queue:** Memastikan tidak ada `filePath` lagu yang terduplikasi ganda saat menggabungkan beberapa folder/playlist (maupun saat menambahkan ke akhir Queue yang sedang aktif via `appendToCurrentQueue: true`).
+  - **True Shuffle Mix (Fisher-Yates):** Saat `shuffle == true`, seluruh lagu unik dari semua folder/playlist terpilih digabungkan terlebih dahulu lalu dikocok merata menggunakan algoritma Fisher-Yates sehingga lagu lintas folder/playlist tercampur merata sejak lagu pertama.
+  - **UI Multi-Select & Floating Action Bar:** Menyediakan tombol **"Gabung"** (`Icons.library_add_check_rounded`) di header tab `Folders` (berdampingan dengan tombol **"Kelola Folder"**) dan `Playlists` (atau aktif otomatis saat *long-press* kartu), menampilkan **Floating Action Bar** (`_MultiSelectQueueActionBar`) dengan 3 aksi utama (**`▶ Putar`**, **`🔀 Shuffle Mix`**, **`➕ + Queue`**), serta menambahkan opsi cepat **"Tambahkan ke Antrean Saat Ini (+ Queue)"** pada menu titik tiga (`⋮`) di setiap kartu Folder dan Playlist.
+- **Bump Versi & Pembaruan CI/CD (`pubspec.yaml`, `.github/workflows/build_apk.yml`):**
+  - Menaikkan versi aplikasi ke `4.4.0+9` (badge UI `v4.4`) dan memperbarui artefak serta GitHub Release otomatis menjadi `MusEvee-v4.4-arm64.apk` (`v4.4.0`).
+
+---
+
 ## [v4.3] — 2026-11-08 (Universal Audio Folder Scanner + Strict Anti-Junk Filter, Custom Folder Management & Hide/Show Folders, Non-Forced Default Folders, First-Run Permission Onboarding, Spotify Private Playlist Guard & Automated GitHub Releases)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)
