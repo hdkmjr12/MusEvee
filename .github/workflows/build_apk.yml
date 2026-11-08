@@ -35,7 +35,7 @@ jobs:
         run: |
           flutter create . --platforms android
           git checkout -- android/app/src/main/ android/app/build.gradle* android/app/musevee-release.jks android/build.gradle* android/settings.gradle*
-          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26 android/app/src/main/kotlin/com/zte
 
       - name: Install Dependencies
         run: flutter pub get
@@ -57,5 +57,5 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-arm64.apk
           gh release delete v4.2.0 --yes --cleanup-tag || true
           gh release create v4.2.0 MusEvee-arm64.apk \
-            --title "MusEvee v4.2 (Musicolet UI/UX + Cross-Script J-Pop Search + Android 15 Storage)" \
-            --notes "Release APK MusEvee v4.2 khusus Android ARM64 (~20 MB): Rebranding resmi permanen MusEvee, dukungan penuh penghapusan/retag/pindah lagu Scoped Storage Android 15, mesin pencarian lagu Jepang lintas-aksara (Romaji -> Kanji/Kana + iTunes JP + Deezer), serta optimasi antrean True Queue-Order Shuffle."
+            --title "MusEvee v4.2 (Playlists + ZTE/nubia Live Island + Cross-Script J-Pop Search)" \
+            --notes "Release APK MusEvee v4.2 khusus Android ARM64 (~20 MB): Logo transparan baru, tab Playlists dengan Spotify Batch Auto-Sync & Smart Deduplication, dukungan penuh Native MediaSession Notification & ZTE/nubia Live Island (applicationId com.zte.as.music), micro-animations, Scoped Storage Android 15, serta pencarian lagu Jepang lintas-aksara (Romaji -> Kanji/Kana)."

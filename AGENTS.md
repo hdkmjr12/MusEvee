@@ -121,3 +121,15 @@ Menggunakan satu `MethodChannel('com.spotmeta.downloader/system')` terpadu yang 
    - Isolasi timestamp `[mm:ss.xx]` baris-demi-baris, normalisasi makron (`ū`/`ō`) & deduplikasi baris kembar bilingual/Romaji, penghapusan furigana inline, prioritas skor lirik Jepang/Romaji di atas terjemahan Inggris pada LRCLIB, serta pemilih manual **"Ganti Lirik"** di `NowPlayingView`, `TrackPreviewSheet`, dan `TagEditorSheet`.
 5. **Build APK Ringan ARM64 (~20 MB) & Keystore Permanen (`.github/workflows/build_apk.yml`):**
    - Selalu gunakan `--split-per-abi --target-platform android-arm64` dan `android/app/musevee-release.jks`.
+
+---
+
+## 5. Backlog Diskusi Pengembangan Berikutnya (Distribusi Umum Pengguna ZTE/nubia)
+
+1. **Pemindaian Folder Musik yang Lebih Fleksibel (`MainActivity.kt` & `FolderService`):**
+   - Membuka pembatasan `MediaStore` di `discoverLocalAudioFiles` (yang saat ini masih memfilter path `/Music/` atau `/SpotMeta/`) agar dapat mendeteksi lagu di folder lain seperti `/Download/`, `/Audio/`, atau `/Songs/` dengan tetap mengecualikan folder non-musik (`WhatsApp Audio`, `Voice Notes`, `CallRecord`, `Recordings`, `Ringtones`, `Alarms`, `Notifications`, file `< 16 KB`).
+   - Menambahkan opsi kelola/sembunyikan folder atau *Folder Picker* di tab `Folders`.
+2. **Penanganan Folder Default yang Tidak Memaksa (`FolderService.listAvailableFolders`):**
+   - Tidak memaksa pembuatan otomatis 3 folder kosong (`Music Barat`, `Music Japan`, `Music Random`) di perangkat pengguna baru yang belum memilikinya; hanya menampilkan folder yang sudah ada/berisi lagu serta menyediakan opsi default netral + tombol `+ Folder Baru`.
+3. **Alur Onboarding Izin Akses File (`MANAGE_EXTERNAL_STORAGE`) untuk Pengguna Umum:**
+   - Menyediakan banner/panduan ramah saat pertama kali digunakan agar pengguna umum (tanpa ADB) dapat mengaktifkan izin *All Files Access* untuk fitur hapus lagu, pindah folder, dan retag/edit lirik 1-klik di Android 11–15.
