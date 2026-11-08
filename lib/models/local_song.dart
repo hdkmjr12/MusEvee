@@ -203,6 +203,16 @@ class LocalSong {
   bool get hasSyncedLyrics =>
       hasLyrics && _lrcLineTimeRegex.hasMatch(usltLyrics!);
 
+  /// Resolves the physical parent directory path containing this audio file.
+  String get folderPath {
+    final normalized = filePath.replaceAll('\\', '/');
+    final idx = normalized.lastIndexOf('/');
+    if (idx > 0) {
+      return normalized.substring(0, idx);
+    }
+    return '/storage/emulated/0/Music/$folderName';
+  }
+
   int get durationSeconds =>
       durationMs > 0 ? (durationMs / 1000).round() : 0;
 

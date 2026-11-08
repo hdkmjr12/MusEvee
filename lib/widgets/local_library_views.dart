@@ -309,6 +309,241 @@ class LocalFoldersView extends StatefulWidget {
 class _LocalFoldersViewState extends State<LocalFoldersView> {
   String? _openedFolder;
 
+  Future<void> _showManageFoldersSheet(
+    BuildContext context,
+    LocalMusicProvider localProvider,
+  ) async {
+    final hairline = Colors.white.withValues(alpha: 0.09);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _kCard,
+      isScrollControlled: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        side: BorderSide(color: hairline, width: 0.8),
+      ),
+      builder: (sheetCtx) {
+        return Consumer<LocalMusicProvider>(
+          builder: (ctx, provider, _) {
+            final detected = provider.detectedFoldersInfo;
+            final hiddenCount = provider.hiddenFoldersCount;
+
+            return SafeArea(
+              top: false,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.78,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(top: 10, bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: _kSubtle,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.tune_rounded,
+                              color: _kAccent,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Kelola / Sembunyikan Folder',
+                                  style: TextStyle(
+                                    color: _kText,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Sembunyikan folder dari pustaka tanpa menghapus file fisik.',
+                                  style: TextStyle(
+                                    color: _kMuted,
+                                    fontSize: 11.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (hiddenCount > 0)
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                foregroundColor: _kAccent,
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () => provider.showAllHiddenFolders(),
+                              child: Text(
+                                'Tampilkan Semua ($hiddenCount)',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 0.8, color: hairline),
+                    if (detected.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 32,
+                        ),
+                        child: Center(
+                          child: Text(
+                            'Belum ada folder audio yang terdeteksi di penyimpanan.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: _kMuted, fontSize: 12.5),
+                          ),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
+                          itemCount: detected.length,
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 6),
+                          itemBuilder: (itemCtx, idx) {
+                            final info = detected[idx];
+                            final isVisible = !info.isHidden;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _kSubtle.withValues(
+                                  alpha: isVisible ? 0.65 : 0.3,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: hairline, width: 0.8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isVisible
+                                        ? Icons.folder_rounded
+                                        : Icons.folder_off_outlined,
+                                    color: isVisible ? _kAccent : _kMuted,
+                                    size: 21,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                info.folderName,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: isVisible
+                                                      ? _kText
+                                                      : _kMuted,
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 1.5,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black26,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '${info.songCount} lagu',
+                                                style: const TextStyle(
+                                                  color: _kMuted,
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          info.folderPath,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            color: _kMuted,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Switch.adaptive(
+                                    value: isVisible,
+                                    activeThumbColor: _kAccent,
+                                    activeTrackColor:
+                                        _kAccent.withValues(alpha: 0.35),
+                                    onChanged: (showFolder) {
+                                      provider.setFolderHidden(
+                                        info.folderPath,
+                                        folderName: info.folderName,
+                                        hidden: !showFolder,
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hairline = Colors.white.withValues(alpha: 0.08);
@@ -320,10 +555,13 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
         if (_openedFolder != null && folderMap.containsKey(_openedFolder)) {
           final folderName = _openedFolder!;
           final songs = folderMap[folderName] ?? const [];
+          final folderPath = songs.isNotEmpty
+              ? songs.first.folderPath
+              : '/storage/emulated/0/Music/$folderName';
           return _buildSongDrillDownView(
             context: context,
             title: folderName,
-            subtitle: '/storage/emulated/0/Music/$folderName • ${songs.length} lagu',
+            subtitle: '$folderPath • ${songs.length} lagu',
             songs: songs,
             localProvider: localProvider,
             downloaderProvider: downloaderProvider,
@@ -342,6 +580,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
         }
 
         final folderNames = folderMap.keys.toList();
+        final hiddenCount = localProvider.hiddenFoldersCount;
 
         return Container(
           color: _kBg,
@@ -375,16 +614,45 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                     const Spacer(),
                     TextButton.icon(
                       style: TextButton.styleFrom(
+                        foregroundColor:
+                            hiddenCount > 0 ? _kAccent : _kText,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: () =>
+                          _showManageFoldersSheet(context, localProvider),
+                      icon: Icon(
+                        hiddenCount > 0
+                            ? Icons.folder_off_outlined
+                            : Icons.tune_rounded,
+                        size: 15,
+                      ),
+                      label: Text(
+                        hiddenCount > 0
+                            ? 'Kelola ($hiddenCount)'
+                            : 'Kelola Folder',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
                         foregroundColor: _kAccent,
                         visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                       ),
                       onPressed: () =>
                           widget.onCreateNewFolder(downloaderProvider),
-                      icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                      icon: const Icon(
+                        Icons.create_new_folder_outlined,
+                        size: 15,
+                      ),
                       label: const Text(
-                        'Folder Baru',
+                        'Baru',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -414,99 +682,167 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
               ),
 
               Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-                  itemCount: folderNames.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 8),
-                  itemBuilder: (context, idx) {
-                    final folder = folderNames[idx];
-                    final songs = folderMap[folder] ?? const [];
-
-                    return Material(
-                      color: _kCard,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(color: hairline, width: 0.8),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => setState(() => _openedFolder = folder),
+                child: folderNames.isEmpty
+                    ? Center(
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 11,
-                          ),
-                          child: Row(
+                          padding: const EdgeInsets.symmetric(horizontal: 28),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(
-                                width: 42,
-                                height: 42,
-                                decoration: BoxDecoration(
-                                  color: _kSubtle,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.folder_rounded,
-                                  color: _kAccent,
-                                  size: 22,
+                              const Icon(
+                                Icons.folder_open_rounded,
+                                size: 42,
+                                color: _kMuted,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                hiddenCount > 0
+                                    ? 'Semua folder sedang disembunyikan ($hiddenCount folder)'
+                                    : 'Belum ada folder berisi lagu yang terdeteksi',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: _kText,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      folder,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: _kText,
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '${songs.length} lagu • /storage/emulated/0/Music/$folder',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: _kMuted,
-                                        fontSize: 11.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (songs.isNotEmpty) ...[
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  tooltip: 'Putar Folder $folder',
-                                  onPressed: () {
-                                    localProvider.playFolder(folder);
-                                    widget.onOpenNowPlaying();
-                                  },
-                                  icon: const Icon(
-                                    Icons.play_circle_fill_rounded,
-                                    color: Colors.white,
-                                    size: 28,
-                                  ),
-                                ),
-                              ] else
-                                const Icon(
-                                  Icons.chevron_right_rounded,
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Unduh lagu lewat tab Downloader atau pindai ulang penyimpanan perangkat Anda.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
                                   color: _kMuted,
-                                  size: 20,
+                                  fontSize: 12,
                                 ),
+                              ),
+                              if (hiddenCount > 0) ...[
+                                const SizedBox(height: 12),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _kAccent,
+                                    side: const BorderSide(
+                                      color: _kAccent,
+                                      width: 0.9,
+                                    ),
+                                  ),
+                                  onPressed: () => _showManageFoldersSheet(
+                                    context,
+                                    localProvider,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.visibility_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Kelola Folder Tersembunyi'),
+                                ),
+                              ],
                             ],
                           ),
                         ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+                        itemCount: folderNames.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final folder = folderNames[idx];
+                          final songs = folderMap[folder] ?? const [];
+                          final folderPath = songs.isNotEmpty
+                              ? songs.first.folderPath
+                              : '/storage/emulated/0/Music/$folder';
+
+                          return Material(
+                            color: _kCard,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(color: hairline, width: 0.8),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: () =>
+                                  setState(() => _openedFolder = folder),
+                              onLongPress: () => _showManageFoldersSheet(
+                                context,
+                                localProvider,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 11,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: _kSubtle,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: const Icon(
+                                        Icons.folder_rounded,
+                                        color: _kAccent,
+                                        size: 22,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            folder,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: _kText,
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${songs.length} lagu • $folderPath',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: _kMuted,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (songs.isNotEmpty) ...[
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        tooltip: 'Putar Folder $folder',
+                                        onPressed: () {
+                                          localProvider.playFolder(folder);
+                                          widget.onOpenNowPlaying();
+                                        },
+                                        icon: const Icon(
+                                          Icons.play_circle_fill_rounded,
+                                          color: Colors.white,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    ] else
+                                      const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: _kMuted,
+                                        size: 20,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),

@@ -43,19 +43,30 @@ jobs:
       - name: Build Release APK (ARM64 Lightweight ~20MB)
         run: flutter build apk --release --split-per-abi --target-platform android-arm64
 
+      - name: Prepare Named APK (`MusEvee-v4.3-arm64.apk`)
+        run: |
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.3-arm64.apk
+
       - name: Upload MusEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusEvee-APK
-          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          name: MusEvee-v4.3-arm64-APK
+          path: MusEvee-v4.3-arm64.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-arm64.apk
-          gh release delete v4.2.0 --yes --cleanup-tag || true
-          gh release create v4.2.0 MusEvee-arm64.apk \
-            --title "MusEvee v4.2 (Playlists + ZTE/nubia Live Island + Cross-Script J-Pop Search)" \
-            --notes "Release APK MusEvee v4.2 khusus Android ARM64 (~20 MB): Logo transparan baru, tab Playlists dengan Spotify Batch Auto-Sync & Smart Deduplication, dukungan penuh Native MediaSession Notification & ZTE/nubia Live Island (applicationId com.zte.as.music), micro-animations, Scoped Storage Android 15, serta pencarian lagu Jepang lintas-aksara (Romaji -> Kanji/Kana)."
+      - name: Publish GitHub Release (`v4.3.0`)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v4.3.0
+          name: "MusEvee v4.3 (Universal Folder Scanner + Folder Manager + Permission Onboarding)"
+          body: |
+            ### MusEvee v4.3 — Release APK (Android ARM64 ~20 MB)
+            - **Universal Audio Folder Scanner + Strict Anti-Junk Filter:** Memindai seluruh folder musik di penyimpanan (`/Music/`, `/Download/`, `/Audio/`, `/Songs/`, dll.) dengan syarat durasi `>= 15s` (atau ukuran `>= 50 KB`) dan mem-blacklist folder non-musik (`WhatsApp Audio`, `Voice Notes`, `Recordings`, `CallRecord`, `Ringtones`, `Alarms`, `Notifications`, `/Android/*`, `/.`).
+            - **Kelola / Sembunyikan Folder (`musevee_hidden_folders_v1.json`):** Bottom sheet di tab `Folders` untuk menampilkan atau menyembunyikan folder tertentu beserta jumlah lagunya tanpa menghapus file fisik.
+            - **Smart Default Folders:** Tidak lagi memaksa pembuatan 3 folder kosong di HP pengguna baru; otomatis mengenali subfolder yang sudah ada (`Music Barat`, `Music Japan`, `Music Random`, dll.) atau menyediakan 1 default netral (`MusEvee`).
+            - **First-Run Permission Onboarding & Live Island Status Dialog:** Banner setup izin 1-klik (*All Files Access* & *POST_NOTIFICATIONS*) dengan deteksi otomatis saat kembali ke aplikasi (`AppLifecycleState.resumed`) serta dialog Info MusEvee & panduan ZTE/nubia Live Island.
+          files: MusEvee-v4.3-arm64.apk
+          draft: false
+          prerelease: false
+          make_latest: "true"

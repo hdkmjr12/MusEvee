@@ -60,9 +60,8 @@ class DownloaderProvider extends ChangeNotifier {
   List<TrackMetadata> _searchResults = const [];
   final Map<String, String> _duplicateFolderMap = {};
   Map<String, int> _folderSongCounts = {};
-  List<String> _availableFolders =
-      List<String>.from(FolderService.defaultFolders);
-  String _selectedFolder = FolderService.defaultFolders.first;
+  List<String> _availableFolders = const [FolderService.defaultNeutralFolder];
+  String _selectedFolder = FolderService.defaultNeutralFolder;
 
   // Feature 1: 30s Audio Preview & Manual YouTube Candidate Picker
   bool _isPreviewPlaying = false;
@@ -367,12 +366,22 @@ class DownloaderProvider extends ChangeNotifier {
     try {
       final folders = await _folderService.listAvailableFolders();
       final lastFolder = await _folderService.loadLastSelectedFolder();
-      _availableFolders = folders;
-      if (_availableFolders.contains(lastFolder)) {
-        _selectedFolder = lastFolder;
-      } else if (lastFolder.isNotEmpty) {
-        _availableFolders = [..._availableFolders, lastFolder];
-        _selectedFolder = lastFolder;
+      _availableFolders = folders.isNotEmpty
+          ? List<String>.from(folders)
+          : [FolderService.defaultNeutralFolder];
+      if (lastFolder.isNotEmpty) {
+        final match = _availableFolders.firstWhere(
+          (f) => f.toLowerCase() == lastFolder.toLowerCase(),
+          orElse: () => '',
+        );
+        if (match.isNotEmpty) {
+          _selectedFolder = match;
+        } else {
+          _availableFolders = [..._availableFolders, lastFolder];
+          _selectedFolder = lastFolder;
+        }
+      } else {
+        _selectedFolder = _availableFolders.first;
       }
       _folderSongCounts =
           await _folderService.getFolderSongCounts(_availableFolders);
@@ -424,8 +433,16 @@ class DownloaderProvider extends ChangeNotifier {
     String? newPath,
     LocalSong? updatedSong,
   }) {
-    final mergedFolders = List<String>.from(folders);
-    if (_selectedFolder.isNotEmpty &&
+    final mergedFolders = folders.isNotEmpty
+        ? List<String>.from(folders)
+        : <String>[FolderService.defaultNeutralFolder];
+    if (_selectedFolder == FolderService.defaultNeutralFolder &&
+        folders.isNotEmpty &&
+        !folders.any(
+          (f) => f.toLowerCase() == FolderService.defaultNeutralFolder.toLowerCase(),
+        )) {
+      _selectedFolder = folders.first;
+    } else if (_selectedFolder.isNotEmpty &&
         !mergedFolders.any(
           (f) => f.toLowerCase() == _selectedFolder.toLowerCase(),
         )) {

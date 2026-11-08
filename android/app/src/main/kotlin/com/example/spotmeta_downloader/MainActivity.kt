@@ -1,9 +1,12 @@
 package com.example.spotmeta_downloader
 
+import android.Manifest
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.AudioAttributes
@@ -52,11 +55,14 @@ class MainActivity : FlutterActivity() {
     private var resumeLocalAfterPreview: Boolean = false
     private var mediaNotifier: MusEveeMediaNotifier? = null
 
-    // Android 11-15 Scoped Storage & All Files Access request tracking
+    // Android 11-15 Scoped Storage, All Files Access & Notification permission tracking
     private val reqAllFilesAccess = 2101
     private val reqDeleteMedia = 2102
     private val reqWriteMedia = 2103
+    private val reqNotificationPermission = 2104
+    private val reqNotificationSettings = 2105
     private var pendingAllFilesResult: MethodChannel.Result? = null
+    private var pendingNotificationResult: MethodChannel.Result? = null
     private var pendingDeleteResult: MethodChannel.Result? = null
     private var pendingDeletePath: String? = null
     private var pendingWriteResult: MethodChannel.Result? = null
@@ -235,12 +241,29 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "hasAllFilesAccess" -> {
-                    val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-                        Environment.isExternalStorageManager()
-                    result.success(granted)
+                    result.success(hasAllFilesAccessNow())
                 }
                 "requestAllFilesAccess" -> {
                     requestAllFilesAccessNative(result)
+                }
+                "hasNotificationPermission" -> {
+                    result.success(hasNotificationPermissionNow())
+                }
+                "requestNotificationPermission" -> {
+                    requestNotificationPermissionNative(result)
+                }
+                "openNotificationSettings" -> {
+                    openAppNotificationSettingsNative(result)
+                }
+                "getPermissionsStatus" -> {
+                    result.success(
+                        mapOf(
+                            "hasAllFilesAccess" to hasAllFilesAccessNow(),
+                            "hasNotificationPermission" to hasNotificationPermissionNow(),
+                            "packageName" to packageName,
+                            "sdkInt" to Build.VERSION.SDK_INT
+                        )
+                    )
                 }
                 "getInitialSharedText" -> {
                     val text = pendingSharedText
@@ -928,19 +951,68 @@ class MainActivity : FlutterActivity() {
     // LOCAL LIBRARY SCANNER & ID3v2 (USLT + APIC + .LRC FALLBACK) EXTRACTOR
     // =========================================================================
     private val excludedSystemAudioDirs = setOf(
+        "whatsapp",
+        "whatsapp audio",
+        "whatsapp voice notes",
+        "whatsapp animated gifs",
+        "whatsapp images",
+        "whatsapp video",
+        "whatsapp documents",
+        "telegram audio",
+        "telegram video",
+        "voice notes",
+        "voicenotes",
+        "recordings",
+        "callrecord",
+        "call_rec",
+        "call recordings",
+        "soundrecorder",
+        "sound_recorder",
+        "audio recorder",
         "ringtones_music",
         "ringtones",
         "alarms",
         "notifications",
         "ui",
-        ".thumbnails"
+        ".thumbnails",
+        ".musevee_state",
+        ".trash",
+        ".trashed"
     )
-    private val minValidMusicBytes = 16384L // Ignore <16KB system sound stubs / corrupt fragments
+
+    private val excludedPathFragments = listOf(
+        "/whatsapp/",
+        "/whatsapp audio/",
+        "/whatsapp voice notes/",
+        "/telegram/telegram audio/",
+        "/voice notes/",
+        "/recordings/",
+        "/callrecord/",
+        "/soundrecorder/",
+        "/ringtones/",
+        "/ringtones_music/",
+        "/alarms/",
+        "/notifications/",
+        "/android/data/",
+        "/android/media/",
+        "/android/obb/"
+    )
+
+    private val minValidMusicBytes = 16384L // Hard floor against <16KB OS sound stubs
+    private val minFallbackMusicBytes = 51200L // >= 50 KB when duration is not indexed yet
+    private val minValidMusicDurationMs = 15000L // >= 15 seconds for indexed tracks
 
     private fun isExcludedAudioPath(path: String): Boolean {
-        val segments = path.replace('\\', '/').split('/')
+        val normalized = path.replace('\\', '/')
+        val lowerPath = normalized.lowercase()
+        if (lowerPath.contains("/.")) return true
+        for (frag in excludedPathFragments) {
+            if (lowerPath.contains(frag)) return true
+        }
+        val segments = normalized.split('/')
         for (seg in segments) {
-            val lower = seg.lowercase()
+            if (seg.isEmpty()) continue
+            val lower = seg.lowercase().trim()
             if (seg.startsWith(".") || excludedSystemAudioDirs.contains(lower)) {
                 return true
             }
@@ -948,50 +1020,93 @@ class MainActivity : FlutterActivity() {
         return false
     }
 
+    private fun isLikelyMusicFolderPath(path: String): Boolean {
+        val lower = path.replace('\\', '/').lowercase()
+        return lower.contains("/music/") ||
+            lower.contains("/download/") ||
+            lower.contains("/audio/") ||
+            lower.contains("/songs/") ||
+            lower.contains("/spotmeta/") ||
+            lower.contains("/musevee/")
+    }
+
     private fun discoverLocalAudioFiles(requestedFolders: List<String>?): LinkedHashMap<String, File> {
         val audioExtensions = setOf("mp3", "m4a", "flac", "wav", "ogg", "aac", "opus")
         val discoveredFiles = LinkedHashMap<String, File>()
 
-        val musicRoot = File("/storage/emulated/0/Music")
-        val downloadRoot = File("/storage/emulated/0/Download")
+        val storageRoot = File("/storage/emulated/0")
+        val musicRoot = File(storageRoot, "Music")
+        val downloadRoot = File(storageRoot, "Download")
+        val audioRoot = File(storageRoot, "Audio")
+        val songsRoot = File(storageRoot, "Songs")
 
-        // 1. Scan prioritized folders first (Music Barat, Music Japan, Music Random, etc.)
-        val baseFolders = requestedFolders?.takeIf { it.isNotEmpty() }
-            ?: listOf("Music Barat", "Music Japan", "Music Random")
+        // 1. Scan prioritized user folders first if they exist on disk
+        val baseFolders = requestedFolders?.filter { it.isNotBlank() }.orEmpty()
         for (folderName in baseFolders) {
-            if (excludedSystemAudioDirs.contains(folderName.lowercase())) continue
+            if (excludedSystemAudioDirs.contains(folderName.lowercase().trim())) continue
             val dir = File(musicRoot, folderName)
-            collectAudioFilesRecursively(dir, audioExtensions, discoveredFiles, maxDepth = 3)
+            if (dir.exists() && dir.isDirectory) {
+                collectAudioFilesRecursively(dir, audioExtensions, discoveredFiles, maxDepth = 3)
+            }
             val dlDir = File(downloadRoot, folderName)
-            collectAudioFilesRecursively(dlDir, audioExtensions, discoveredFiles, maxDepth = 2)
+            if (dlDir.exists() && dlDir.isDirectory) {
+                collectAudioFilesRecursively(dlDir, audioExtensions, discoveredFiles, maxDepth = 2)
+            }
         }
 
-        // 2. Scan remaining subdirectories in /storage/emulated/0/Music
-        collectAudioFilesRecursively(musicRoot, audioExtensions, discoveredFiles, maxDepth = 4)
+        // 2. Scan standard music/download directories directly
+        for (root in listOf(musicRoot, downloadRoot, audioRoot, songsRoot)) {
+            if (root.exists() && root.isDirectory) {
+                collectAudioFilesRecursively(root, audioExtensions, discoveredFiles, maxDepth = 4)
+            }
+        }
 
-        // 3. Supplement via MediaStore query for music files under /Music or /SpotMeta
+        // 3. Universal MediaStore query across internal/external storage with strict anti-junk filter
         try {
-            val projection = arrayOf(MediaStore.MediaColumns.DATA)
-            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+            val projection = arrayOf(
+                MediaStore.MediaColumns.DATA,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.Audio.Media.IS_MUSIC
+            )
             applicationContext.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
-                selection,
+                null,
                 null,
                 "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
             )?.use { cursor ->
                 val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val durCol = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                val isMusicCol = cursor.getColumnIndex(MediaStore.Audio.Media.IS_MUSIC)
                 if (dataCol >= 0) {
                     while (cursor.moveToNext()) {
-                        val rawPath = cursor.getString(dataCol) ?: continue
-                        if ((rawPath.contains("/Music/", ignoreCase = true) ||
-                                rawPath.contains("/SpotMeta/", ignoreCase = true)) &&
-                            !isExcludedAudioPath(rawPath)
-                        ) {
-                            val f = File(rawPath)
-                            if (f.exists() && f.isFile && f.length() >= minValidMusicBytes) {
-                                discoveredFiles.putIfAbsent(f.absolutePath, f)
-                            }
+                        val rawPath = cursor.getString(dataCol)?.trim() ?: continue
+                        if (rawPath.isEmpty() || isExcludedAudioPath(rawPath)) continue
+
+                        val isMusicFlag = if (isMusicCol >= 0) cursor.getInt(isMusicCol) else 1
+                        if (isMusicFlag == 0 && !isLikelyMusicFolderPath(rawPath)) {
+                            continue
+                        }
+
+                        val f = File(rawPath)
+                        val ext = f.extension.lowercase()
+                        if (!audioExtensions.contains(ext)) continue
+                        if (!f.exists() || !f.isFile) continue
+
+                        val diskSize = f.length()
+                        if (diskSize < minValidMusicBytes) continue
+
+                        val indexedDuration = if (durCol >= 0) cursor.getLong(durCol) else 0L
+                        val indexedSize = if (sizeCol >= 0) cursor.getLong(sizeCol) else diskSize
+                        val effectiveSize = maxOf(diskSize, indexedSize)
+
+                        val passesAntiJunkFilter =
+                            (indexedDuration >= minValidMusicDurationMs) ||
+                                (indexedDuration <= 0L && effectiveSize >= minFallbackMusicBytes)
+                        if (passesAntiJunkFilter) {
+                            discoveredFiles.putIfAbsent(f.absolutePath, f)
                         }
                     }
                 }
@@ -1079,6 +1194,7 @@ class MainActivity : FlutterActivity() {
         maxDepth: Int
     ) {
         if (maxDepth < 0 || !dir.exists() || !dir.isDirectory) return
+        if (isExcludedAudioPath(dir.absolutePath)) return
         val children = try {
             dir.listFiles()
         } catch (_: Exception) {
@@ -1089,11 +1205,14 @@ class MainActivity : FlutterActivity() {
             if (child.name.startsWith(".")) continue
             if (child.isFile) {
                 val ext = child.extension.lowercase()
-                if (extensions.contains(ext) && child.length() >= minValidMusicBytes) {
+                if (extensions.contains(ext) &&
+                    child.length() >= minFallbackMusicBytes &&
+                    !isExcludedAudioPath(child.absolutePath)
+                ) {
                     out.putIfAbsent(child.absolutePath, child)
                 }
             } else if (child.isDirectory && maxDepth > 0) {
-                if (excludedSystemAudioDirs.contains(child.name.lowercase())) continue
+                if (excludedSystemAudioDirs.contains(child.name.lowercase().trim())) continue
                 collectAudioFilesRecursively(child, extensions, out, maxDepth - 1)
             }
         }
@@ -2036,11 +2155,26 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun hasAllFilesAccessNow(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            Environment.isExternalStorageManager()
+    }
+
+    private fun hasNotificationPermissionNow(): Boolean {
+        val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val systemEnabled = nm?.areNotificationsEnabled() ?: true
+        if (!systemEnabled) return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun requestAllFilesAccessNative(result: MethodChannel.Result) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-            Environment.isExternalStorageManager()
-        ) {
+        if (hasAllFilesAccessNow()) {
             result.success(true)
             return
         }
@@ -2067,14 +2201,94 @@ class MainActivity : FlutterActivity() {
     }
 
     @Suppress("DEPRECATION")
+    private fun requestNotificationPermissionNative(result: MethodChannel.Result) {
+        if (hasNotificationPermissionNow()) {
+            result.success(true)
+            return
+        }
+        if (pendingNotificationResult != null) {
+            result.success(false)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                pendingNotificationResult = result
+                requestPermissions(
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    reqNotificationPermission
+                )
+                return
+            } catch (_: Exception) {
+                pendingNotificationResult = null
+            }
+        }
+        openAppNotificationSettingsNative(result)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openAppNotificationSettingsNative(result: MethodChannel.Result) {
+        try {
+            pendingNotificationResult = result
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                }
+            } else {
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")
+                )
+            }
+            startActivityForResult(intent, reqNotificationSettings)
+        } catch (_: Exception) {
+            pendingNotificationResult = null
+            result.success(hasNotificationPermissionNow())
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        if (requestCode == reqNotificationPermission) {
+            val cb = pendingNotificationResult
+            pendingNotificationResult = null
+            val granted = hasNotificationPermissionNow()
+            if (granted) {
+                cb?.success(true)
+            } else {
+                // If user permanently denied runtime prompt or disabled notifications in OS settings,
+                // open the app notification settings page so they can toggle it on directly.
+                val canShowRationale = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+                if (!canShowRationale && cb != null) {
+                    openAppNotificationSettingsNative(cb)
+                } else {
+                    cb?.success(false)
+                }
+            }
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         when (requestCode) {
             reqAllFilesAccess -> {
                 val cb = pendingAllFilesResult
                 pendingAllFilesResult = null
-                val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-                    Environment.isExternalStorageManager()
-                cb?.success(granted)
+                cb?.success(hasAllFilesAccessNow())
+                return
+            }
+            reqNotificationSettings -> {
+                val cb = pendingNotificationResult
+                pendingNotificationResult = null
+                cb?.success(hasNotificationPermissionNow())
                 return
             }
             reqDeleteMedia -> {
@@ -2198,6 +2412,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         pendingAllFilesResult = null
+        pendingNotificationResult = null
         pendingDeleteResult = null
         pendingDeletePath = null
         pendingWriteResult = null
@@ -2226,9 +2441,10 @@ class MainActivity : FlutterActivity() {
     /**
      * Synchronizes persistent user state (`musicevee_playlists_v1.json`,
      * `musevee_favorites.json`, `musevee_library_cache_v1.json`,
-     * `musevee_player_session.json`, and `FlutterSharedPreferences.xml`)
+     * `musevee_player_session.json`, `musevee_hidden_folders_v1.json`,
+     * `last_selected_folder.txt`, and `FlutterSharedPreferences.xml`)
      * with `/storage/emulated/0/Music/.musevee_state/` so playlists, favorites,
-     * and playback state seamlessly survive package ID migrations or reinstalls.
+     * hidden folders, and playback state seamlessly survive package ID migrations or reinstalls.
      */
     private fun syncPersistentAppState() {
         try {
@@ -2251,12 +2467,14 @@ class MainActivity : FlutterActivity() {
                 File(appFlutterDir, "musicevee_library_cache_v1.json") to File(backupDir, "musicevee_library_cache_v1.json"),
                 File(appFlutterDir, "musevee_player_session.json") to File(backupDir, "musevee_player_session.json"),
                 File(appFlutterDir, "musicevee_player_session.json") to File(backupDir, "musicevee_player_session.json"),
+                File(appFlutterDir, "musevee_hidden_folders_v1.json") to File(backupDir, "musevee_hidden_folders_v1.json"),
+                File(appFlutterDir, "last_selected_folder.txt") to File(backupDir, "last_selected_folder.txt"),
                 File(sharedPrefsDir, "FlutterSharedPreferences.xml") to File(backupDir, "FlutterSharedPreferences.xml")
             )
 
             for ((internalFile, externalFile) in trackedFiles) {
-                val internalValid = internalFile.exists() && internalFile.length() > 2L
-                val externalValid = externalFile.exists() && externalFile.length() > 2L
+                val internalValid = internalFile.exists() && internalFile.length() > 1L
+                val externalValid = externalFile.exists() && externalFile.length() > 1L
                 if (internalValid && (!externalValid || internalFile.lastModified() >= externalFile.lastModified())) {
                     internalFile.copyTo(externalFile, overwrite = true)
                 } else if (!internalValid && externalValid) {

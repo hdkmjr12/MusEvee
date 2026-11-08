@@ -54,12 +54,29 @@ class PlaybackProgress {
   int get hashCode => Object.hash(positionMs, durationMs);
 }
 
+/// Metadata for a physical audio folder detected on device storage (used by
+/// the "Kelola / Sembunyikan Folder" sheet in `LocalFoldersView`).
+class DetectedFolderInfo {
+  final String folderName;
+  final String folderPath;
+  final int songCount;
+  final bool isHidden;
+
+  const DetectedFolderInfo({
+    required this.folderName,
+    required this.folderPath,
+    required this.songCount,
+    required this.isHidden,
+  });
+}
+
 class LocalMusicProvider extends ChangeNotifier {
   static const MethodChannel _systemChannel = MethodChannel(
     'com.spotmeta.downloader/system',
   );
 
   static const List<double> fontSizePresets = [13.5, 15.5, 18.0, 20.5];
+  static const String hiddenFoldersFileName = 'musevee_hidden_folders_v1.json';
 
   final FolderService _folderService;
   final TaggingService _taggingService;
@@ -79,14 +96,26 @@ class LocalMusicProvider extends ChangeNotifier {
     _initialize();
   }
 
+  /// All songs discovered on storage (before applying `_hiddenFolderPaths` filter).
+  List<LocalSong> _discoveredSongs = [];
+
+  /// Active visible songs in the library (excludes hidden folders).
   List<LocalSong> _allSongs = [];
-  List<String> _availableFolders =
-      List<String>.from(FolderService.defaultFolders);
+
+  List<String> _availableFolders = <String>[
+    FolderService.defaultNeutralFolder,
+  ];
   final List<LocalPlaylist> _playlists = [];
   final Set<String> _favoritePaths = {};
+  final Set<String> _hiddenFolderPaths = {};
   bool _isLoadingLibrary = false;
   bool _isSyncingLibrary = false;
   bool _requestedNotificationPermission = false;
+
+  // First-Run Permission Onboarding & Live Island Status
+  bool _hasAllFilesAccess = true;
+  bool _hasNotificationPermission = true;
+  bool _permissionBannerDismissed = false;
 
   // Memoized O(N log N) library groupings (invalidated ONLY when `_allSongs` or `_availableFolders` mutates)
   Map<String, List<LocalSong>>? _cachedFolderSongsMap;
@@ -177,9 +206,19 @@ class LocalMusicProvider extends ChangeNotifier {
 
   // Getters
   List<LocalSong> get allSongs => List.unmodifiable(_allSongs);
+  List<LocalSong> get discoveredSongs => List.unmodifiable(_discoveredSongs);
   List<String> get availableFolders => List.unmodifiable(_availableFolders);
   List<LocalPlaylist> get playlists => List.unmodifiable(_playlists);
+  Set<String> get hiddenFolderPaths => Set.unmodifiable(_hiddenFolderPaths);
   bool get isLoadingLibrary => _isLoadingLibrary;
+
+  bool get hasAllFilesAccess => _hasAllFilesAccess;
+  bool get hasNotificationPermission => _hasNotificationPermission;
+  bool get permissionBannerDismissed => _permissionBannerDismissed;
+  bool get shouldShowPermissionOnboarding =>
+      Platform.isAndroid &&
+      !_permissionBannerDismissed &&
+      (!_hasAllFilesAccess || !_hasNotificationPermission);
 
   List<QueueEntry> get queueEntries => List.unmodifiable(_queueEntries);
   List<LocalSong> get queue =>
@@ -217,20 +256,216 @@ class LocalMusicProvider extends ChangeNotifier {
 
   bool isFavorite(String filePath) => _favoritePaths.contains(filePath);
 
-  /// Grouped songs per folder (always includes `Music Barat`, `Music Japan`, `Music Random`).
+  static String _normalizeFolderKey(String raw) {
+    var trimmed = raw.trim().replaceAll('\\', '/');
+    while (trimmed.length > 1 && trimmed.endsWith('/')) {
+      trimmed = trimmed.substring(0, trimmed.length - 1);
+    }
+    return trimmed.toLowerCase();
+  }
+
+  bool isFolderHidden(String folderPath, {String? folderName}) {
+    final normPath = _normalizeFolderKey(folderPath);
+    if (normPath.isNotEmpty && _hiddenFolderPaths.contains(normPath)) {
+      return true;
+    }
+    if (folderName != null && folderName.trim().isNotEmpty) {
+      final normName = _normalizeFolderKey(folderName);
+      if (normName.isNotEmpty && _hiddenFolderPaths.contains(normName)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool isSongInHiddenFolder(LocalSong song) =>
+      isFolderHidden(song.folderPath, folderName: song.folderName);
+
+  void _rebuildVisibleSongs() {
+    _allSongs = _discoveredSongs
+        .where((s) => !isSongInHiddenFolder(s))
+        .toList();
+    _invalidateGroupingCaches();
+  }
+
+  /// Returns all detected folders across storage (both visible and hidden)
+  /// with their song counts and paths for the "Kelola Folder" bottom sheet.
+  List<DetectedFolderInfo> get detectedFoldersInfo {
+    final groupedByPath = <String, List<LocalSong>>{};
+    final displayPathByKey = <String, String>{};
+    final displayNameByKey = <String, String>{};
+
+    for (final song in _discoveredSongs) {
+      final path = song.folderPath;
+      final name = song.folderName.trim().isNotEmpty
+          ? song.folderName.trim()
+          : 'Music';
+      final key = _normalizeFolderKey(path.isNotEmpty ? path : name);
+      if (key.isEmpty) continue;
+      displayPathByKey.putIfAbsent(key, () => path);
+      displayNameByKey.putIfAbsent(key, () => name);
+      groupedByPath.putIfAbsent(key, () => []).add(song);
+    }
+
+    final items = <DetectedFolderInfo>[];
+    for (final entry in groupedByPath.entries) {
+      final key = entry.key;
+      final songs = entry.value;
+      if (songs.isEmpty) continue;
+      final folderPath = displayPathByKey[key] ?? songs.first.folderPath;
+      final folderName = displayNameByKey[key] ?? songs.first.folderName;
+      items.add(
+        DetectedFolderInfo(
+          folderName: folderName,
+          folderPath: folderPath,
+          songCount: songs.length,
+          isHidden: isFolderHidden(folderPath, folderName: folderName),
+        ),
+      );
+    }
+
+    final priorityLower =
+        FolderService.defaultFolders.map((f) => f.toLowerCase()).toList();
+    items.sort((a, b) {
+      final aIdx = priorityLower.indexOf(a.folderName.toLowerCase());
+      final bIdx = priorityLower.indexOf(b.folderName.toLowerCase());
+      if (aIdx != -1 && bIdx != -1) return aIdx.compareTo(bIdx);
+      if (aIdx != -1) return -1;
+      if (bIdx != -1) return 1;
+      return a.folderName.toLowerCase().compareTo(b.folderName.toLowerCase());
+    });
+    return items;
+  }
+
+  int get hiddenFoldersCount =>
+      detectedFoldersInfo.where((f) => f.isHidden).length;
+
+  Future<void> setFolderHidden(
+    String folderPath, {
+    String? folderName,
+    required bool hidden,
+  }) async {
+    final normPath = _normalizeFolderKey(folderPath);
+    final normName =
+        folderName != null ? _normalizeFolderKey(folderName) : '';
+    bool changed = false;
+    if (hidden) {
+      final keyToStore = normPath.isNotEmpty ? normPath : normName;
+      if (keyToStore.isNotEmpty && _hiddenFolderPaths.add(keyToStore)) {
+        changed = true;
+      }
+    } else {
+      if (normPath.isNotEmpty && _hiddenFolderPaths.remove(normPath)) {
+        changed = true;
+      }
+      if (normName.isNotEmpty && _hiddenFolderPaths.remove(normName)) {
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    _rebuildVisibleSongs();
+    _syncQueueWithVisibleSongs();
+    _syncProgressNotifiers();
+    notifyListeners();
+    _notifyExternalSync();
+    await _saveHiddenFolders();
+    await _savePlayerSession();
+  }
+
+  Future<void> showAllHiddenFolders() async {
+    if (_hiddenFolderPaths.isEmpty) return;
+    _hiddenFolderPaths.clear();
+    _rebuildVisibleSongs();
+    _syncQueueWithVisibleSongs();
+    _syncProgressNotifiers();
+    notifyListeners();
+    _notifyExternalSync();
+    await _saveHiddenFolders();
+    await _savePlayerSession();
+  }
+
+  void _syncQueueWithVisibleSongs() {
+    if (_queueEntries.isNotEmpty) {
+      final byPath = {for (final s in _allSongs) s.filePath: s};
+      final activePath = currentSong?.filePath;
+      _queueEntries = _queueEntries
+          .where(
+            (e) =>
+                byPath.containsKey(e.song.filePath) ||
+                e.song.filePath == activePath,
+          )
+          .map((e) => e.copyWith(song: byPath[e.song.filePath] ?? e.song))
+          .toList();
+      _originalQueueEntries = _originalQueueEntries
+          .where(
+            (e) =>
+                byPath.containsKey(e.song.filePath) ||
+                e.song.filePath == activePath,
+          )
+          .map((e) => e.copyWith(song: byPath[e.song.filePath] ?? e.song))
+          .toList();
+      if (_queueEntries.isEmpty && _allSongs.isNotEmpty) {
+        _setQueueFromSongs(_allSongs);
+        _durationMs = _queueEntries.first.song.durationMs;
+        _hasPreparedNative = false;
+      } else if (_queueEntries.isNotEmpty) {
+        _currentIndex = _currentIndex.clamp(0, _queueEntries.length - 1);
+      } else {
+        _currentIndex = -1;
+      }
+    } else if (_allSongs.isNotEmpty) {
+      _setQueueFromSongs(_allSongs);
+      _durationMs = _queueEntries.first.song.durationMs;
+      _hasPreparedNative = false;
+    }
+  }
+
+  /// Grouped songs per folder (only includes folders that contain >= 1 visible song).
   Map<String, List<LocalSong>> get folderSongsMap {
     final cached = _cachedFolderSongsMap;
     if (cached != null) return cached;
 
-    final map = <String, List<LocalSong>>{};
-    for (final f in _availableFolders) {
-      map[f] = [];
-    }
+    final grouped = <String, List<LocalSong>>{};
     for (final song in _allSongs) {
-      map.putIfAbsent(song.folderName, () => []).add(song);
+      final name = song.folderName.trim();
+      if (name.isEmpty) continue;
+      grouped.putIfAbsent(name, () => []).add(song);
     }
-    _cachedFolderSongsMap = map;
-    return map;
+
+    final ordered = <String, List<LocalSong>>{};
+    final seenLower = <String>{};
+    // Keep priority folders (`Music Barat`, `Music Japan`, `Music Random`, etc.) first when non-empty
+    final priorityOrder = <String>[
+      ...FolderService.defaultFolders,
+      ..._availableFolders,
+    ];
+    for (final f in priorityOrder) {
+      final matchKey = grouped.keys.firstWhere(
+        (k) => k.toLowerCase() == f.toLowerCase(),
+        orElse: () => '',
+      );
+      if (matchKey.isNotEmpty &&
+          !seenLower.contains(matchKey.toLowerCase()) &&
+          grouped[matchKey]!.isNotEmpty) {
+        ordered[matchKey] = grouped[matchKey]!;
+        seenLower.add(matchKey.toLowerCase());
+      }
+    }
+
+    final remainingKeys = grouped.keys
+        .where(
+          (k) =>
+              !seenLower.contains(k.toLowerCase()) && grouped[k]!.isNotEmpty,
+        )
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    for (final k in remainingKeys) {
+      ordered[k] = grouped[k]!;
+    }
+
+    _cachedFolderSongsMap = ordered;
+    return ordered;
   }
 
   /// Grouped songs per Album.
@@ -311,8 +546,10 @@ class LocalMusicProvider extends ChangeNotifier {
 
   Future<void> _initialize() async {
     if (!Platform.isAndroid) return;
+    await _loadHiddenFolders();
     await _loadFavorites();
     await _loadPlaylists();
+    await checkPermissionsStatus();
     final hydrated = await _loadLibraryAndSessionCache();
     if (hydrated) {
       _syncProgressNotifiers();
@@ -326,6 +563,71 @@ class LocalMusicProvider extends ChangeNotifier {
       requestPermission: true,
       silentBackground: hydrated,
     );
+    await checkPermissionsStatus();
+  }
+
+  // ===========================================================================
+  // FIRST-RUN PERMISSION ONBOARDING & LIVE ISLAND STATUS
+  // ===========================================================================
+  Future<void> checkPermissionsStatus({
+    bool refreshIfNewlyGranted = false,
+  }) async {
+    if (!Platform.isAndroid) return;
+    try {
+      final prevAllFiles = _hasAllFilesAccess;
+      final prevNotif = _hasNotificationPermission;
+      final status = await _folderService.getPermissionsStatus();
+      _hasAllFilesAccess = status['hasAllFilesAccess'] == true;
+      _hasNotificationPermission = status['hasNotificationPermission'] == true;
+
+      if (_hasAllFilesAccess && _hasNotificationPermission) {
+        _permissionBannerDismissed = false;
+      }
+
+      if (prevAllFiles != _hasAllFilesAccess ||
+          prevNotif != _hasNotificationPermission) {
+        notifyListeners();
+      }
+
+      if (refreshIfNewlyGranted && !prevAllFiles && _hasAllFilesAccess) {
+        await refreshLibrary(silentBackground: _allSongs.isNotEmpty);
+      }
+    } catch (_) {}
+  }
+
+  void dismissPermissionBanner() {
+    if (_permissionBannerDismissed) return;
+    _permissionBannerDismissed = true;
+    notifyListeners();
+  }
+
+  Future<void> requestAllFilesAccessPermission() async {
+    if (!Platform.isAndroid) return;
+    await _folderService.requestAllFilesAccess();
+    await checkPermissionsStatus(refreshIfNewlyGranted: true);
+  }
+
+  Future<bool> requestNotificationAndLiveIslandPermission() async {
+    if (!Platform.isAndroid) return true;
+    bool granted = await _folderService.requestNotificationPermission();
+    if (!granted) {
+      try {
+        final status = await Permission.notification.request();
+        granted = status.isGranted;
+      } catch (_) {}
+    }
+    await checkPermissionsStatus();
+    if (!_hasNotificationPermission) {
+      await _folderService.openNotificationSettings();
+      await checkPermissionsStatus();
+    }
+    return _hasNotificationPermission;
+  }
+
+  Future<void> openNotificationSettings() async {
+    if (!Platform.isAndroid) return;
+    await _folderService.openNotificationSettings();
+    await checkPermissionsStatus();
   }
 
   Future<void> _requestAudioReadPermissions() async {
@@ -353,9 +655,9 @@ class LocalMusicProvider extends ChangeNotifier {
     }
   }
 
-  /// Incrementally delta-syncs `/storage/emulated/0/Music/*` and MediaStore via
+  /// Incrementally delta-syncs device storage and MediaStore via
   /// `MainActivity.kt` (`scanLocalMusicLibraryDelta`), inspecting only new or
-  /// modified MP3 files (`lastModifiedMs` + `sizeBytes` + persistent cover file)
+  /// modified audio files (`lastModifiedMs` + `sizeBytes` + persistent cover file)
   /// and persisting `musevee_library_cache_v1.json`.
   Future<void> refreshLibrary({
     bool requestPermission = false,
@@ -379,7 +681,7 @@ class LocalMusicProvider extends ChangeNotifier {
       _availableFolders = await _folderService.listAvailableFolders();
 
       final cachedIndex = <String, Map<String, dynamic>>{
-        for (final s in _allSongs)
+        for (final s in _discoveredSongs)
           s.filePath: {
             'lastModifiedMs': s.lastModifiedMs,
             'sizeBytes': s.sizeBytes,
@@ -397,7 +699,7 @@ class LocalMusicProvider extends ChangeNotifier {
         },
       );
 
-      List<LocalSong> nextSongs;
+      List<LocalSong> nextDiscovered;
       bool libraryMutated = false;
 
       if (deltaResult != null) {
@@ -420,8 +722,10 @@ class LocalMusicProvider extends ChangeNotifier {
           }
         }
 
-        final existingByPath = {for (final s in _allSongs) s.filePath: s};
-        final removedSongs = _allSongs
+        final existingByPath = {
+          for (final s in _discoveredSongs) s.filePath: s,
+        };
+        final removedSongs = _discoveredSongs
             .where((s) => !presentSet.contains(s.filePath))
             .toList();
 
@@ -446,11 +750,11 @@ class LocalMusicProvider extends ChangeNotifier {
             if (cmp != 0) return cmp;
             return a.title.toLowerCase().compareTo(b.title.toLowerCase());
           });
-          nextSongs = merged;
+          nextDiscovered = merged;
 
           // Clean up orphan covers for files removed externally outside MusEvee
           if (removedSongs.isNotEmpty) {
-            final activeCovers = nextSongs
+            final activeCovers = nextDiscovered
                 .map((s) => s.coverFilePath)
                 .whereType<String>()
                 .toSet();
@@ -467,7 +771,7 @@ class LocalMusicProvider extends ChangeNotifier {
             }
           }
         } else {
-          nextSongs = _allSongs;
+          nextDiscovered = _discoveredSongs;
         }
       } else {
         // Fallback if native delta handler is unavailable
@@ -491,16 +795,21 @@ class LocalMusicProvider extends ChangeNotifier {
           if (cmp != 0) return cmp;
           return a.title.toLowerCase().compareTo(b.title.toLowerCase());
         });
-        nextSongs = parsed;
+        nextDiscovered = parsed;
         libraryMutated = true;
       }
 
-      _allSongs = nextSongs;
+      _discoveredSongs = nextDiscovered;
+      _rebuildVisibleSongs();
 
-      // Ensure any extra folder names discovered are in _availableFolders
+      // Ensure any extra `/storage/emulated/0/Music/<subfolder>` names discovered are in `_availableFolders`
       final seenLower = _availableFolders.map((f) => f.toLowerCase()).toSet();
       for (final s in _allSongs) {
-        if (s.folderName.isNotEmpty &&
+        final isUnderBaseMusic = s.folderPath
+            .toLowerCase()
+            .startsWith('${FolderService.baseMusicRoot.toLowerCase()}/');
+        if (isUnderBaseMusic &&
+            s.folderName.isNotEmpty &&
             !seenLower.contains(s.folderName.toLowerCase())) {
           seenLower.add(s.folderName.toLowerCase());
           _availableFolders = [..._availableFolders, s.folderName];
@@ -1578,14 +1887,15 @@ class LocalMusicProvider extends ChangeNotifier {
       final refreshed = LocalSong.fromNativeMap(map);
       if (refreshed.filePath.isEmpty) return null;
 
-      final existingIdx = _allSongs.indexWhere(
+      final discIdx = _discoveredSongs.indexWhere(
         (s) => s.filePath == refreshed.filePath,
       );
-      if (existingIdx != -1) {
-        _allSongs[existingIdx] = refreshed;
+      if (discIdx != -1) {
+        _discoveredSongs[discIdx] = refreshed;
       } else {
-        _allSongs = [refreshed, ..._allSongs];
+        _discoveredSongs = [refreshed, ..._discoveredSongs];
       }
+      _rebuildVisibleSongs();
 
       if (refreshed.folderName.isNotEmpty &&
           !_availableFolders.any(
@@ -1607,7 +1917,7 @@ class LocalMusicProvider extends ChangeNotifier {
         }
       }
 
-      if (_queueEntries.isEmpty) {
+      if (_queueEntries.isEmpty && _allSongs.isNotEmpty) {
         _setQueueFromSongs(_allSongs);
         _durationMs = _queueEntries.first.song.durationMs;
         _hasPreparedNative = false;
@@ -1732,7 +2042,8 @@ class LocalMusicProvider extends ChangeNotifier {
       }
     }
 
-    _allSongs.removeWhere((s) => s.filePath == targetPath);
+    _discoveredSongs.removeWhere((s) => s.filePath == targetPath);
+    _rebuildVisibleSongs();
     if (_favoritePaths.remove(targetPath)) {
       await _saveFavorites();
     }
@@ -1740,7 +2051,7 @@ class LocalMusicProvider extends ChangeNotifier {
 
     // Remove orphan extracted cover thumbnail if no other track shares it
     if (song.coverFilePath != null && song.coverFilePath!.isNotEmpty) {
-      final sharedCover = _allSongs.any(
+      final sharedCover = _discoveredSongs.any(
         (s) => s.coverFilePath == song.coverFilePath,
       );
       if (!sharedCover) {
@@ -1778,17 +2089,22 @@ class LocalMusicProvider extends ChangeNotifier {
       );
       if (map != null) {
         refreshed = LocalSong.fromNativeMap(map);
-        final libIdx = _allSongs.indexWhere((s) => s.filePath == oldPath);
-        if (libIdx != -1) {
-          _allSongs[libIdx] = refreshed;
+        final discIdx = _discoveredSongs.indexWhere(
+          (s) => s.filePath == oldPath,
+        );
+        if (discIdx != -1) {
+          _discoveredSongs[discIdx] = refreshed;
         } else {
-          final newIdx = _allSongs.indexWhere((s) => s.filePath == newPath);
+          final newIdx = _discoveredSongs.indexWhere(
+            (s) => s.filePath == newPath,
+          );
           if (newIdx != -1) {
-            _allSongs[newIdx] = refreshed;
+            _discoveredSongs[newIdx] = refreshed;
           } else {
-            _allSongs.insert(0, refreshed);
+            _discoveredSongs.insert(0, refreshed);
           }
         }
+        _rebuildVisibleSongs();
 
         if (refreshed.folderName.isNotEmpty &&
             !_availableFolders.any(
@@ -1849,7 +2165,7 @@ class LocalMusicProvider extends ChangeNotifier {
   }
 
   // ===========================================================================
-  // INCREMENTAL LIBRARY CACHE, PLAYER SESSION & FAVORITES PERSISTENCE
+  // INCREMENTAL LIBRARY CACHE, PLAYER SESSION, FAVORITES & HIDDEN FOLDERS
   // ===========================================================================
   Future<File> _resolveDocFile(
     Directory docs,
@@ -1902,8 +2218,8 @@ class LocalMusicProvider extends ChangeNotifier {
       }
       if (hydratedSongs.isEmpty) return false;
 
-      _allSongs = hydratedSongs;
-      _invalidateGroupingCaches();
+      _discoveredSongs = hydratedSongs;
+      _rebuildVisibleSongs();
       final byPath = {for (final s in _allSongs) s.filePath: s};
 
       // Restore last Musicolet player session & queue order
@@ -2000,7 +2316,7 @@ class LocalMusicProvider extends ChangeNotifier {
         }
       }
 
-      if (!restoredQueue) {
+      if (!restoredQueue && _allSongs.isNotEmpty) {
         _setQueueFromSongs(_allSongs);
         _durationMs = _queueEntries.first.song.durationMs;
         _positionMs = 0;
@@ -2021,7 +2337,7 @@ class LocalMusicProvider extends ChangeNotifier {
       final payload = <String, dynamic>{
         'version': 1,
         'folders': _availableFolders,
-        'songs': _allSongs.map((s) => s.toJson()).toList(),
+        'songs': _discoveredSongs.map((s) => s.toJson()).toList(),
       };
       await libFile.writeAsString(jsonEncode(payload));
     } catch (_) {}
@@ -2073,6 +2389,37 @@ class LocalMusicProvider extends ChangeNotifier {
       final docs = await getApplicationDocumentsDirectory();
       final f = File('${docs.path}/musevee_favorites.json');
       await f.writeAsString(jsonEncode(_favoritePaths.toList()), flush: true);
+    } catch (_) {}
+  }
+
+  Future<void> _loadHiddenFolders() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final f = File('${docs.path}/$hiddenFoldersFileName');
+      if (await f.exists()) {
+        final raw = await f.readAsString();
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          _hiddenFolderPaths
+            ..clear()
+            ..addAll(
+              decoded
+                  .map((e) => _normalizeFolderKey(e.toString()))
+                  .where((k) => k.isNotEmpty),
+            );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveHiddenFolders() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final f = File('${docs.path}/$hiddenFoldersFileName');
+      await f.writeAsString(
+        jsonEncode(_hiddenFolderPaths.toList()),
+        flush: true,
+      );
     } catch (_) {}
   }
 

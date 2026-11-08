@@ -37,8 +37,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.cloud_download_outlined).last);
     await tester.pump();
 
-    expect(find.text('MusEvee'), findsOneWidget);
-    expect(find.text('v4.2'), findsOneWidget);
+    expect(find.text('MusEvee'), findsWidgets);
+    expect(find.text('v4.3'), findsOneWidget);
     expect(find.text('YOASOBI - Idol'), findsOneWidget);
   });
 

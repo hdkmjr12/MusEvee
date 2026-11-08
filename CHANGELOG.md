@@ -6,6 +6,29 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.3] — 2026-11-08 (Universal Audio Folder Scanner + Strict Anti-Junk Filter, Custom Folder Management & Hide/Show Folders, Non-Forced Default Folders, First-Run Permission Onboarding & Automated GitHub Releases)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Universal Audio Folder Scanner + Filter Anti-Sampah Ketat (`android/app/src/main/kotlin/com/example/spotmeta_downloader/MainActivity.kt`, `lib/models/local_song.dart`):**
+  - Menghapus pembatasan kaku di `discoverLocalAudioFiles()` yang sebelumnya hanya mengizinkan path `/Music/` atau `/SpotMeta/`, sehingga pemindaian `MediaStore.Audio.Media.EXTERNAL_CONTENT_URI` kini membaca seluruh folder penyimpanan yang berisi file musik valid (`/Music/`, `/Download/`, `/Audio/`, `/Songs/`, dll.).
+  - Menerapkan filter anti-sampah berlapis: durasi minimal `>= 15000 ms` (15 detik) atau ukuran file `>= 50 KB` (`51200` byte bila durasi belum terindeks `MediaStore`), ekstensi audio valid (`.mp3`, `.flac`, `.m4a`, `.wav`, `.ogg`, `.aac`, `.opus`), serta `IS_MUSIC != 0`.
+  - Mem-blacklist secara otomatis segmen path folder non-musik/rekaman/sistem: `/WhatsApp/`, `/WhatsApp Audio/`, `/WhatsApp Voice Notes/`, `/Telegram/Telegram Audio/`, `/Voice Notes/`, `/Recordings/`, `/CallRecord/`, `/SoundRecorder/`, `/Ringtones/`, `/Alarms/`, `/Notifications/`, `/Android/data/`, `/Android/media/`, `/Android/obb/`, serta folder tersembunyi yang diawali titik (`/.`).
+- **Fitur "Kelola / Sembunyikan Folder" di Tab `Folders` (`lib/providers/local_music_provider.dart`, `lib/widgets/local_library_views.dart`, `MainActivity.kt`):**
+  - Menyimpan daftar `hiddenFolderPaths` secara persisten di `musevee_hidden_folders_v1.json` (dan ikut di-backup otomatis ke `/storage/emulated/0/Music/.musevee_state/`).
+  - Menambahkan tombol **"Kelola Folder"** di header `LocalFoldersView` (serta *long-press* pada kartu folder) yang membuka bottom sheet berisi seluruh folder terdeteksi (`detectedFoldersInfo`) lengkap dengan nama folder, path lengkap (`song.folderPath`), jumlah lagu, tombol *Tampilkan Semua*, dan *toggle switch* (Tampilkan / Sembunyikan) untuk mengecualikan lagu dari pustaka aktif (`allSongs`, `FoldersView`, `Search Lokal`) tanpa menghapus file fisiknya.
+- **Penanganan Folder Default yang Tidak Memaksa (`lib/services/folder_service.dart`, `lib/providers/downloader_provider.dart`, `lib/providers/local_music_provider.dart`, `lib/widgets/local_library_views.dart`):**
+  - Menghapus pembuatan paksa 3 folder kosong (`Music Barat`, `Music Japan`, `Music Random`) setiap kali startup di `FolderService.listAvailableFolders()`.
+  - Memindai dan mengembalikan subfolder yang memang sudah ada di dalam `/storage/emulated/0/Music/` (dengan tetap memprioritaskan urutan `Music Barat`, `Music Japan`, `Music Random` bila folder tersebut sudah ada di HP pengguna) dan menyediakan 1 folder default netral (`MusEvee`) bagi perangkat pengguna baru yang belum memiliki subfolder apa pun.
+  - Memastikan tab `Folders` (`folderSongsMap`) hanya menampilkan folder yang benar-benar memiliki lagu (`>= 1` lagu) di dalamnya.
+- **First-Run Permission Onboarding & Info Dialog Live Island (`MainActivity.kt`, `lib/services/folder_service.dart`, `lib/providers/local_music_provider.dart`, `lib/screens/home_screen.dart`):**
+  - Menambahkan handler MethodChannel `hasNotificationPermission`, `requestNotificationPermission`, `openNotificationSettings`, dan `getPermissionsStatus` di `MainActivity.kt` (melengkapi `hasAllFilesAccess` & `requestAllFilesAccess` khusus paket `com.zte.as.music`).
+  - Menampilkan kartu banner *Setup Izin Cepat MusEvee* bergaya *Dark Minimalist* yang dapat ditutup (*dismissible*) dengan tombol aksi cepat **[Aktifkan Akses File Penuh]** dan **[Aktifkan Notifikasi & Live Island]**, serta memeriksa ulang status izin secara otomatis saat pengguna kembali ke aplikasi (`AppLifecycleState.resumed`).
+  - Menambahkan ikon info (`info_outline_rounded`) di AppBar `HomeScreen` yang membuka dialog **MusEvee v4.3** berisi indikator status izin (*All Files Access* & *Notification / Live Island Ready*) serta tips untuk pengguna ZTE/nubia (*"Pastikan fitur Live Island -> Media Playback aktif di Pengaturan HP Anda"*).
+- **Publikasi Otomatis ke GitHub Releases (`.github/workflows/build_apk.yml`, `pubspec.yaml`, `test/widget_test.dart`):**
+  - Menaikkan versi aplikasi ke `4.3.0+8` (`v4.3`) dan memperbarui workflow `.github/workflows/build_apk.yml` untuk menyalin APK hasil build menjadi `MusEvee-v4.3-arm64.apk`, mengunggahnya sebagai *Artifact*, dan menerbitkannya secara otomatis ke **GitHub Releases (`v4.3.0`)** menggunakan `softprops/action-gh-release@v2`.
+
+---
+
 ## [v4.2] — 2026-11-07 (Transparent Brand Logo, Local Playlists + Spotify Batch Auto-Sync & Smart Deduplication, Native MediaSession Notification, Micro-Animations, Android 15 Scoped Storage & Cross-Script Romaji J-Pop Search)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)

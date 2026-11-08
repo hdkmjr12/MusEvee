@@ -7,6 +7,7 @@ import '../models/track_metadata.dart';
 class FolderService {
   static const String baseMusicRoot = '/storage/emulated/0/Music';
   static const String fallbackDownloadRoot = '/storage/emulated/0/Download';
+  static const String defaultNeutralFolder = 'MusEvee';
 
   static const List<String> defaultFolders = [
     'Music Barat',
@@ -43,6 +44,78 @@ class FolderService {
     }
   }
 
+  /// Checks whether `POST_NOTIFICATIONS` / system notifications are enabled for MusEvee.
+  Future<bool> hasNotificationPermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final granted = await _systemChannel.invokeMethod<bool>(
+        'hasNotificationPermission',
+      );
+      return granted == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Requests `POST_NOTIFICATIONS` (Android 13+) or opens the app notification settings page.
+  Future<bool> requestNotificationPermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final granted = await _systemChannel.invokeMethod<bool>(
+        'requestNotificationPermission',
+      );
+      return granted == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the system App Notification Settings page for MusEvee.
+  Future<bool> openNotificationSettings() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final granted = await _systemChannel.invokeMethod<bool>(
+        'openNotificationSettings',
+      );
+      return granted == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fetches combined permission status (`hasAllFilesAccess`, `hasNotificationPermission`, `packageName`, `sdkInt`).
+  Future<Map<String, dynamic>> getPermissionsStatus() async {
+    if (!Platform.isAndroid) {
+      return const {
+        'hasAllFilesAccess': true,
+        'hasNotificationPermission': true,
+        'packageName': 'com.zte.as.music',
+        'sdkInt': 35,
+      };
+    }
+    try {
+      final raw = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'getPermissionsStatus',
+      );
+      if (raw != null) {
+        return {
+          'hasAllFilesAccess': raw['hasAllFilesAccess'] == true,
+          'hasNotificationPermission': raw['hasNotificationPermission'] == true,
+          'packageName': raw['packageName']?.toString() ?? 'com.zte.as.music',
+          'sdkInt': (raw['sdkInt'] as num?)?.toInt() ?? 35,
+        };
+      }
+    } catch (_) {}
+    final allFiles = await hasAllFilesAccess();
+    final notif = await hasNotificationPermission();
+    return {
+      'hasAllFilesAccess': allFiles,
+      'hasNotificationPermission': notif,
+      'packageName': 'com.zte.as.music',
+      'sdkInt': 35,
+    };
+  }
+
   static const Set<String> _excludedSystemFolderNames = {
     'ringtones_music',
     'ringtones',
@@ -50,63 +123,70 @@ class FolderService {
     'notifications',
     'ui',
     '.thumbnails',
+    '.musevee_state',
+    'whatsapp audio',
+    'voice notes',
+    'recordings',
+    'callrecord',
+    'soundrecorder',
   };
 
   static const int _minValidMusicBytes = 16384;
 
-  /// Lists all available target folders under `/storage/emulated/0/Music/`,
-  /// always prioritizing `Music Barat`, `Music Japan`, and `Music Random`,
-  /// followed by any other existing subdirectories in `/storage/emulated/0/Music/`.
+  /// Lists existing target folders under `/storage/emulated/0/Music/` WITHOUT
+  /// forcibly creating empty `Music Barat`, `Music Japan`, or `Music Random` folders.
+  /// - If `Music Barat`, `Music Japan`, or `Music Random` already exist on the device,
+  ///   they appear first in their familiar order, followed by any other existing subdirectories.
+  /// - If a new user's device has no subdirectories in `/storage/emulated/0/Music/` yet,
+  ///   returns a single neutral target folder (`MusEvee`).
   Future<List<String>> listAvailableFolders() async {
-    final ordered = <String>[...defaultFolders];
-    final seenLower = ordered.map((e) => e.toLowerCase()).toSet();
+    if (!Platform.isAndroid) {
+      return const [defaultNeutralFolder];
+    }
 
-    if (Platform.isAndroid) {
-      try {
-        final musicDir = Directory(baseMusicRoot);
-        if (await musicDir.exists()) {
-          // Ensure the 3 core folders exist
-          for (final core in defaultFolders) {
-            try {
-              final d = Directory('$baseMusicRoot/$core');
-              if (!await d.exists()) {
-                await d.create(recursive: true);
-              }
-            } catch (_) {}
-          }
-
-          final entries = await musicDir.list(followLinks: false).toList();
-          final extraFolders = <String>[];
-          for (final entity in entries) {
-            if (entity is Directory) {
-              final name = entity.path
-                  .split(Platform.pathSeparator)
-                  .where((s) => s.isNotEmpty)
-                  .last
-                  .trim();
-              final lower = name.toLowerCase();
-              if (name.isEmpty ||
-                  name.startsWith('.') ||
-                  _excludedSystemFolderNames.contains(lower)) {
-                continue;
-              }
-              if (!seenLower.contains(lower)) {
-                seenLower.add(lower);
-                extraFolders.add(name);
-              }
+    final discoveredByLower = <String, String>{};
+    try {
+      final musicDir = Directory(baseMusicRoot);
+      if (await musicDir.exists()) {
+        final entries = await musicDir.list(followLinks: false).toList();
+        for (final entity in entries) {
+          if (entity is Directory) {
+            final name = entity.path
+                .split(Platform.pathSeparator)
+                .where((s) => s.isNotEmpty)
+                .last
+                .trim();
+            final lower = name.toLowerCase();
+            if (name.isEmpty ||
+                name.startsWith('.') ||
+                _excludedSystemFolderNames.contains(lower)) {
+              continue;
             }
+            discoveredByLower.putIfAbsent(lower, () => name);
           }
-          extraFolders.sort(
-            (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-          );
-          ordered.addAll(extraFolders);
         }
-      } catch (e) {
-        debugPrint('[AUTO_E2E] FolderService.listAvailableFolders error: $e');
+      }
+    } catch (e) {
+      debugPrint('[AUTO_E2E] FolderService.listAvailableFolders error: $e');
+    }
+
+    if (discoveredByLower.isEmpty) {
+      return [defaultNeutralFolder];
+    }
+
+    final ordered = <String>[];
+    for (final preferred in defaultFolders) {
+      final matched = discoveredByLower.remove(preferred.toLowerCase());
+      if (matched != null) {
+        ordered.add(matched);
       }
     }
 
-    return ordered;
+    final extraFolders = discoveredByLower.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    ordered.addAll(extraFolders);
+
+    return ordered.isNotEmpty ? ordered : [defaultNeutralFolder];
   }
 
   /// Creates a new subfolder inside `/storage/emulated/0/Music/` and returns its sanitized name.
@@ -130,7 +210,7 @@ class FolderService {
     return cleaned;
   }
 
-  /// Reads the last selected folder from local app storage (defaults to `'Music Barat'`).
+  /// Reads the last selected folder from local app storage, or returns `''` if none saved yet.
   Future<String> loadLastSelectedFolder() async {
     try {
       final docsDir = await getApplicationDocumentsDirectory();
@@ -144,7 +224,7 @@ class FolderService {
         }
       }
     } catch (_) {}
-    return defaultFolders.first;
+    return '';
   }
 
   /// Saves the selected folder so it persists across sessions.
