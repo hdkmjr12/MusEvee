@@ -289,5 +289,55 @@ void main() {
       expect(top.title.toLowerCase(), isNot(contains('orgel')));
       expect(top.title, isNot(contains('オルゴール')));
     });
+
+    test(
+        'MetadataService forwards ?pt= token and throws SpotifyPrivateOrUnavailableException without random fallback when playlist is private',
+        () async {
+      final requestedUrls = <String>[];
+      int catalogSearchCalls = 0;
+
+      final mockDio = Dio();
+      mockDio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            final fullUrl = options.uri.toString();
+            requestedUrls.add(fullUrl);
+            if (fullUrl.contains('itunes.apple.com') ||
+                fullUrl.contains('api.deezer.com')) {
+              catalogSearchCalls++;
+            }
+            // Simulate Spotify returning 404 / login page for a private playlist
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 404,
+                data: '<html><head><title>Page not found</title></head></html>',
+              ),
+            );
+          },
+        ),
+      );
+
+      final service = MetadataService(dio: mockDio);
+      const privateUrl =
+          'https://open.spotify.com/playlist/5FzgBL8XaQXnxth814uqSC?si=12345&pt=secret_pt_token_abc';
+
+      expect(service.extractPrivateToken(privateUrl), equals('secret_pt_token_abc'));
+
+      await expectLater(
+        () => service.fetchAlbumOrPlaylist(privateUrl),
+        throwsA(isA<SpotifyPrivateOrUnavailableException>()),
+      );
+
+      expect(
+        requestedUrls.any(
+          (u) =>
+              u.contains('/embed/playlist/5FzgBL8XaQXnxth814uqSC') &&
+              u.contains('pt=secret_pt_token_abc'),
+        ),
+        isTrue,
+      );
+      expect(catalogSearchCalls, equals(0));
+    });
   });
 }

@@ -177,8 +177,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await provider.submitSmartInput(sharedText);
     if (!mounted) return;
 
-    if (isCollection && provider.currentCollection != null) {
-      await _openBatchPlaylistSheet(provider);
+    if (isCollection) {
+      if (provider.state != DownloaderState.error &&
+          provider.currentCollection != null &&
+          provider.currentCollection!.tracks.isNotEmpty) {
+        await _openBatchPlaylistSheet(provider);
+      } else if (provider.state == DownloaderState.error) {
+        await _showPrivatePlaylistErrorDialog(
+          provider.errorMessage ??
+              "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
+        );
+      }
     } else if (provider.trackMetadata != null) {
       await _openTrackPreviewSheet(provider);
     }
@@ -215,11 +224,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await provider.submitSmartInput(raw);
     if (!mounted) return;
 
-    if (isCollection && provider.currentCollection != null) {
-      await _openBatchPlaylistSheet(provider);
+    if (isCollection) {
+      if (provider.state != DownloaderState.error &&
+          provider.currentCollection != null &&
+          provider.currentCollection!.tracks.isNotEmpty) {
+        await _openBatchPlaylistSheet(provider);
+      } else if (provider.state == DownloaderState.error) {
+        await _showPrivatePlaylistErrorDialog(
+          provider.errorMessage ??
+              "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
+        );
+      }
     } else if (isSpotifyTrack && provider.trackMetadata != null) {
       await _openTrackPreviewSheet(provider);
     }
+  }
+
+  Future<void> _showPrivatePlaylistErrorDialog(String message) async {
+    if (!mounted) return;
+    final hairline = Colors.white.withValues(alpha: 0.09);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          backgroundColor: _surfaceCard,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: hairline, width: 0.8),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                color: Color(0xFFF79009),
+                size: 21,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Playlist Spotify Tidak Dapat Diakses',
+                  style: TextStyle(
+                    color: _textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(
+              color: _textMuted,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text(
+                'Mengerti',
+                style: TextStyle(
+                  color: _primaryAccent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _onTapSearchResult(
@@ -241,7 +316,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _openBatchPlaylistSheet(DownloaderProvider provider) async {
     final collection = provider.currentCollection;
-    if (!mounted || collection == null) return;
+    if (!mounted ||
+        collection == null ||
+        collection.tracks.isEmpty ||
+        provider.state == DownloaderState.error) {
+      return;
+    }
     await BatchPlaylistSheet.show(
       context,
       collection: collection,

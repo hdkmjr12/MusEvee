@@ -13,6 +13,16 @@ class MetadataException implements Exception {
   String toString() => message;
 }
 
+class SpotifyPrivateOrUnavailableException extends MetadataException {
+  final String collectionType;
+
+  const SpotifyPrivateOrUnavailableException([
+    super.message =
+        "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
+    this.collectionType = 'playlist',
+  ]);
+}
+
 class SpotifyCollectionResult {
   final String title;
   final String subtitle;
@@ -93,8 +103,136 @@ class MetadataService {
     return trimmed;
   }
 
-  /// Extracts a full track list from a public Spotify Album or Playlist link
-  /// using Spotify's public embed page (`__NEXT_DATA__`) + Deezer enrichment.
+  /// Extracts the `pt` (Private Token) query parameter from a Spotify URL if present.
+  @visibleForTesting
+  String? extractPrivateToken(String rawUrl) {
+    final extracted = extractUrlFromSharedText(rawUrl);
+    final uri = Uri.tryParse(extracted);
+    final fromUri = uri?.queryParameters['pt']?.trim();
+    if (fromUri != null && fromUri.isNotEmpty) {
+      return fromUri;
+    }
+    final match = RegExp(r'[?&]pt=([a-zA-Z0-9_\-~.%]+)').firstMatch(extracted);
+    final token = match?.group(1)?.trim();
+    if (token != null && token.isNotEmpty) {
+      return Uri.decodeQueryComponent(token);
+    }
+    return null;
+  }
+
+  bool _isLoginOrErrorPageHtml(String htmlStr, {Uri? realUri}) {
+    if (realUri != null &&
+        realUri.host.toLowerCase().contains('accounts.spotify.com')) {
+      return true;
+    }
+    final lower = htmlStr.toLowerCase();
+    if (lower.contains('accounts.spotify.com/login') ||
+        lower.contains('accounts.spotify.com/authorize') ||
+        lower.contains('<title>login - spotify</title>') ||
+        lower.contains('<title>page not found') ||
+        lower.contains('welcome back')) {
+      return true;
+    }
+    return false;
+  }
+
+  void _parseSpotifyNextDataEntity({
+    required Map<String, dynamic> entity,
+    required String collectionType,
+    required String canonicalCollectionUrl,
+    required void Function(String title) onTitle,
+    required void Function(String subtitle) onSubtitle,
+    required void Function(String year) onYear,
+    required void Function(String cover) onCover,
+    required List<TrackMetadata> tracksOut,
+    required String Function() currentTitle,
+    required String Function() currentSubtitle,
+    required String Function() currentYear,
+    required String Function() currentCover,
+  }) {
+    final name = _cleanCollectionTitle(
+      (entity['title'] ?? entity['name'] ?? '').toString().trim(),
+    );
+    if (name.isNotEmpty && !_isGenericSpotifyPageTitle(name)) {
+      onTitle(name);
+    }
+
+    final sub = (entity['subtitle'] ?? '').toString().trim();
+    if (sub.isNotEmpty) onSubtitle(sub);
+
+    final releaseDate = _ensureMap(entity['releaseDate']);
+    final isoString =
+        (releaseDate?['isoString'] ?? entity['release_date'] ?? '').toString();
+    final parsedYr = _extractYear(isoString);
+    if (parsedYr.isNotEmpty) onYear(parsedYr);
+
+    final coverArt = _ensureMap(entity['coverArt']);
+    final sources = coverArt?['sources'] ??
+        _ensureMap(entity['images'])?['items'] ??
+        entity['images'];
+    if (sources is List && sources.isNotEmpty) {
+      for (final src in sources) {
+        final srcMap = _ensureMap(src);
+        final url = (srcMap?['url'] ?? '').toString().trim();
+        if (url.isNotEmpty) {
+          onCover(url);
+          break;
+        }
+      }
+    }
+
+    final rawTrackList = entity['trackList'];
+    if (rawTrackList is List) {
+      for (final item in rawTrackList) {
+        final tMap = _ensureMap(item);
+        if (tMap == null) continue;
+
+        final tTitle =
+            (tMap['title'] ?? tMap['name'] ?? '').toString().trim();
+        if (tTitle.isEmpty) continue;
+
+        String tArtist = (tMap['subtitle'] ?? '').toString().trim();
+        if (tArtist.isEmpty) {
+          final subNow = currentSubtitle();
+          tArtist = subNow.isNotEmpty ? subNow : 'Spotify Artist';
+        }
+        // Replace non-breaking space in Spotify embed artist strings
+        tArtist = tArtist.replaceAll('\u00A0', ' ').trim();
+
+        final durMs = _parseInt(tMap['duration']);
+        final durSec = durMs > 0 ? (durMs / 1000).round() : 200;
+
+        final uriStr = (tMap['uri'] ?? '').toString().trim();
+        String trackUrl = canonicalCollectionUrl;
+        final tidMatch =
+            RegExp(r'spotify:track:([a-zA-Z0-9]+)').firstMatch(uriStr);
+        if (tidMatch != null) {
+          trackUrl = 'https://open.spotify.com/track/${tidMatch.group(1)}';
+        }
+
+        final audioPreview = _ensureMap(tMap['audioPreview']);
+        final previewUrl = (audioPreview?['url'] ?? '').toString().trim();
+
+        tracksOut.add(
+          TrackMetadata(
+            spotifyUrl: trackUrl,
+            title: tTitle,
+            artist: tArtist,
+            album: collectionType == 'album' ? currentTitle() : tTitle,
+            releaseYear: currentYear(),
+            durationSeconds: durSec,
+            coverUrl: currentCover(),
+            previewAudioUrl: previewUrl.isNotEmpty ? previewUrl : null,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Extracts a full track list from a Spotify Album or Playlist link
+  /// using Spotify's embed/web page (`__NEXT_DATA__`), forwarding `?pt=`
+  /// private tokens when present, and throwing [SpotifyPrivateOrUnavailableException]
+  /// if the playlist is private or unavailable (never falling back to random search).
   Future<SpotifyCollectionResult> fetchAlbumOrPlaylist(String rawInput) async {
     final extracted = extractUrlFromSharedText(rawInput);
     String collectionType = 'album';
@@ -125,10 +263,16 @@ class MetadataService {
       );
     }
 
+    final ptToken = extractPrivateToken(extracted);
+    final ptQuery = (ptToken != null && ptToken.isNotEmpty)
+        ? '?pt=${Uri.encodeQueryComponent(ptToken)}'
+        : '';
+
     final embedUrl =
-        'https://open.spotify.com/embed/$collectionType/$collectionId';
+        'https://open.spotify.com/embed/$collectionType/$collectionId$ptQuery';
     final canonicalCollectionUrl =
         'https://open.spotify.com/$collectionType/$collectionId';
+    final webCollectionUrl = '$canonicalCollectionUrl$ptQuery';
 
     String collectionTitle =
         collectionType == 'album' ? 'Spotify Album' : 'Spotify Playlist';
@@ -136,18 +280,29 @@ class MetadataService {
     String collectionCover = '';
     String releaseYear = DateTime.now().year.toString();
     final tracks = <TrackMetadata>[];
+    bool detectedPrivateOrUnavailable = false;
 
-    // 1. Parse Spotify Embed __NEXT_DATA__ JSON
+    // 1. Parse Spotify Embed __NEXT_DATA__ JSON (with ?pt= if present)
     try {
       final resp = await _dio
           .get<String>(
             embedUrl,
-            options: Options(responseType: ResponseType.plain),
+            options: Options(
+              responseType: ResponseType.plain,
+              validateStatus: (status) => status != null && status < 500,
+            ),
           )
           .timeout(const Duration(seconds: 15));
 
+      final statusCode = resp.statusCode ?? 200;
       final htmlStr = resp.data ?? '';
-      if (htmlStr.isNotEmpty) {
+
+      if (statusCode == 401 ||
+          statusCode == 403 ||
+          statusCode == 404 ||
+          _isLoginOrErrorPageHtml(htmlStr, realUri: resp.realUri)) {
+        detectedPrivateOrUnavailable = true;
+      } else if (htmlStr.isNotEmpty) {
         final doc = html_parser.parse(htmlStr);
         final nextScript = doc.querySelector('script#__NEXT_DATA__');
         final jsonText = nextScript?.text.trim() ?? '';
@@ -155,90 +310,33 @@ class MetadataService {
           final root = _ensureMap(jsonText);
           final props = _ensureMap(root?['props']);
           final pageProps = _ensureMap(props?['pageProps']);
+          if (pageProps?['status'] == 404 ||
+              pageProps?['status'] == 403 ||
+              pageProps?['status'] == 401 ||
+              pageProps?['error'] != null) {
+            detectedPrivateOrUnavailable = true;
+          }
           final state = _ensureMap(pageProps?['state']);
           final data = _ensureMap(state?['data']);
           final entity = _ensureMap(data?['entity']);
 
-            if (entity != null) {
-            final name = _cleanCollectionTitle(
-              (entity['title'] ?? entity['name'] ?? '').toString().trim(),
+          if (entity != null) {
+            _parseSpotifyNextDataEntity(
+              entity: entity,
+              collectionType: collectionType,
+              canonicalCollectionUrl: canonicalCollectionUrl,
+              onTitle: (v) => collectionTitle = v,
+              onSubtitle: (v) => collectionSubtitle = v,
+              onYear: (v) => releaseYear = v,
+              onCover: (v) => collectionCover = v,
+              tracksOut: tracks,
+              currentTitle: () => collectionTitle,
+              currentSubtitle: () => collectionSubtitle,
+              currentYear: () => releaseYear,
+              currentCover: () => collectionCover,
             );
-            if (name.isNotEmpty) collectionTitle = name;
-
-            final sub = (entity['subtitle'] ?? '').toString().trim();
-            if (sub.isNotEmpty) collectionSubtitle = sub;
-
-            final releaseDate = _ensureMap(entity['releaseDate']);
-            final isoString =
-                (releaseDate?['isoString'] ?? entity['release_date'] ?? '')
-                    .toString();
-            final parsedYr = _extractYear(isoString);
-            if (parsedYr.isNotEmpty) releaseYear = parsedYr;
-
-            final coverArt = _ensureMap(entity['coverArt']);
-            final sources = coverArt?['sources'] ??
-                _ensureMap(entity['images'])?['items'] ??
-                entity['images'];
-            if (sources is List && sources.isNotEmpty) {
-              for (final src in sources) {
-                final srcMap = _ensureMap(src);
-                final url = (srcMap?['url'] ?? '').toString().trim();
-                if (url.isNotEmpty) {
-                  collectionCover = url;
-                  break;
-                }
-              }
-            }
-
-            final rawTrackList = entity['trackList'];
-            if (rawTrackList is List) {
-              for (final item in rawTrackList) {
-                final tMap = _ensureMap(item);
-                if (tMap == null) continue;
-
-                final tTitle =
-                    (tMap['title'] ?? tMap['name'] ?? '').toString().trim();
-                if (tTitle.isEmpty) continue;
-
-                String tArtist = (tMap['subtitle'] ?? '').toString().trim();
-                if (tArtist.isEmpty) {
-                  tArtist = collectionSubtitle.isNotEmpty
-                      ? collectionSubtitle
-                      : 'Spotify Artist';
-                }
-                // Replace non-breaking space in Spotify embed artist strings
-                tArtist = tArtist.replaceAll('\u00A0', ' ').trim();
-
-                final durMs = _parseInt(tMap['duration']);
-                final durSec = durMs > 0 ? (durMs / 1000).round() : 200;
-
-                final uriStr = (tMap['uri'] ?? '').toString().trim();
-                String trackUrl = canonicalCollectionUrl;
-                final tidMatch =
-                    RegExp(r'spotify:track:([a-zA-Z0-9]+)').firstMatch(uriStr);
-                if (tidMatch != null) {
-                  trackUrl =
-                      'https://open.spotify.com/track/${tidMatch.group(1)}';
-                }
-
-                final audioPreview = _ensureMap(tMap['audioPreview']);
-                final previewUrl =
-                    (audioPreview?['url'] ?? '').toString().trim();
-
-                tracks.add(
-                  TrackMetadata(
-                    spotifyUrl: trackUrl,
-                    title: tTitle,
-                    artist: tArtist,
-                    album: collectionType == 'album' ? collectionTitle : tTitle,
-                    releaseYear: releaseYear,
-                    durationSeconds: durSec,
-                    coverUrl: collectionCover,
-                    previewAudioUrl: previewUrl.isNotEmpty ? previewUrl : null,
-                  ),
-                );
-              }
-            }
+          } else {
+            detectedPrivateOrUnavailable = true;
           }
         }
         if (collectionTitle == 'Spotify Album' ||
@@ -249,23 +347,83 @@ class MetadataService {
               doc.querySelector('title')?.text ??
               '';
           final cleanedOg = _cleanCollectionTitle(ogTitle);
-          if (cleanedOg.isNotEmpty) {
+          if (cleanedOg.isNotEmpty && !_isGenericSpotifyPageTitle(cleanedOg)) {
             collectionTitle = cleanedOg;
           }
         }
       }
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 401 || code == 403 || code == 404) {
+        detectedPrivateOrUnavailable = true;
+      }
+      debugPrint('[AUTO_E2E] Embed ekstraksi $collectionType gagal: $e');
     } catch (e) {
       debugPrint('[AUTO_E2E] Embed ekstraksi $collectionType gagal: $e');
     }
 
-    // 2. Enrich title via oEmbed if still generic, or fallback track list if empty
-    if (tracks.isEmpty ||
-        collectionTitle == 'Spotify Album' ||
-        collectionTitle == 'Spotify Playlist') {
+    // 2. If tracks are still empty and a private token (?pt=...) or web page is available,
+    // attempt fetching the main Spotify web page (`https://open.spotify.com/playlist/{id}?pt=...`)
+    if (tracks.isEmpty) {
+      try {
+        final webResp = await _dio
+            .get<String>(
+              webCollectionUrl,
+              options: Options(
+                responseType: ResponseType.plain,
+                validateStatus: (status) => status != null && status < 500,
+              ),
+            )
+            .timeout(const Duration(seconds: 12));
+
+        final statusCode = webResp.statusCode ?? 200;
+        final webHtml = webResp.data ?? '';
+        if (statusCode == 401 ||
+            statusCode == 403 ||
+            statusCode == 404 ||
+            _isLoginOrErrorPageHtml(webHtml, realUri: webResp.realUri)) {
+          detectedPrivateOrUnavailable = true;
+        } else if (webHtml.isNotEmpty) {
+          final webDoc = html_parser.parse(webHtml);
+          final nextScript = webDoc.querySelector('script#__NEXT_DATA__');
+          final jsonText = nextScript?.text.trim() ?? '';
+          if (jsonText.isNotEmpty) {
+            final root = _ensureMap(jsonText);
+            final props = _ensureMap(root?['props']);
+            final pageProps = _ensureMap(props?['pageProps']);
+            final state = _ensureMap(pageProps?['state']);
+            final data = _ensureMap(state?['data']);
+            final entity = _ensureMap(data?['entity']);
+            if (entity != null) {
+              _parseSpotifyNextDataEntity(
+                entity: entity,
+                collectionType: collectionType,
+                canonicalCollectionUrl: canonicalCollectionUrl,
+                onTitle: (v) => collectionTitle = v,
+                onSubtitle: (v) => collectionSubtitle = v,
+                onYear: (v) => releaseYear = v,
+                onCover: (v) => collectionCover = v,
+                tracksOut: tracks,
+                currentTitle: () => collectionTitle,
+                currentSubtitle: () => collectionSubtitle,
+                currentYear: () => releaseYear,
+                currentCover: () => collectionCover,
+              );
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Enrich title/thumbnail via oEmbed ONLY when tracks were already extracted
+    if (tracks.isNotEmpty &&
+        (collectionTitle == 'Spotify Album' ||
+            collectionTitle == 'Spotify Playlist' ||
+            collectionCover.isEmpty)) {
       try {
         final oembedResp = await _dio.get<dynamic>(
           'https://open.spotify.com/oembed',
-          queryParameters: {'url': canonicalCollectionUrl},
+          queryParameters: {'url': webCollectionUrl},
         );
         final oData = _ensureMap(oembedResp.data);
         if (oData != null) {
@@ -273,24 +431,29 @@ class MetadataService {
             (oData['title'] ?? '').toString().trim(),
           );
           final oThumb = (oData['thumbnail_url'] ?? '').toString().trim();
-          if (oTitle.isNotEmpty) collectionTitle = oTitle;
+          if (oTitle.isNotEmpty && !_isGenericSpotifyPageTitle(oTitle)) {
+            collectionTitle = oTitle;
+          }
           if (oThumb.isNotEmpty && collectionCover.isEmpty) {
             collectionCover = oThumb;
           }
         }
       } catch (_) {}
-
-      if (tracks.isEmpty && collectionTitle.isNotEmpty) {
-        final fallbackTracks = await searchMusicTracks(
-          '$collectionSubtitle $collectionTitle'.trim(),
-        );
-        tracks.addAll(fallbackTracks);
-      }
     }
 
+    // 4. Strict check: NEVER fallback to random catalog search if Spotify collection has 0 tracks!
     if (tracks.isEmpty) {
-      throw const MetadataException(
-        'Tidak dapat mengekstrak daftar lagu dari link Album/Playlist tersebut.',
+      if (collectionType == 'playlist' ||
+          detectedPrivateOrUnavailable ||
+          (ptToken != null && ptToken.isNotEmpty)) {
+        throw const SpotifyPrivateOrUnavailableException(
+          "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
+          'playlist',
+        );
+      }
+      throw const SpotifyPrivateOrUnavailableException(
+        'Album Spotify ini tidak dapat diakses atau daftar lagunya kosong. Pastikan link Album Spotify valid dan dapat diakses publik.',
+        'album',
       );
     }
 
@@ -301,6 +464,18 @@ class MetadataService {
       collectionType: collectionType,
       tracks: tracks,
     );
+  }
+
+  bool _isGenericSpotifyPageTitle(String title) {
+    final lower = title.trim().toLowerCase();
+    return lower.isEmpty ||
+        lower == 'spotify' ||
+        lower == 'spotify playlist' ||
+        lower == 'spotify album' ||
+        lower.contains('login') ||
+        lower.contains('welcome back') ||
+        lower.contains('web player') ||
+        lower.contains('page not found');
   }
 
   String _cleanCollectionTitle(String raw) {
@@ -332,6 +507,9 @@ class MetadataService {
     final query = rawQuery.trim();
     if (query.isEmpty) {
       throw const MetadataException('Kata kunci pencarian tidak boleh kosong.');
+    }
+    if (isSpotifyCollectionInput(query)) {
+      throw const SpotifyPrivateOrUnavailableException();
     }
 
     debugPrint('[MusEvee] SEARCH: Mencari lagu untuk kata kunci: "$query"');

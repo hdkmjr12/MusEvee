@@ -86,6 +86,7 @@ class DownloaderProvider extends ChangeNotifier {
   String _statusMessage = 'Siap mencari lagu.';
   String? _errorMessage;
   String? _savedFilePath;
+  bool _isPrivateOrUnavailableCollectionError = false;
 
   DownloaderState get state => _state;
   TrackMetadata? get trackMetadata => _trackMetadata;
@@ -123,6 +124,8 @@ class DownloaderProvider extends ChangeNotifier {
   String get statusMessage => _statusMessage;
   String? get errorMessage => _errorMessage;
   String? get savedFilePath => _savedFilePath;
+  bool get isPrivateOrUnavailableCollectionError =>
+      _isPrivateOrUnavailableCollectionError;
 
   bool get isBusy =>
       _state == DownloaderState.searchingCatalog ||
@@ -811,6 +814,8 @@ class DownloaderProvider extends ChangeNotifier {
     _savedFilePath = null;
     _trackMetadata = null;
     _currentCollection = null;
+    _searchResults = const [];
+    _isPrivateOrUnavailableCollectionError = false;
 
     _setState(
       DownloaderState.fetchingMetadata,
@@ -830,6 +835,11 @@ class DownloaderProvider extends ChangeNotifier {
         message: '${collection.tracks.length} lagu dimuat',
       );
     } catch (e, s) {
+      _currentCollection = null;
+      _searchResults = const [];
+      if (e is SpotifyPrivateOrUnavailableException) {
+        _isPrivateOrUnavailableCollectionError = true;
+      }
       _handleError(e, s);
     }
   }
