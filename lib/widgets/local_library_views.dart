@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -833,218 +834,220 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                               final isSelected =
                                   _selectedFolders.contains(folder);
 
-                              return Material(
-                                color: isSelected
-                                    ? _kAccent.withValues(alpha: 0.14)
-                                    : _kCard,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  side: BorderSide(
-                                    color: isSelected
-                                        ? _kAccent.withValues(alpha: 0.75)
-                                        : hairline,
-                                    width: isSelected ? 1.1 : 0.8,
-                                  ),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: InkWell(
-                                  onTap: () {
-                                    if (_isSelectionMode) {
-                                      _toggleFolderSelection(folder);
-                                    } else {
-                                      setState(() => _openedFolder = folder);
-                                    }
-                                  },
-                                  onLongPress: () =>
-                                      _toggleFolderSelection(folder),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
+                              return _MographSelectionCard(
+                                isSelected: isSelected,
+                                isSelectionMode: _isSelectionMode,
+                                child: Material(
+                                  color: isSelected
+                                      ? _kAccent.withValues(alpha: 0.14)
+                                      : _kCard,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    side: BorderSide(
+                                      color: isSelected
+                                          ? _kAccent.withValues(alpha: 0.75)
+                                          : hairline,
+                                      width: isSelected ? 1.1 : 0.8,
                                     ),
-                                    child: Row(
-                                      children: [
-                                        if (_isSelectionMode)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              right: 10,
-                                            ),
-                                            child: Icon(
-                                              isSelected
-                                                  ? Icons.check_circle_rounded
-                                                  : Icons
-                                                      .radio_button_unchecked_rounded,
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: InkWell(
+                                    onTap: () {
+                                      if (_isSelectionMode) {
+                                        _toggleFolderSelection(folder);
+                                      } else {
+                                        setState(() => _openedFolder = folder);
+                                      }
+                                    },
+                                    onLongPress: () =>
+                                        _toggleFolderSelection(folder),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          _MographSelectCheckbox(
+                                            isVisible: _isSelectionMode,
+                                            isSelected: isSelected,
+                                          ),
+                                          Container(
+                                            width: 42,
+                                            height: 42,
+                                            decoration: BoxDecoration(
                                               color: isSelected
                                                   ? _kAccent
-                                                  : _kMuted,
+                                                      .withValues(alpha: 0.22)
+                                                  : _kSubtle,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: const Icon(
+                                              Icons.folder_rounded,
+                                              color: _kAccent,
                                               size: 22,
                                             ),
                                           ),
-                                        Container(
-                                          width: 42,
-                                          height: 42,
-                                          decoration: BoxDecoration(
-                                            color: isSelected
-                                                ? _kAccent
-                                                    .withValues(alpha: 0.22)
-                                                : _kSubtle,
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                          ),
-                                          alignment: Alignment.center,
-                                          child: const Icon(
-                                            Icons.folder_rounded,
-                                            color: _kAccent,
-                                            size: 22,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                folder,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: isSelected
-                                                      ? Colors.white
-                                                      : _kText,
-                                                  fontSize: 14.5,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                '${songs.length} lagu • $folderPath',
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: _kMuted,
-                                                  fontSize: 11.5,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (!_isSelectionMode &&
-                                            songs.isNotEmpty) ...[
-                                          IconButton(
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            tooltip: 'Putar Folder $folder',
-                                            onPressed: () {
-                                              localProvider.playFolder(folder);
-                                              widget.onOpenNowPlaying();
-                                            },
-                                            icon: const Icon(
-                                              Icons.play_circle_fill_rounded,
-                                              color: Colors.white,
-                                              size: 27,
-                                            ),
-                                          ),
-                                          PopupMenuButton<String>(
-                                            icon: const Icon(
-                                              Icons.more_vert_rounded,
-                                              size: 18,
-                                              color: _kMuted,
-                                            ),
-                                            color: _kSubtle,
-                                            onSelected: (value) async {
-                                              if (value == 'shuffle') {
-                                                localProvider.playFolder(
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
                                                   folder,
-                                                  shuffle: true,
-                                                );
-                                                widget.onOpenNowPlaying();
-                                              } else if (value == 'add_queue') {
-                                                final added = await localProvider
-                                                    .playCombinedFolders(
-                                                  [folder],
-                                                  appendToCurrentQueue: true,
-                                                );
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        added > 0
-                                                            ? '$added lagu dari "$folder" ditambahkan ke antrean.'
-                                                            : 'Semua lagu dari "$folder" sudah ada di antrean.',
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-                                              } else if (value ==
-                                                  'multi_select') {
-                                                _toggleFolderSelection(folder);
-                                              } else if (value == 'hide') {
-                                                await localProvider
-                                                    .setFolderHidden(
-                                                  folderPath,
-                                                  folderName: folder,
-                                                  hidden: true,
-                                                );
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        'Folder "$folder" disembunyikan dari pustaka.',
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-                                              }
-                                            },
-                                            itemBuilder: (_) => const [
-                                              PopupMenuItem(
-                                                value: 'shuffle',
-                                                child: Text(
-                                                  'Acak Folder (Shuffle)',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                   style: TextStyle(
-                                                    color: _kText,
-                                                    fontSize: 13,
+                                                    color: isSelected
+                                                        ? Colors.white
+                                                        : _kText,
+                                                    fontSize: 14.5,
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'add_queue',
-                                                child: Text(
-                                                  'Tambahkan ke Antrean Saat Ini (+ Queue)',
-                                                  style: TextStyle(
-                                                    color: _kText,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'multi_select',
-                                                child: Text(
-                                                  'Pilih untuk Digabung (Multi-Folder)',
-                                                  style: TextStyle(
-                                                    color: _kAccent,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'hide',
-                                                child: Text(
-                                                  'Sembunyikan Folder Ini',
-                                                  style: TextStyle(
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${songs.length} lagu • $folderPath',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
                                                     color: _kMuted,
-                                                    fontSize: 13,
+                                                    fontSize: 11.5,
                                                   ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
+                                          if (!_isSelectionMode &&
+                                              songs.isNotEmpty) ...[
+                                            IconButton(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              tooltip: 'Putar Folder $folder',
+                                              onPressed: () {
+                                                localProvider
+                                                    .playFolder(folder);
+                                                widget.onOpenNowPlaying();
+                                              },
+                                              icon: const Icon(
+                                                Icons.play_circle_fill_rounded,
+                                                color: Colors.white,
+                                                size: 27,
+                                              ),
+                                            ),
+                                            PopupMenuButton<String>(
+                                              icon: const Icon(
+                                                Icons.more_vert_rounded,
+                                                size: 18,
+                                                color: _kMuted,
+                                              ),
+                                              color: _kSubtle,
+                                              onSelected: (value) async {
+                                                if (value == 'shuffle') {
+                                                  localProvider.playFolder(
+                                                    folder,
+                                                    shuffle: true,
+                                                  );
+                                                  widget.onOpenNowPlaying();
+                                                } else if (value ==
+                                                    'add_queue') {
+                                                  final added =
+                                                      await localProvider
+                                                          .playCombinedFolders(
+                                                    [folder],
+                                                    appendToCurrentQueue: true,
+                                                  );
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          added > 0
+                                                              ? '$added lagu dari "$folder" ditambahkan ke antrean.'
+                                                              : 'Semua lagu dari "$folder" sudah ada di antrean.',
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                } else if (value ==
+                                                    'multi_select') {
+                                                  _toggleFolderSelection(
+                                                    folder,
+                                                  );
+                                                } else if (value == 'hide') {
+                                                  await localProvider
+                                                      .setFolderHidden(
+                                                    folderPath,
+                                                    folderName: folder,
+                                                    hidden: true,
+                                                  );
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          'Folder "$folder" disembunyikan dari pustaka.',
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                }
+                                              },
+                                              itemBuilder: (_) => const [
+                                                PopupMenuItem(
+                                                  value: 'shuffle',
+                                                  child: Text(
+                                                    'Acak Folder (Shuffle)',
+                                                    style: TextStyle(
+                                                      color: _kText,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'add_queue',
+                                                  child: Text(
+                                                    'Tambahkan ke Antrean Saat Ini (+ Queue)',
+                                                    style: TextStyle(
+                                                      color: _kText,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'multi_select',
+                                                  child: Text(
+                                                    'Pilih untuk Digabung (Multi-Folder)',
+                                                    style: TextStyle(
+                                                      color: _kAccent,
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'hide',
+                                                  child: Text(
+                                                    'Sembunyikan Folder Ini',
+                                                    style: TextStyle(
+                                                      color: _kMuted,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
                                         ],
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1055,26 +1058,20 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                 ],
               ),
 
-              if (!_isSelectionMode && folderNames.isNotEmpty)
-                Positioned(
-                  right: 16,
-                  bottom: 14,
-                  child: _FloatingMergeFab(
-                    tooltip: 'Gabung / Pilih Banyak Folder',
-                    onTap: () => setState(() => _isSelectionMode = true),
-                  ),
-                ),
-
-              if (_isSelectionMode)
+              if (folderNames.isNotEmpty)
                 Positioned(
                   left: 12,
                   right: 12,
-                  bottom: 10,
-                  child: _MultiSelectQueueActionBar(
+                  bottom: 12,
+                  child: _MorphingMergeActionBar(
+                    isExpanded: _isSelectionMode,
+                    idleTooltip: 'Gabung / Pilih Banyak Folder',
                     label: selectedList.isEmpty
                         ? 'Pilih 2+ Folder untuk digabung'
                         : '${selectedList.length} Folder • $selectedSongCount lagu unik',
                     hasSelection: selectedList.isNotEmpty,
+                    onOpen: () => setState(() => _isSelectionMode = true),
+                    onCancel: _exitSelectionMode,
                     onPlayCombined: () async {
                       if (selectedList.isEmpty) return;
                       final targets = List<String>.from(selectedList);
@@ -1115,7 +1112,6 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                         );
                       }
                     },
-                    onCancel: _exitSelectionMode,
                   ),
                 ),
             ],
@@ -1441,224 +1437,222 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 final isSelected =
                                     _selectedPlaylistIds.contains(playlist.id);
 
-                                return PressableScale(
-                                  pressedScale: 0.98,
-                                  child: Material(
-                                    color: isSelected
-                                        ? _kAccent.withValues(alpha: 0.14)
-                                        : _kCard,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      side: BorderSide(
-                                        color: isSelected
-                                            ? _kAccent.withValues(alpha: 0.75)
-                                            : hairline,
-                                        width: isSelected ? 1.1 : 0.8,
+                                return _MographSelectionCard(
+                                  isSelected: isSelected,
+                                  isSelectionMode: _isSelectionMode,
+                                  child: PressableScale(
+                                    pressedScale: 0.98,
+                                    child: Material(
+                                      color: isSelected
+                                          ? _kAccent.withValues(alpha: 0.14)
+                                          : _kCard,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        side: BorderSide(
+                                          color: isSelected
+                                              ? _kAccent.withValues(alpha: 0.75)
+                                              : hairline,
+                                          width: isSelected ? 1.1 : 0.8,
+                                        ),
                                       ),
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: InkWell(
-                                      onTap: () {
-                                        if (_isSelectionMode) {
-                                          _togglePlaylistSelection(playlist.id);
-                                        } else {
-                                          setState(
-                                            () =>
-                                                _openedPlaylistId = playlist.id,
-                                          );
-                                        }
-                                      },
-                                      onLongPress: () =>
-                                          _togglePlaylistSelection(playlist.id),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(10),
-                                        child: Row(
-                                          children: [
-                                            if (_isSelectionMode)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  right: 10,
-                                                ),
-                                                child: Icon(
-                                                  isSelected
-                                                      ? Icons
-                                                          .check_circle_rounded
-                                                      : Icons
-                                                          .radio_button_unchecked_rounded,
-                                                  color: isSelected
-                                                      ? _kAccent
-                                                      : _kMuted,
-                                                  size: 22,
-                                                ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: InkWell(
+                                        onTap: () {
+                                          if (_isSelectionMode) {
+                                            _togglePlaylistSelection(
+                                              playlist.id,
+                                            );
+                                          } else {
+                                            setState(
+                                              () => _openedPlaylistId =
+                                                  playlist.id,
+                                            );
+                                          }
+                                        },
+                                        onLongPress: () =>
+                                            _togglePlaylistSelection(
+                                          playlist.id,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Row(
+                                            children: [
+                                              _MographSelectCheckbox(
+                                                isVisible: _isSelectionMode,
+                                                isSelected: isSelected,
                                               ),
-                                            _LocalCoverThumb(
-                                              coverPath: localProvider
-                                                  .playlistCoverPath(playlist),
-                                              size: 48,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    playlist.name,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      color: isSelected
-                                                          ? Colors.white
-                                                          : _kText,
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w700,
+                                              _LocalCoverThumb(
+                                                coverPath: localProvider
+                                                    .playlistCoverPath(
+                                                  playlist,
+                                                ),
+                                                size: 48,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      playlist.name,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        color: isSelected
+                                                            ? Colors.white
+                                                            : _kText,
+                                                        fontSize: 14,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  const SizedBox(height: 3),
-                                                  Text(
-                                                    '${resolved.length} lagu',
-                                                    style: const TextStyle(
-                                                      color: _kMuted,
-                                                      fontSize: 12,
+                                                    const SizedBox(height: 3),
+                                                    Text(
+                                                      '${resolved.length} lagu',
+                                                      style: const TextStyle(
+                                                        color: _kMuted,
+                                                        fontSize: 12,
+                                                      ),
                                                     ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            if (!_isSelectionMode &&
-                                                resolved.isNotEmpty)
-                                              IconButton(
-                                                visualDensity:
-                                                    VisualDensity.compact,
-                                                tooltip: 'Putar Playlist',
-                                                onPressed: () {
-                                                  localProvider.playPlaylist(
-                                                    playlist.id,
-                                                  );
-                                                  widget.onOpenNowPlaying();
-                                                },
-                                                icon: const Icon(
-                                                  Icons
-                                                      .play_circle_fill_rounded,
-                                                  color: Colors.white,
-                                                  size: 27,
+                                                  ],
                                                 ),
                                               ),
-                                            if (!_isSelectionMode)
-                                              PopupMenuButton<String>(
-                                                icon: const Icon(
-                                                  Icons.more_vert_rounded,
-                                                  size: 18,
-                                                  color: _kMuted,
-                                                ),
-                                                color: _kSubtle,
-                                                onSelected: (value) async {
-                                                  if (value == 'rename') {
-                                                    await _promptRename(
-                                                      localProvider,
-                                                      playlist,
-                                                    );
-                                                  } else if (value ==
-                                                      'shuffle') {
+                                              if (!_isSelectionMode &&
+                                                  resolved.isNotEmpty)
+                                                IconButton(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  tooltip: 'Putar Playlist',
+                                                  onPressed: () {
                                                     localProvider.playPlaylist(
                                                       playlist.id,
-                                                      shuffle: true,
                                                     );
                                                     widget.onOpenNowPlaying();
-                                                  } else if (value ==
-                                                      'add_queue') {
-                                                    final added =
-                                                        await localProvider
-                                                            .playCombinedPlaylists(
-                                                      [playlist.id],
-                                                      appendToCurrentQueue:
-                                                          true,
-                                                    );
-                                                    if (context.mounted) {
-                                                      ScaffoldMessenger.of(
-                                                        context,
-                                                      ).showSnackBar(
-                                                        SnackBar(
-                                                          content: Text(
-                                                            added > 0
-                                                                ? '$added lagu dari "${playlist.name}" ditambahkan ke antrean.'
-                                                                : 'Semua lagu dari "${playlist.name}" sudah ada di antrean.',
+                                                  },
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .play_circle_fill_rounded,
+                                                    color: Colors.white,
+                                                    size: 27,
+                                                  ),
+                                                ),
+                                              if (!_isSelectionMode)
+                                                PopupMenuButton<String>(
+                                                  icon: const Icon(
+                                                    Icons.more_vert_rounded,
+                                                    size: 18,
+                                                    color: _kMuted,
+                                                  ),
+                                                  color: _kSubtle,
+                                                  onSelected: (value) async {
+                                                    if (value == 'rename') {
+                                                      await _promptRename(
+                                                        localProvider,
+                                                        playlist,
+                                                      );
+                                                    } else if (value ==
+                                                        'shuffle') {
+                                                      localProvider
+                                                          .playPlaylist(
+                                                        playlist.id,
+                                                        shuffle: true,
+                                                      );
+                                                      widget.onOpenNowPlaying();
+                                                    } else if (value ==
+                                                        'add_queue') {
+                                                      final added =
+                                                          await localProvider
+                                                              .playCombinedPlaylists(
+                                                        [playlist.id],
+                                                        appendToCurrentQueue:
+                                                            true,
+                                                      );
+                                                      if (context.mounted) {
+                                                        ScaffoldMessenger.of(
+                                                          context,
+                                                        ).showSnackBar(
+                                                          SnackBar(
+                                                            content: Text(
+                                                              added > 0
+                                                                  ? '$added lagu dari "${playlist.name}" ditambahkan ke antrean.'
+                                                                  : 'Semua lagu dari "${playlist.name}" sudah ada di antrean.',
+                                                            ),
                                                           ),
-                                                        ),
+                                                        );
+                                                      }
+                                                    } else if (value ==
+                                                        'multi_select') {
+                                                      _togglePlaylistSelection(
+                                                        playlist.id,
+                                                      );
+                                                    } else if (value ==
+                                                        'delete') {
+                                                      await _promptDelete(
+                                                        localProvider,
+                                                        playlist,
                                                       );
                                                     }
-                                                  } else if (value ==
-                                                      'multi_select') {
-                                                    _togglePlaylistSelection(
-                                                      playlist.id,
-                                                    );
-                                                  } else if (value ==
-                                                      'delete') {
-                                                    await _promptDelete(
-                                                      localProvider,
-                                                      playlist,
-                                                    );
-                                                  }
-                                                },
-                                                itemBuilder: (_) => const [
-                                                  PopupMenuItem(
-                                                    value: 'shuffle',
-                                                    child: Text(
-                                                      'Acak Playlist (Shuffle)',
-                                                      style: TextStyle(
-                                                        color: _kText,
-                                                        fontSize: 13,
+                                                  },
+                                                  itemBuilder: (_) => const [
+                                                    PopupMenuItem(
+                                                      value: 'shuffle',
+                                                      child: Text(
+                                                        'Acak Playlist (Shuffle)',
+                                                        style: TextStyle(
+                                                          color: _kText,
+                                                          fontSize: 13,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  PopupMenuItem(
-                                                    value: 'add_queue',
-                                                    child: Text(
-                                                      'Tambahkan ke Antrean Saat Ini (+ Queue)',
-                                                      style: TextStyle(
-                                                        color: _kText,
-                                                        fontSize: 13,
+                                                    PopupMenuItem(
+                                                      value: 'add_queue',
+                                                      child: Text(
+                                                        'Tambahkan ke Antrean Saat Ini (+ Queue)',
+                                                        style: TextStyle(
+                                                          color: _kText,
+                                                          fontSize: 13,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  PopupMenuItem(
-                                                    value: 'multi_select',
-                                                    child: Text(
-                                                      'Pilih untuk Digabung (Multi-Playlist)',
-                                                      style: TextStyle(
-                                                        color: _kAccent,
-                                                        fontSize: 13,
-                                                        fontWeight:
-                                                            FontWeight.w600,
+                                                    PopupMenuItem(
+                                                      value: 'multi_select',
+                                                      child: Text(
+                                                        'Pilih untuk Digabung (Multi-Playlist)',
+                                                        style: TextStyle(
+                                                          color: _kAccent,
+                                                          fontSize: 13,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  PopupMenuItem(
-                                                    value: 'rename',
-                                                    child: Text(
-                                                      'Ganti Nama',
-                                                      style: TextStyle(
-                                                        color: _kText,
-                                                        fontSize: 13,
+                                                    PopupMenuItem(
+                                                      value: 'rename',
+                                                      child: Text(
+                                                        'Ganti Nama',
+                                                        style: TextStyle(
+                                                          color: _kText,
+                                                          fontSize: 13,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                  PopupMenuItem(
-                                                    value: 'delete',
-                                                    child: Text(
-                                                      'Hapus Playlist',
-                                                      style: TextStyle(
-                                                        color:
-                                                            Color(0xFFF04438),
-                                                        fontSize: 13,
+                                                    PopupMenuItem(
+                                                      value: 'delete',
+                                                      child: Text(
+                                                        'Hapus Playlist',
+                                                        style: TextStyle(
+                                                          color:
+                                                              Color(0xFFF04438),
+                                                          fontSize: 13,
+                                                        ),
                                                       ),
                                                     ),
-                                                  ),
-                                                ],
-                                              ),
-                                          ],
+                                                  ],
+                                                ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1670,26 +1664,20 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                   ],
                 ),
 
-                if (!_isSelectionMode && playlists.isNotEmpty)
-                  Positioned(
-                    right: 16,
-                    bottom: 14,
-                    child: _FloatingMergeFab(
-                      tooltip: 'Gabung / Pilih Banyak Playlist',
-                      onTap: () => setState(() => _isSelectionMode = true),
-                    ),
-                  ),
-
-                if (_isSelectionMode)
+                if (playlists.isNotEmpty)
                   Positioned(
                     left: 12,
                     right: 12,
-                    bottom: 10,
-                    child: _MultiSelectQueueActionBar(
+                    bottom: 12,
+                    child: _MorphingMergeActionBar(
+                      isExpanded: _isSelectionMode,
+                      idleTooltip: 'Gabung / Pilih Banyak Playlist',
                       label: selectedIds.isEmpty
                           ? 'Pilih 2+ Playlist untuk digabung'
                           : '${selectedIds.length} Playlist • $selectedSongCount lagu unik',
                       hasSelection: selectedIds.isNotEmpty,
+                      onOpen: () => setState(() => _isSelectionMode = true),
+                      onCancel: _exitSelectionMode,
                       onPlayCombined: () async {
                         if (selectedIds.isEmpty) return;
                         final targets = List<String>.from(selectedIds);
@@ -1730,7 +1718,6 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                           );
                         }
                       },
-                      onCancel: _exitSelectionMode,
                     ),
                   ),
               ],
@@ -2555,181 +2542,499 @@ class _EmptyLocalHint extends StatelessWidget {
   }
 }
 
-class _FloatingMergeFab extends StatelessWidget {
-  final String tooltip;
-  final VoidCallback onTap;
+/// Mograph card wrapper that performs a subtle spring scale-bounce whenever
+/// [isSelected] toggles during Merge Selection Mode.
+class _MographSelectionCard extends StatefulWidget {
+  final bool isSelected;
+  final bool isSelectionMode;
+  final Widget child;
 
-  const _FloatingMergeFab({
-    required this.tooltip,
-    required this.onTap,
+  const _MographSelectionCard({
+    required this.isSelected,
+    required this.isSelectionMode,
+    required this.child,
   });
 
   @override
+  State<_MographSelectionCard> createState() => _MographSelectionCardState();
+}
+
+class _MographSelectionCardState extends State<_MographSelectionCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _bounceController;
+
+  @override
+  void initState() {
+    super.initState();
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _MographSelectionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSelected != oldWidget.isSelected) {
+      _bounceController.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _bounceController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.16);
-    return PressableScale(
-      onTap: onTap,
-      child: Tooltip(
-        message: tooltip,
-        child: Material(
-          color: const Color(0xFF1F242E),
-          elevation: 8,
-          shadowColor: Colors.black.withValues(alpha: 0.65),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: hairline, width: 0.9),
-          ),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.library_add_check_rounded,
-                  size: 17,
-                  color: _kAccent,
-                ),
-                SizedBox(width: 7),
-                Text(
-                  'Gabung',
-                  style: TextStyle(
-                    color: _kText,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _bounceController,
+        builder: (context, child) {
+          final t = _bounceController.value;
+          if (t == 0.0 || t == 1.0) {
+            return child!;
+          }
+          // Spring impulse: quick dip to 0.965 then overshoot to 1.018 then settle at 1.0
+          final wave = math.sin(t * math.pi * 2.0) * (1.0 - t);
+          final scale = 1.0 - (wave * 0.032);
+          return Transform.scale(
+            scale: scale,
+            child: child,
+          );
+        },
+        child: widget.child,
       ),
     );
   }
 }
 
-class _MultiSelectQueueActionBar extends StatelessWidget {
-  final String label;
-  final bool hasSelection;
-  final VoidCallback onPlayCombined;
-  final VoidCallback onShuffleCombined;
-  final VoidCallback onAppendQueue;
-  final VoidCallback onCancel;
+/// Mograph checkbox indicator for Merge Selection Mode:
+/// - Expands horizontally with `Curves.easeOutBack` when selection mode turns on.
+/// - When checked (`isSelected == true`), pops in with Scale + Quarter-Turn Rotation (`-0.25 turns -> 0.0`).
+class _MographSelectCheckbox extends StatelessWidget {
+  final bool isVisible;
+  final bool isSelected;
 
-  const _MultiSelectQueueActionBar({
-    required this.label,
-    this.hasSelection = true,
-    required this.onPlayCombined,
-    required this.onShuffleCombined,
-    required this.onAppendQueue,
-    required this.onCancel,
+  const _MographSelectCheckbox({
+    required this.isVisible,
+    required this.isSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.14);
-    return Material(
-      color: const Color(0xFF1D2129),
-      elevation: 12,
-      shadowColor: Colors.black.withValues(alpha: 0.7),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: hairline, width: 0.9),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _kAccent.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: _kAccent,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutBack,
+      alignment: Alignment.centerLeft,
+      child: !isVisible
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: TweenAnimationBuilder<double>(
+                key: ValueKey<bool>(isSelected),
+                tween: Tween<double>(
+                  begin: isSelected ? 0.0 : 1.0,
+                  end: isSelected ? 1.0 : 0.0,
                 ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Gabungkan ke Antrean (Deduplikasi Otomatis)',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                duration: const Duration(milliseconds: 300),
+                curve: isSelected ? Curves.easeOutBack : Curves.easeOutCubic,
+                builder: (context, t, _) {
+                  if (!isSelected && t < 0.05) {
+                    return const Icon(
+                      Icons.radio_button_unchecked_rounded,
                       color: _kMuted,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-                InkWell(
-                  onTap: onCancel,
-                  borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: 16,
-                      color: _kMuted,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Opacity(
-              opacity: hasSelection ? 1.0 : 0.45,
-              child: IgnorePointer(
-                ignoring: !hasSelection,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ActionPillButton(
-                        icon: Icons.play_arrow_rounded,
-                        label: 'Putar',
-                        backgroundColor: _kAccent,
-                        foregroundColor: Colors.white,
-                        onTap: onPlayCombined,
+                      size: 22,
+                    );
+                  }
+                  final clamped = t.clamp(0.0, 1.0);
+                  final scale = 0.55 + (t * 0.45);
+                  final angle = (1.0 - clamped) * (-math.pi * 0.5);
+
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Opacity(
+                        opacity: (1.0 - clamped).clamp(0.0, 1.0),
+                        child: const Icon(
+                          Icons.radio_button_unchecked_rounded,
+                          color: _kMuted,
+                          size: 22,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: _ActionPillButton(
-                        icon: Icons.shuffle_rounded,
-                        label: 'Shuffle Mix',
-                        backgroundColor: const Color(0xFF282D38),
-                        foregroundColor: _kText,
-                        borderColor: Colors.white.withValues(alpha: 0.14),
-                        onTap: onShuffleCombined,
+                      Transform.rotate(
+                        angle: angle,
+                        child: Transform.scale(
+                          scale: scale.clamp(0.0, 1.35),
+                          child: Opacity(
+                            opacity: clamped,
+                            child: const Icon(
+                              Icons.check_circle_rounded,
+                              color: _kAccent,
+                              size: 22,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: _ActionPillButton(
-                        icon: Icons.playlist_add_rounded,
-                        label: '+ Queue',
-                        backgroundColor: const Color(0xFF282D38),
-                        foregroundColor: _kText,
-                        borderColor: Colors.white.withValues(alpha: 0.14),
-                        onTap: onAppendQueue,
-                      ),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                },
               ),
             ),
-          ],
+    );
+  }
+}
+
+/// Single continuous Mograph Liquid Shape-Morphing container:
+/// - Idle (`isExpanded == false`): `56x56 px` Icon-Only circle (`borderRadius: 28`,
+///   `Icons.library_add_check_rounded` size `26px`) anchored at the bottom-right.
+/// - Active (`isExpanded == true`): Morphs leftward into the full-width
+///   Floating Action Bar (`Curves.easeOutBack`, `~380ms`), while its internal
+///   controls (`▶ Putar`, `🔀 Shuffle Mix`, `➕ + Queue`, and `✕`) pop in with
+///   Staggered Scale + Slide Pop-Up!
+class _MorphingMergeActionBar extends StatefulWidget {
+  final bool isExpanded;
+  final String idleTooltip;
+  final String label;
+  final bool hasSelection;
+  final VoidCallback onOpen;
+  final VoidCallback onCancel;
+  final VoidCallback onPlayCombined;
+  final VoidCallback onShuffleCombined;
+  final VoidCallback onAppendQueue;
+
+  const _MorphingMergeActionBar({
+    required this.isExpanded,
+    required this.idleTooltip,
+    required this.label,
+    required this.hasSelection,
+    required this.onOpen,
+    required this.onCancel,
+    required this.onPlayCombined,
+    required this.onShuffleCombined,
+    required this.onAppendQueue,
+  });
+
+  @override
+  State<_MorphingMergeActionBar> createState() =>
+      _MorphingMergeActionBarState();
+}
+
+class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  static const double _idleSize = 56.0;
+  static const double _expandedHeight = 88.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+      reverseDuration: const Duration(milliseconds: 300),
+      value: widget.isExpanded ? 1.0 : 0.0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _MorphingMergeActionBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isExpanded != oldWidget.isExpanded) {
+      if (widget.isExpanded) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _staggeredSpring(double rawT, double start, double end) {
+    final normalized = ((rawT - start) / (end - start)).clamp(0.0, 1.0);
+    if (normalized <= 0.0) return 0.0;
+    return Curves.easeOutBack.transform(normalized);
+  }
+
+  Widget _buildStaggeredItem({
+    required double rawT,
+    required double start,
+    required double end,
+    required Widget child,
+  }) {
+    final linear = ((rawT - start) / (end - start)).clamp(0.0, 1.0);
+    if (linear <= 0.01) {
+      return const SizedBox.shrink();
+    }
+    final spring = _staggeredSpring(rawT, start, end);
+    final slideY = (1.0 - spring) * 14.0;
+    final scale = (0.65 + (spring * 0.35)).clamp(0.0, 1.25);
+
+    return Opacity(
+      opacity: linear,
+      child: Transform.translate(
+        offset: Offset(0.0, slideY),
+        child: Transform.scale(
+          scale: scale,
+          child: child,
         ),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width - 24;
+
+        return Align(
+          alignment: Alignment.bottomRight,
+          child: RepaintBoundary(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final rawT = _controller.value;
+                final shapeT = widget.isExpanded
+                    ? Curves.easeOutBack.transform(rawT)
+                    : Curves.easeInOutCubic.transform(rawT);
+
+                final currentWidth = (_idleSize +
+                        ((maxWidth - _idleSize) * shapeT))
+                    .clamp(48.0, maxWidth);
+                final currentHeight = (_idleSize +
+                        ((_expandedHeight - _idleSize) * shapeT))
+                    .clamp(48.0, 102.0);
+                final currentRadius =
+                    (28.0 + ((14.0 - 28.0) * rawT)).clamp(12.0, 32.0);
+
+                final bgColor = Color.lerp(
+                  const Color(0xFF1F2530),
+                  const Color(0xFF1D2129),
+                  rawT,
+                )!;
+                final borderColor = Color.lerp(
+                  _kAccent.withValues(alpha: 0.50),
+                  Colors.white.withValues(alpha: 0.15),
+                  rawT,
+                )!;
+
+                final showIdleIcon = rawT < 0.42;
+                final showExpandedContent = rawT >= 0.22;
+
+                return Material(
+                  color: bgColor,
+                  elevation: 10 + (rawT * 4),
+                  shadowColor: Colors.black.withValues(alpha: 0.72),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(currentRadius),
+                    side: BorderSide(color: borderColor, width: 1.0),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: SizedBox(
+                    width: currentWidth,
+                    height: currentHeight,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // 1. IDLE ICON-ONLY 56x56 CIRCLE (`Icons.library_add_check_rounded` 26px)
+                        if (showIdleIcon)
+                          IgnorePointer(
+                            ignoring: widget.isExpanded,
+                            child: Tooltip(
+                              message: widget.idleTooltip,
+                              child: InkWell(
+                                onTap: widget.onOpen,
+                                customBorder: const CircleBorder(),
+                                child: Center(
+                                  child: Transform.rotate(
+                                    angle: rawT * math.pi * 0.85,
+                                    child: Transform.scale(
+                                      scale: (1.0 - (rawT * 2.1)).clamp(
+                                        0.0,
+                                        1.0,
+                                      ),
+                                      child: const Icon(
+                                        Icons.library_add_check_rounded,
+                                        size: 26,
+                                        color: _kAccent,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        // 2. MORPHED ACTION BAR WITH STAGGERED SCALE + SLIDE POP-UP BUTTONS
+                        if (showExpandedContent)
+                          IgnorePointer(
+                            ignoring: !widget.isExpanded,
+                            child: OverflowBox(
+                              minWidth: maxWidth,
+                              maxWidth: maxWidth,
+                              minHeight: _expandedHeight,
+                              maxHeight: _expandedHeight,
+                              alignment: Alignment.centerRight,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  9,
+                                  10,
+                                  9,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildStaggeredItem(
+                                      rawT: rawT,
+                                      start: 0.22,
+                                      end: 0.72,
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _kAccent.withValues(
+                                                alpha: 0.18,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(5),
+                                            ),
+                                            child: Text(
+                                              widget.label,
+                                              style: const TextStyle(
+                                                color: _kAccent,
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Expanded(
+                                            child: Text(
+                                              'Gabungkan ke Antrean (Deduplikasi Otomatis)',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: _kMuted,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: widget.onCancel,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(4),
+                                              child: Transform.rotate(
+                                                angle: (1.0 - rawT) *
+                                                    (-math.pi * 0.5),
+                                                child: const Icon(
+                                                  Icons.close_rounded,
+                                                  size: 17,
+                                                  color: _kMuted,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 7),
+                                    Opacity(
+                                      opacity:
+                                          widget.hasSelection ? 1.0 : 0.45,
+                                      child: IgnorePointer(
+                                        ignoring: !widget.hasSelection,
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: _buildStaggeredItem(
+                                                rawT: rawT,
+                                                start: 0.34,
+                                                end: 0.82,
+                                                child: _ActionPillButton(
+                                                  icon:
+                                                      Icons.play_arrow_rounded,
+                                                  label: 'Putar',
+                                                  backgroundColor: _kAccent,
+                                                  foregroundColor: Colors.white,
+                                                  onTap: widget.onPlayCombined,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 7),
+                                            Expanded(
+                                              child: _buildStaggeredItem(
+                                                rawT: rawT,
+                                                start: 0.44,
+                                                end: 0.91,
+                                                child: _ActionPillButton(
+                                                  icon: Icons.shuffle_rounded,
+                                                  label: 'Shuffle Mix',
+                                                  backgroundColor:
+                                                      const Color(0xFF282D38),
+                                                  foregroundColor: _kText,
+                                                  borderColor: Colors.white
+                                                      .withValues(alpha: 0.14),
+                                                  onTap:
+                                                      widget.onShuffleCombined,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 7),
+                                            Expanded(
+                                              child: _buildStaggeredItem(
+                                                rawT: rawT,
+                                                start: 0.54,
+                                                end: 1.00,
+                                                child: _ActionPillButton(
+                                                  icon: Icons
+                                                      .playlist_add_rounded,
+                                                  label: '+ Queue',
+                                                  backgroundColor:
+                                                      const Color(0xFF282D38),
+                                                  foregroundColor: _kText,
+                                                  borderColor: Colors.white
+                                                      .withValues(alpha: 0.14),
+                                                  onTap: widget.onAppendQueue,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }

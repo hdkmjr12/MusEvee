@@ -91,16 +91,40 @@ class MusicoletBottomStrip extends StatelessWidget {
                       final showBadge = idx == downloaderTabIndex &&
                           activeDownloadBadgeCount > 0;
 
-                      Widget iconWidget = AnimatedScale(
-                        scale: isSelected ? 1.06 : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOutCubic,
-                        child: Icon(
-                          isSelected ? tab.activeIcon : tab.icon,
-                          size: 21,
-                          color: isSelected
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.48),
+                      Widget iconWidget = RepaintBoundary(
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(
+                            begin: 0.0,
+                            end: isSelected ? 1.0 : 0.0,
+                          ),
+                          duration: const Duration(milliseconds: 360),
+                          curve: isSelected
+                              ? Curves.easeOutBack
+                              : Curves.easeOutCubic,
+                          builder: (context, t, child) {
+                            // `Curves.easeOutBack` overshoots > 1.0 (~1.12), so we amplify
+                            // the overshoot into a Mograph pop (1.0 -> 1.18 -> 1.08) + vertical lift (-2px)
+                            final overshoot = (t - 1.0).clamp(0.0, 0.35);
+                            final clamped = t.clamp(0.0, 1.0);
+                            final scale =
+                                1.0 + (clamped * 0.08) + (overshoot * 0.85);
+                            final liftY = -2.0 * clamped - (overshoot * 3.5);
+
+                            return Transform.translate(
+                              offset: Offset(0.0, liftY),
+                              child: Transform.scale(
+                                scale: scale,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Icon(
+                            isSelected ? tab.activeIcon : tab.icon,
+                            size: 21,
+                            color: isSelected
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.48),
+                          ),
                         ),
                       );
 

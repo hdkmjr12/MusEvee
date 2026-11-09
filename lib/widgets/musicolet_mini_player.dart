@@ -121,16 +121,10 @@ class MusicoletMiniPlayer extends StatelessWidget {
                               tooltip:
                                   localProvider.isPlaying ? 'Jeda' : 'Putar',
                               onPressed: localProvider.togglePlayPause,
-                              icon: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                child: Icon(
-                                  localProvider.isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey<bool>(localProvider.isPlaying),
-                                  color: Colors.white,
-                                  size: 27,
-                                ),
+                              icon: MographPlayPauseIcon(
+                                isPlaying: localProvider.isPlaying,
+                                size: 27,
+                                color: Colors.white,
                               ),
                             ),
                           ),

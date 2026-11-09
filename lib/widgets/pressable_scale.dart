@@ -292,3 +292,96 @@ class _EqualizerBarsPainter extends CustomPainter {
   }
 }
 
+/// Mograph vector-morphing Play <-> Pause icon (`AnimatedIcons.play_pause`)
+/// with a spring scale bounce + subtle micro-rotation when toggling states.
+class MographPlayPauseIcon extends StatefulWidget {
+  final bool isPlaying;
+  final double size;
+  final Color color;
+  final bool enableBounceAndRotation;
+
+  const MographPlayPauseIcon({
+    super.key,
+    required this.isPlaying,
+    required this.size,
+    this.color = Colors.white,
+    this.enableBounceAndRotation = true,
+  });
+
+  @override
+  State<MographPlayPauseIcon> createState() => _MographPlayPauseIconState();
+}
+
+class _MographPlayPauseIconState extends State<MographPlayPauseIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _morphProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: widget.isPlaying ? 1.0 : 0.0,
+    );
+    _morphProgress = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant MographPlayPauseIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPlaying != oldWidget.isPlaying) {
+      if (widget.isPlaying) {
+        _controller.forward();
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          if (!widget.enableBounceAndRotation) {
+            return child!;
+          }
+          // Mid-transition impulse (0 -> 1 -> 0 across the 320ms morph)
+          final pulse = math.sin(_controller.value * math.pi);
+          final scale = 1.0 + (pulse * 0.14);
+          final microAngle =
+              (widget.isPlaying ? 1.0 : -1.0) * pulse * 0.085;
+
+          return Transform.rotate(
+            angle: microAngle,
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+          );
+        },
+        child: AnimatedIcon(
+          icon: AnimatedIcons.play_pause,
+          progress: _morphProgress,
+          size: widget.size,
+          color: widget.color,
+        ),
+      ),
+    );
+  }
+}
+
+

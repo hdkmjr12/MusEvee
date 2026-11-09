@@ -186,14 +186,38 @@ class _NowPlayingViewState extends State<NowPlayingView> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Base Layer: Cover Art
+              // Base Layer: Cover Art with Mograph Dynamic Artwork Scale (1.0 Playing <-> 0.90 Paused)
               GestureDetector(
                 onTap: () {
                   if (!showOverlay) {
                     localProvider.setShowLyricsOverlay(true);
                   }
                 },
-                child: _buildCoverArtImage(song),
+                child: RepaintBoundary(
+                  child: AnimatedScale(
+                    scale: localProvider.isPlaying ? 1.0 : 0.90,
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutBack,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: localProvider.isPlaying ? 0.36 : 0.50,
+                            ),
+                            blurRadius: localProvider.isPlaying ? 16 : 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: _buildCoverArtImage(song),
+                      ),
+                    ),
+                  ),
+                ),
               ),
 
               // Subtle top-left badge to re-open lyrics when overlay is closed
@@ -1220,7 +1244,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 ),
               ),
               const SizedBox(width: 14),
-              // Musicolet signature large Play/Pause icon WITHOUT circular background
+              // Musicolet signature large Play/Pause icon WITHOUT circular background (Mograph Vector Morph!)
               PressableScale(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
@@ -1231,16 +1255,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                     width: 56,
                     height: 52,
                     child: Center(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child: Icon(
-                          localProvider.isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          key: ValueKey<bool>(localProvider.isPlaying),
-                          size: 46,
-                          color: Colors.white,
-                        ),
+                      child: MographPlayPauseIcon(
+                        isPlaying: localProvider.isPlaying,
+                        size: 46,
+                        color: Colors.white,
                       ),
                     ),
                   ),
