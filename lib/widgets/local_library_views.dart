@@ -1454,13 +1454,45 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
   ) {
     final seen = <String>{};
     for (final id in playlistIds) {
-      final pl = localProvider.playlistById(id);
-      if (pl == null) continue;
-      for (final s in localProvider.songsForPlaylist(pl)) {
+      for (final s in localProvider.songsForPlaylistId(id)) {
         seen.add(s.filePath);
       }
     }
     return seen.length;
+  }
+
+  static IconData _smartPlaylistIcon(String smartId) {
+    switch (smartId) {
+      case SmartPlaylistId.allSongs:
+        return Icons.library_music_rounded;
+      case SmartPlaylistId.favorites:
+        return Icons.favorite_rounded;
+      case SmartPlaylistId.recentlyAdded:
+        return Icons.more_time_rounded;
+      case SmartPlaylistId.recentlyPlayed:
+        return Icons.history_rounded;
+      case SmartPlaylistId.mostPlayed:
+        return Icons.local_fire_department_rounded;
+      case SmartPlaylistId.notPlayed:
+        return Icons.block_rounded;
+      default:
+        return Icons.queue_music_rounded;
+    }
+  }
+
+  static String _smartPlaylistEmptyHint(String smartId) {
+    switch (smartId) {
+      case SmartPlaylistId.favorites:
+        return 'Belum ada lagu favorit. Ketuk ikon ♥ pada lagu untuk menambahkan ke Favorites.';
+      case SmartPlaylistId.recentlyPlayed:
+        return 'Belum ada riwayat lagu yang baru diputar.';
+      case SmartPlaylistId.mostPlayed:
+        return 'Belum ada statistik lagu yang sering diputar.';
+      case SmartPlaylistId.notPlayed:
+        return 'Semua lagu di perpustakaan sudah pernah diputar!';
+      default:
+        return 'Belum ada lagu di perpustakaan aktif.';
+    }
   }
 
   Future<void> _promptRename(
@@ -1528,40 +1560,49 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
     return Consumer2<LocalMusicProvider, DownloaderProvider>(
       builder: (context, localProvider, downloaderProvider, _) {
         final playlists = localProvider.playlists;
-        final validIds = playlists.map((p) => p.id).toSet();
+        const smartIds = SmartPlaylistId.allIds;
+        final validIds = <String>{
+          ...smartIds,
+          ...playlists.map((p) => p.id),
+        };
         _selectedPlaylistIds.removeWhere((id) => !validIds.contains(id));
         final selectedIds = _selectedPlaylistIds.toList();
         final selectedSongCount =
             _countUniqueSongsForPlaylists(localProvider, selectedIds);
 
-        final opened = _openedPlaylistId != null
-            ? localProvider.playlistById(_openedPlaylistId!)
-            : null;
+        final openedId = _openedPlaylistId;
+        final isOpenedSmart =
+            openedId != null && SmartPlaylistId.isSmartId(openedId);
+        final openedUserPlaylist =
+            (openedId != null && !isOpenedSmart)
+                ? localProvider.playlistById(openedId)
+                : null;
 
         Widget body;
-        if (opened != null) {
-          final songs = localProvider.songsForPlaylist(opened);
+        if (isOpenedSmart) {
+          final smartTitle = SmartPlaylistId.titleFor(openedId);
+          final songs = localProvider.songsForSmartPlaylist(openedId);
           body = KeyedSubtree(
-            key: ValueKey('pl_detail_${opened.id}'),
+            key: ValueKey('smart_pl_detail_$openedId'),
             child: _buildSongDrillDownView(
               context: context,
-              title: opened.name,
-              subtitle: 'Playlist • ${songs.length} lagu',
+              title: smartTitle,
+              subtitle: 'Auto-Playlist • ${songs.length} lagu',
               songs: songs,
               localProvider: localProvider,
               downloaderProvider: downloaderProvider,
               onBack: () => setState(() => _openedPlaylistId = null),
               onPlayAll: () {
-                localProvider.playPlaylist(opened.id);
+                localProvider.playPlaylist(openedId);
                 widget.onOpenNowPlaying();
               },
               onShuffleAll: () {
-                localProvider.playPlaylist(opened.id, shuffle: true);
+                localProvider.playPlaylist(openedId, shuffle: true);
                 widget.onOpenNowPlaying();
               },
               onAddAllToQueue: () async {
                 final added = await localProvider.playCombinedPlaylists(
-                  [opened.id],
+                  [openedId],
                   appendToCurrentQueue: true,
                 );
                 if (context.mounted) {
@@ -1569,8 +1610,53 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                     SnackBar(
                       content: Text(
                         added > 0
-                            ? '$added lagu dari "${opened.name}" ditambahkan ke akhir antrean.'
-                            : 'Semua lagu dari "${opened.name}" sudah ada di antrean.',
+                            ? '$added lagu dari "$smartTitle" ditambahkan ke akhir antrean.'
+                            : 'Semua lagu dari "$smartTitle" sudah ada di antrean.',
+                      ),
+                    ),
+                  );
+                }
+              },
+              onMoveLocalSongFolder: widget.onMoveLocalSongFolder,
+              onOpenNowPlaying: widget.onOpenNowPlaying,
+              emptyMessage: _smartPlaylistEmptyHint(openedId),
+            ),
+          );
+        } else if (openedUserPlaylist != null) {
+          final songs = localProvider.songsForPlaylist(openedUserPlaylist);
+          body = KeyedSubtree(
+            key: ValueKey('pl_detail_${openedUserPlaylist.id}'),
+            child: _buildSongDrillDownView(
+              context: context,
+              title: openedUserPlaylist.name,
+              subtitle: 'Playlist • ${songs.length} lagu',
+              songs: songs,
+              localProvider: localProvider,
+              downloaderProvider: downloaderProvider,
+              onBack: () => setState(() => _openedPlaylistId = null),
+              onPlayAll: () {
+                localProvider.playPlaylist(openedUserPlaylist.id);
+                widget.onOpenNowPlaying();
+              },
+              onShuffleAll: () {
+                localProvider.playPlaylist(
+                  openedUserPlaylist.id,
+                  shuffle: true,
+                );
+                widget.onOpenNowPlaying();
+              },
+              onAddAllToQueue: () async {
+                final added = await localProvider.playCombinedPlaylists(
+                  [openedUserPlaylist.id],
+                  appendToCurrentQueue: true,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        added > 0
+                            ? '$added lagu dari "${openedUserPlaylist.name}" ditambahkan ke akhir antrean.'
+                            : 'Semua lagu dari "${openedUserPlaylist.name}" sudah ada di antrean.',
                       ),
                     ),
                   );
@@ -1581,10 +1667,14 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               emptyMessage:
                   'Playlist masih kosong. Tambahkan lagu via menu ⋮ → "Tambah ke Playlist".',
               onRemoveFromPlaylist: (song) =>
-                  localProvider.removeSongFromPlaylist(opened.id, song.filePath),
+                  localProvider.removeSongFromPlaylist(
+                openedUserPlaylist.id,
+                song.filePath,
+              ),
             ),
           );
         } else {
+          const musicoletGreen = Color(0xFF4CAF50);
           body = Container(
             key: const ValueKey('pl_list'),
             color: _kBg,
@@ -1592,39 +1682,35 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               children: [
                 Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
-                      decoration: BoxDecoration(
-                        color: _kCard,
-                        border: Border(
-                          bottom: BorderSide(color: hairline, width: 0.8),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _isSelectionMode
-                                ? Icons.library_add_check_rounded
-                                : Icons.queue_music_rounded,
-                            color: _isSelectionMode ? _kAccent : Colors.white,
-                            size: 19,
+                    if (_isSelectionMode)
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
+                        decoration: BoxDecoration(
+                          color: _kCard,
+                          border: Border(
+                            bottom: BorderSide(color: hairline, width: 0.8),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _isSelectionMode
-                                  ? '${selectedIds.length} Playlist Dipilih ($selectedSongCount lagu)'
-                                  : 'Playlists (${playlists.length})',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _kText,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.library_add_check_rounded,
+                              color: _kAccent,
+                              size: 19,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${selectedIds.length} Playlist Dipilih ($selectedSongCount lagu)',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _kText,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                          if (_isSelectionMode && playlists.length > 1)
                             TextButton(
                               style: TextButton.styleFrom(
                                 foregroundColor: _kAccent,
@@ -1635,17 +1721,15 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                               onPressed: () {
                                 setState(() {
                                   if (_selectedPlaylistIds.length ==
-                                      playlists.length) {
+                                      validIds.length) {
                                     _selectedPlaylistIds.clear();
                                   } else {
-                                    _selectedPlaylistIds.addAll(
-                                      playlists.map((p) => p.id),
-                                    );
+                                    _selectedPlaylistIds.addAll(validIds);
                                   }
                                 });
                               },
                               child: Text(
-                                _selectedPlaylistIds.length == playlists.length
+                                _selectedPlaylistIds.length == validIds.length
                                     ? 'Reset'
                                     : 'Semua',
                                 style: const TextStyle(
@@ -1654,34 +1738,6 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 ),
                               ),
                             ),
-                          if (!_isSelectionMode)
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                foregroundColor: _kAccent,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: () async {
-                                final name = await showPlaylistNameDialog(
-                                  context,
-                                  title: 'Playlist Baru',
-                                );
-                                if (name != null) {
-                                  await localProvider.createPlaylist(name);
-                                }
-                              },
-                              icon: const Icon(
-                                Icons.playlist_add_rounded,
-                                size: 17,
-                              ),
-                              label: const Text(
-                                'Playlist Baru',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            )
-                          else
                             IconButton(
                               visualDensity: VisualDensity.compact,
                               tooltip: 'Batal Pilih',
@@ -1692,134 +1748,102 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 color: _kMuted,
                               ),
                             ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
                     Expanded(
-                      child: playlists.isEmpty
-                          ? const _EmptyLocalHint(
-                              icon: Icons.queue_music_outlined,
-                              message:
-                                  'Belum ada playlist. Buat playlist baru, atau unduh Album/Playlist Spotify agar playlist dibuat otomatis.',
-                            )
-                          : ListView.separated(
-                              padding: EdgeInsets.fromLTRB(
-                                14,
-                                12,
-                                14,
-                                _isSelectionMode ? 104 : 80,
-                              ),
-                              itemCount: playlists.length,
-                              separatorBuilder: (context, index) =>
-                                  const SizedBox(height: 8),
-                              itemBuilder: (context, idx) {
-                                final playlist = playlists[idx];
-                                final resolved =
-                                    localProvider.songsForPlaylist(playlist);
+                      child: ListView(
+                        padding: EdgeInsets.fromLTRB(
+                          14,
+                          8,
+                          14,
+                          _isSelectionMode ? 104 : 84,
+                        ),
+                        children: [
+                          // ===================================================
+                          // 1. TOP SECTION: 6 AUTO-GENERATED SMART PLAYLISTS
+                          // ===================================================
+                          for (final smartId in smartIds) ...[
+                            Builder(
+                              builder: (context) {
+                                final title = SmartPlaylistId.titleFor(smartId);
+                                final icon = _smartPlaylistIcon(smartId);
+                                final songs = localProvider
+                                    .songsForSmartPlaylist(smartId);
                                 final isSelected =
-                                    _selectedPlaylistIds.contains(playlist.id);
+                                    _selectedPlaylistIds.contains(smartId);
 
                                 return _MographSelectionCard(
                                   isSelected: isSelected,
                                   isSelectionMode: _isSelectionMode,
                                   child: PressableScale(
-                                    pressedScale: 0.98,
+                                    pressedScale: 0.985,
                                     child: Material(
                                       color: isSelected
                                           ? _kAccent.withValues(alpha: 0.14)
-                                          : _kCard,
+                                          : Colors.transparent,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(8),
-                                        side: BorderSide(
-                                          color: isSelected
-                                              ? _kAccent.withValues(alpha: 0.75)
-                                              : hairline,
-                                          width: isSelected ? 1.1 : 0.8,
-                                        ),
+                                        side: isSelected
+                                            ? BorderSide(
+                                                color: _kAccent.withValues(
+                                                  alpha: 0.75,
+                                                ),
+                                                width: 1.1,
+                                              )
+                                            : BorderSide.none,
                                       ),
                                       clipBehavior: Clip.antiAlias,
                                       child: InkWell(
                                         onTap: () {
                                           if (_isSelectionMode) {
-                                            _togglePlaylistSelection(
-                                              playlist.id,
-                                            );
+                                            _togglePlaylistSelection(smartId);
                                           } else {
                                             setState(
-                                              () => _openedPlaylistId =
-                                                  playlist.id,
+                                              () => _openedPlaylistId = smartId,
                                             );
                                           }
                                         },
                                         onLongPress: () =>
-                                            _togglePlaylistSelection(
-                                          playlist.id,
-                                        ),
+                                            _togglePlaylistSelection(smartId),
                                         child: Padding(
-                                          padding: const EdgeInsets.all(10),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 11,
+                                          ),
                                           child: Row(
                                             children: [
                                               _MographSelectCheckbox(
                                                 isVisible: _isSelectionMode,
                                                 isSelected: isSelected,
                                               ),
-                                              _LocalCoverThumb(
-                                                coverPath: localProvider
-                                                    .playlistCoverPath(
-                                                  playlist,
-                                                ),
-                                                size: 48,
+                                              Icon(
+                                                icon,
+                                                color: Colors.white,
+                                                size: 23,
                                               ),
-                                              const SizedBox(width: 12),
+                                              const SizedBox(width: 16),
                                               Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      playlist.name,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        color: isSelected
-                                                            ? Colors.white
-                                                            : _kText,
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 3),
-                                                    Text(
-                                                      '${resolved.length} lagu',
-                                                      style: const TextStyle(
-                                                        color: _kMuted,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              if (!_isSelectionMode &&
-                                                  resolved.isNotEmpty)
-                                                IconButton(
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  tooltip: 'Putar Playlist',
-                                                  onPressed: () {
-                                                    localProvider.playPlaylist(
-                                                      playlist.id,
-                                                    );
-                                                    widget.onOpenNowPlaying();
-                                                  },
-                                                  icon: const Icon(
-                                                    Icons
-                                                        .play_circle_fill_rounded,
+                                                child: Text(
+                                                  title,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
                                                     color: Colors.white,
-                                                    size: 27,
+                                                    fontSize: 15,
+                                                    fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
+                                              ),
+                                              Text(
+                                                '${songs.length}',
+                                                style: const TextStyle(
+                                                  color: _kMuted,
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
                                               if (!_isSelectionMode)
                                                 PopupMenuButton<String>(
                                                   icon: const Icon(
@@ -1829,16 +1853,17 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                   ),
                                                   color: _kSubtle,
                                                   onSelected: (value) async {
-                                                    if (value == 'rename') {
-                                                      await _promptRename(
-                                                        localProvider,
-                                                        playlist,
+                                                    if (value == 'play') {
+                                                      localProvider
+                                                          .playPlaylist(
+                                                        smartId,
                                                       );
+                                                      widget.onOpenNowPlaying();
                                                     } else if (value ==
                                                         'shuffle') {
                                                       localProvider
                                                           .playPlaylist(
-                                                        playlist.id,
+                                                        smartId,
                                                         shuffle: true,
                                                       );
                                                       widget.onOpenNowPlaying();
@@ -1847,7 +1872,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                       final added =
                                                           await localProvider
                                                               .playCombinedPlaylists(
-                                                        [playlist.id],
+                                                        [smartId],
                                                         appendToCurrentQueue:
                                                             true,
                                                       );
@@ -1858,8 +1883,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                           SnackBar(
                                                             content: Text(
                                                               added > 0
-                                                                  ? '$added lagu dari "${playlist.name}" ditambahkan ke antrean.'
-                                                                  : 'Semua lagu dari "${playlist.name}" sudah ada di antrean.',
+                                                                  ? '$added lagu dari "$title" ditambahkan ke antrean.'
+                                                                  : 'Semua lagu dari "$title" sudah ada di antrean.',
                                                             ),
                                                           ),
                                                         );
@@ -1867,17 +1892,21 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                     } else if (value ==
                                                         'multi_select') {
                                                       _togglePlaylistSelection(
-                                                        playlist.id,
-                                                      );
-                                                    } else if (value ==
-                                                        'delete') {
-                                                      await _promptDelete(
-                                                        localProvider,
-                                                        playlist,
+                                                        smartId,
                                                       );
                                                     }
                                                   },
                                                   itemBuilder: (_) => const [
+                                                    PopupMenuItem(
+                                                      value: 'play',
+                                                      child: Text(
+                                                        'Putar Semua',
+                                                        style: TextStyle(
+                                                          color: _kText,
+                                                          fontSize: 13,
+                                                        ),
+                                                      ),
+                                                    ),
                                                     PopupMenuItem(
                                                       value: 'shuffle',
                                                       child: Text(
@@ -1910,27 +1939,6 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         ),
                                                       ),
                                                     ),
-                                                    PopupMenuItem(
-                                                      value: 'rename',
-                                                      child: Text(
-                                                        'Ganti Nama',
-                                                        style: TextStyle(
-                                                          color: _kText,
-                                                          fontSize: 13,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    PopupMenuItem(
-                                                      value: 'delete',
-                                                      child: Text(
-                                                        'Hapus Playlist',
-                                                        style: TextStyle(
-                                                          color:
-                                                              Color(0xFFF04438),
-                                                          fontSize: 13,
-                                                        ),
-                                                      ),
-                                                    ),
                                                   ],
                                                 ),
                                             ],
@@ -1942,66 +1950,404 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 );
                               },
                             ),
+                            Divider(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.05),
+                            ),
+                          ],
+
+                          // ===================================================
+                          // 2. BOTTOM SECTION: "Your playlists" + "+ New Playlist"
+                          // ===================================================
+                          const SizedBox(height: 14),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
+                            child: Text(
+                              'Your playlists',
+                              style: TextStyle(
+                                color: musicoletGreen,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: PressableScale(
+                              pressedScale: 0.96,
+                              child: Material(
+                                color: _kCard,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(
+                                    color: Colors.white.withValues(alpha: 0.14),
+                                    width: 0.9,
+                                  ),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  onTap: () async {
+                                    final name = await showPlaylistNameDialog(
+                                      context,
+                                      title: 'Playlist Baru',
+                                    );
+                                    if (name != null) {
+                                      await localProvider.createPlaylist(name);
+                                    }
+                                  },
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 9,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.add_rounded,
+                                          color: musicoletGreen,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'New Playlist',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          if (playlists.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 14,
+                              ),
+                              child: Text(
+                                'Belum ada playlist buatanmu. Ketuk "+ New Playlist" atau unduh Album/Playlist Spotify agar dibuat otomatis.',
+                                style: TextStyle(
+                                  color: _kMuted.withValues(alpha: 0.85),
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            )
+                          else
+                            for (int idx = 0; idx < playlists.length; idx++) ...[
+                              if (idx > 0) const SizedBox(height: 8),
+                              Builder(
+                                builder: (context) {
+                                  final playlist = playlists[idx];
+                                  final resolved =
+                                      localProvider.songsForPlaylist(playlist);
+                                  final isSelected = _selectedPlaylistIds
+                                      .contains(playlist.id);
+
+                                  return _MographSelectionCard(
+                                    isSelected: isSelected,
+                                    isSelectionMode: _isSelectionMode,
+                                    child: PressableScale(
+                                      pressedScale: 0.98,
+                                      child: Material(
+                                        color: isSelected
+                                            ? _kAccent.withValues(alpha: 0.14)
+                                            : _kCard,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          side: BorderSide(
+                                            color: isSelected
+                                                ? _kAccent.withValues(
+                                                    alpha: 0.75,
+                                                  )
+                                                : hairline,
+                                            width: isSelected ? 1.1 : 0.8,
+                                          ),
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: InkWell(
+                                          onTap: () {
+                                            if (_isSelectionMode) {
+                                              _togglePlaylistSelection(
+                                                playlist.id,
+                                              );
+                                            } else {
+                                              setState(
+                                                () => _openedPlaylistId =
+                                                    playlist.id,
+                                              );
+                                            }
+                                          },
+                                          onLongPress: () =>
+                                              _togglePlaylistSelection(
+                                            playlist.id,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(10),
+                                            child: Row(
+                                              children: [
+                                                _MographSelectCheckbox(
+                                                  isVisible: _isSelectionMode,
+                                                  isSelected: isSelected,
+                                                ),
+                                                _LocalCoverThumb(
+                                                  coverPath: localProvider
+                                                      .playlistCoverPath(
+                                                    playlist,
+                                                  ),
+                                                  size: 48,
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        playlist.name,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: TextStyle(
+                                                          color: isSelected
+                                                              ? Colors.white
+                                                              : _kText,
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 3),
+                                                      Text(
+                                                        '${resolved.length} lagu',
+                                                        style: const TextStyle(
+                                                          color: _kMuted,
+                                                          fontSize: 12,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                if (!_isSelectionMode &&
+                                                    resolved.isNotEmpty)
+                                                  IconButton(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    tooltip: 'Putar Playlist',
+                                                    onPressed: () {
+                                                      localProvider
+                                                          .playPlaylist(
+                                                        playlist.id,
+                                                      );
+                                                      widget.onOpenNowPlaying();
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .play_circle_fill_rounded,
+                                                      color: Colors.white,
+                                                      size: 27,
+                                                    ),
+                                                  ),
+                                                if (!_isSelectionMode)
+                                                  PopupMenuButton<String>(
+                                                    icon: const Icon(
+                                                      Icons.more_vert_rounded,
+                                                      size: 18,
+                                                      color: _kMuted,
+                                                    ),
+                                                    color: _kSubtle,
+                                                    onSelected: (value) async {
+                                                      if (value == 'rename') {
+                                                        await _promptRename(
+                                                          localProvider,
+                                                          playlist,
+                                                        );
+                                                      } else if (value ==
+                                                          'shuffle') {
+                                                        localProvider
+                                                            .playPlaylist(
+                                                          playlist.id,
+                                                          shuffle: true,
+                                                        );
+                                                        widget
+                                                            .onOpenNowPlaying();
+                                                      } else if (value ==
+                                                          'add_queue') {
+                                                        final added =
+                                                            await localProvider
+                                                                .playCombinedPlaylists(
+                                                          [playlist.id],
+                                                          appendToCurrentQueue:
+                                                              true,
+                                                        );
+                                                        if (context.mounted) {
+                                                          ScaffoldMessenger.of(
+                                                            context,
+                                                          ).showSnackBar(
+                                                            SnackBar(
+                                                              content: Text(
+                                                                added > 0
+                                                                    ? '$added lagu dari "${playlist.name}" ditambahkan ke antrean.'
+                                                                    : 'Semua lagu dari "${playlist.name}" sudah ada di antrean.',
+                                                              ),
+                                                            ),
+                                                          );
+                                                        }
+                                                      } else if (value ==
+                                                          'multi_select') {
+                                                        _togglePlaylistSelection(
+                                                          playlist.id,
+                                                        );
+                                                      } else if (value ==
+                                                          'delete') {
+                                                        await _promptDelete(
+                                                          localProvider,
+                                                          playlist,
+                                                        );
+                                                      }
+                                                    },
+                                                    itemBuilder: (_) => const [
+                                                      PopupMenuItem(
+                                                        value: 'shuffle',
+                                                        child: Text(
+                                                          'Acak Playlist (Shuffle)',
+                                                          style: TextStyle(
+                                                            color: _kText,
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      PopupMenuItem(
+                                                        value: 'add_queue',
+                                                        child: Text(
+                                                          'Tambahkan ke Antrean Saat Ini (+ Queue)',
+                                                          style: TextStyle(
+                                                            color: _kText,
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      PopupMenuItem(
+                                                        value: 'multi_select',
+                                                        child: Text(
+                                                          'Pilih untuk Digabung (Multi-Playlist)',
+                                                          style: TextStyle(
+                                                            color: _kAccent,
+                                                            fontSize: 13,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      PopupMenuItem(
+                                                        value: 'rename',
+                                                        child: Text(
+                                                          'Ganti Nama',
+                                                          style: TextStyle(
+                                                            color: _kText,
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      PopupMenuItem(
+                                                        value: 'delete',
+                                                        child: Text(
+                                                          'Hapus Playlist',
+                                                          style: TextStyle(
+                                                            color: Color(
+                                                              0xFFF04438,
+                                                            ),
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
 
-                if (playlists.isNotEmpty)
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 12,
-                    child: _MorphingMergeActionBar(
-                      isExpanded: _isSelectionMode,
-                      idleTooltip: 'Gabung / Pilih Banyak Playlist',
-                      label: selectedIds.isEmpty
-                          ? 'Pilih 2+ Playlist untuk digabung'
-                          : '${selectedIds.length} Playlist • $selectedSongCount lagu unik',
-                      hasSelection: selectedIds.isNotEmpty,
-                      onOpen: () => setState(() => _isSelectionMode = true),
-                      onCancel: _exitSelectionMode,
-                      onPlayCombined: () async {
-                        if (selectedIds.isEmpty) return;
-                        final targets = List<String>.from(selectedIds);
-                        _exitSelectionMode();
-                        await localProvider.playCombinedPlaylists(
-                          targets,
-                          shuffle: false,
-                        );
-                        widget.onOpenNowPlaying();
-                      },
-                      onShuffleCombined: () async {
-                        if (selectedIds.isEmpty) return;
-                        final targets = List<String>.from(selectedIds);
-                        _exitSelectionMode();
-                        await localProvider.playCombinedPlaylists(
-                          targets,
-                          shuffle: true,
-                        );
-                        widget.onOpenNowPlaying();
-                      },
-                      onAppendQueue: () async {
-                        if (selectedIds.isEmpty) return;
-                        final targets = List<String>.from(selectedIds);
-                        _exitSelectionMode();
-                        final added = await localProvider.playCombinedPlaylists(
-                          targets,
-                          appendToCurrentQueue: true,
-                        );
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                added > 0
-                                    ? '$added lagu dari ${targets.length} playlist ditambahkan ke akhir antrean.'
-                                    : 'Semua lagu dari playlist terpilih sudah ada di antrean.',
-                              ),
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 12,
+                  child: _MorphingMergeActionBar(
+                    isExpanded: _isSelectionMode,
+                    idleTooltip: 'Gabung / Pilih Banyak Playlist',
+                    label: selectedIds.isEmpty
+                        ? 'Pilih 2+ Playlist untuk digabung'
+                        : '${selectedIds.length} Playlist • $selectedSongCount lagu unik',
+                    hasSelection: selectedIds.isNotEmpty,
+                    onOpen: () => setState(() => _isSelectionMode = true),
+                    onCancel: _exitSelectionMode,
+                    onPlayCombined: () async {
+                      if (selectedIds.isEmpty) return;
+                      final targets = List<String>.from(selectedIds);
+                      _exitSelectionMode();
+                      await localProvider.playCombinedPlaylists(
+                        targets,
+                        shuffle: false,
+                      );
+                      widget.onOpenNowPlaying();
+                    },
+                    onShuffleCombined: () async {
+                      if (selectedIds.isEmpty) return;
+                      final targets = List<String>.from(selectedIds);
+                      _exitSelectionMode();
+                      await localProvider.playCombinedPlaylists(
+                        targets,
+                        shuffle: true,
+                      );
+                      widget.onOpenNowPlaying();
+                    },
+                    onAppendQueue: () async {
+                      if (selectedIds.isEmpty) return;
+                      final targets = List<String>.from(selectedIds);
+                      _exitSelectionMode();
+                      final added = await localProvider.playCombinedPlaylists(
+                        targets,
+                        appendToCurrentQueue: true,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              added > 0
+                                  ? '$added lagu dari ${targets.length} playlist ditambahkan ke akhir antrean.'
+                                  : 'Semua lagu dari playlist terpilih sudah ada di antrean.',
                             ),
-                          );
-                        }
-                      },
-                    ),
+                          ),
+                        );
+                      }
+                    },
                   ),
+                ),
               ],
             ),
           );
@@ -2325,7 +2671,7 @@ class _LocalSearchViewState extends State<LocalSearchView> {
                           final song = filtered[idx];
                           return _LocalSongTile(
                             song: song,
-                            queueContext: filtered,
+                            queueContext: localProvider.allSongs,
                             localProvider: localProvider,
                             downloaderProvider: downloaderProvider,
                             onMoveLocalSongFolder: widget.onMoveLocalSongFolder,

@@ -1,13 +1,28 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/track_metadata.dart';
 
+class BrowsedDirectoryEntry {
+  final String name;
+  final String path;
+  final int mp3Count;
+
+  const BrowsedDirectoryEntry({
+    required this.name,
+    required this.path,
+    required this.mp3Count,
+  });
+}
+
 class FolderService {
+  static const String baseStorageRoot = '/storage/emulated/0';
   static const String baseMusicRoot = '/storage/emulated/0/Music';
   static const String fallbackDownloadRoot = '/storage/emulated/0/Download';
   static const String defaultNeutralFolder = 'MusEvee';
+  static const String customFoldersFileName = 'musevee_custom_folders_v1.json';
 
   static const List<String> defaultFolders = [
     'Music Barat',
@@ -186,28 +201,218 @@ class FolderService {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     ordered.addAll(extraFolders);
 
+    // Merge user-saved custom folders (`musevee_custom_folders_v1.json`)
+    try {
+      final savedCustom = await loadCustomSavedFolders();
+      final existingLower = ordered.map((e) => e.toLowerCase()).toSet();
+      for (final custom in savedCustom) {
+        if (custom.isNotEmpty && existingLower.add(custom.toLowerCase())) {
+          ordered.add(custom);
+        }
+      }
+    } catch (_) {}
+
     return ordered.isNotEmpty ? ordered : [defaultNeutralFolder];
   }
 
-  /// Creates a new subfolder inside `/storage/emulated/0/Music/` and returns its sanitized name.
-  Future<String> createCustomFolder(String rawName) async {
+  /// Resolves a folder target (e.g. `'Music Barat'`, `'Music'`, or a custom path
+  /// `'/storage/emulated/0/...'`) to its physical directory path on Android storage.
+  String resolveFolderDirectoryPath(String folderTarget) {
+    final trimmed = folderTarget.trim().replaceAll('\\', '/');
+    if (trimmed.isEmpty) {
+      return '$baseMusicRoot/$defaultNeutralFolder';
+    }
+    var noTrailing = trimmed;
+    while (noTrailing.length > 1 && noTrailing.endsWith('/')) {
+      noTrailing = noTrailing.substring(0, noTrailing.length - 1);
+    }
+    if (noTrailing.toLowerCase() == 'music' ||
+        noTrailing.toLowerCase() == baseMusicRoot.toLowerCase()) {
+      return baseMusicRoot;
+    }
+    if (noTrailing.startsWith('/storage/')) {
+      return noTrailing;
+    }
+    if (noTrailing.contains('/')) {
+      final segments = noTrailing
+          .split('/')
+          .map(sanitizeFolderName)
+          .where((s) => s.isNotEmpty)
+          .join('/');
+      return '$baseMusicRoot/$segments';
+    }
+    return '$baseMusicRoot/${sanitizeFolderName(noTrailing)}';
+  }
+
+  /// Converts a selected directory path or name into a concise folder token
+  /// for the "Simpan ke:" chip bar.
+  String normalizePickedFolderTarget(String rawPathOrName) {
+    var cleaned = rawPathOrName.trim().replaceAll('\\', '/');
+    while (cleaned.length > 1 && cleaned.endsWith('/')) {
+      cleaned = cleaned.substring(0, cleaned.length - 1);
+    }
+    if (cleaned.isEmpty) return defaultNeutralFolder;
+    final musicPrefix = '${baseMusicRoot.toLowerCase()}/';
+    if (cleaned.toLowerCase() == baseMusicRoot.toLowerCase() ||
+        cleaned.toLowerCase() == 'music') {
+      return 'Music';
+    }
+    if (cleaned.toLowerCase().startsWith(musicPrefix)) {
+      return cleaned.substring(baseMusicRoot.length + 1).trim();
+    }
+    if (cleaned.startsWith('/storage/')) {
+      return cleaned;
+    }
+    return sanitizeFolderName(cleaned);
+  }
+
+  /// Human-friendly label for a folder chip in "Simpan ke:".
+  static String displayFolderChipLabel(String folderTarget) {
+    final trimmed = folderTarget.trim().replaceAll('\\', '/');
+    if (trimmed.toLowerCase() == 'music' ||
+        trimmed.toLowerCase() == baseMusicRoot.toLowerCase()) {
+      return 'Music (Utama)';
+    }
+    if (trimmed.toLowerCase().startsWith('${baseStorageRoot.toLowerCase()}/')) {
+      return trimmed.substring(baseStorageRoot.length + 1);
+    }
+    return trimmed;
+  }
+
+  /// Launches Android's system directory picker (`Intent.ACTION_OPEN_DOCUMENT_TREE`)
+  /// and returns the selected folder target (or `null` if cancelled).
+  Future<String?> pickSystemDirectoryTree() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      final pickedPath = await _systemChannel.invokeMethod<String>(
+        'pickDirectoryTree',
+      );
+      if (pickedPath == null || pickedPath.trim().isEmpty) return null;
+      final normalized = normalizePickedFolderTarget(pickedPath);
+      await saveCustomFolder(normalized);
+      return normalized;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Lists subdirectories inside [parentPath] (defaults to `/storage/emulated/0/Music`)
+  /// for the in-app Interactive Folder Picker / Explorer modal.
+  Future<List<BrowsedDirectoryEntry>> browseStorageDirectories(
+    String parentPath,
+  ) async {
+    if (!Platform.isAndroid) return const <BrowsedDirectoryEntry>[];
+    final entries = <BrowsedDirectoryEntry>[];
+    try {
+      final dir = Directory(parentPath);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final rawList = await dir.list(followLinks: false).toList();
+      for (final entity in rawList) {
+        if (entity is! Directory) continue;
+        final name = entity.path
+            .replaceAll('\\', '/')
+            .split('/')
+            .where((s) => s.isNotEmpty)
+            .last
+            .trim();
+        final lower = name.toLowerCase();
+        if (name.isEmpty ||
+            name.startsWith('.') ||
+            lower == 'android' ||
+            _excludedSystemFolderNames.contains(lower)) {
+          continue;
+        }
+        int mp3Count = 0;
+        try {
+          await for (final child in entity.list(followLinks: false)) {
+            if (child is File && child.path.toLowerCase().endsWith('.mp3')) {
+              mp3Count++;
+            }
+          }
+        } catch (_) {}
+        entries.add(
+          BrowsedDirectoryEntry(
+            name: name,
+            path: entity.path.replaceAll('\\', '/'),
+            mp3Count: mp3Count,
+          ),
+        );
+      }
+      entries.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    } catch (_) {}
+    return entries;
+  }
+
+  Future<List<String>> loadCustomSavedFolders() async {
+    if (!Platform.isAndroid) return const <String>[];
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final f = File(
+        '${docsDir.path}${Platform.pathSeparator}$customFoldersFileName',
+      );
+      if (!await f.exists()) return const <String>[];
+      final decoded = jsonDecode(await f.readAsString());
+      if (decoded is List) {
+        return decoded
+            .map((e) => e.toString().trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {}
+    return const <String>[];
+  }
+
+  Future<void> saveCustomFolder(String folderTarget) async {
+    if (!Platform.isAndroid) return;
+    final normalized = normalizePickedFolderTarget(folderTarget);
+    if (normalized.isEmpty) return;
+    try {
+      final current = List<String>.from(await loadCustomSavedFolders());
+      if (!current.any((f) => f.toLowerCase() == normalized.toLowerCase())) {
+        current.add(normalized);
+      }
+      final docsDir = await getApplicationDocumentsDirectory();
+      final f = File(
+        '${docsDir.path}${Platform.pathSeparator}$customFoldersFileName',
+      );
+      await f.writeAsString(jsonEncode(current), flush: true);
+    } catch (_) {}
+  }
+
+  /// Creates a new subfolder inside [parentDirPath] (defaults to `/storage/emulated/0/Music`),
+  /// persists it in `musevee_custom_folders_v1.json`, and returns its normalized target name.
+  Future<String> createCustomFolder(
+    String rawName, {
+    String? parentDirPath,
+  }) async {
     final cleaned = sanitizeFolderName(rawName);
     if (cleaned.isEmpty) {
       throw Exception('Nama folder tidak boleh kosong.');
     }
 
+    final baseDir = (parentDirPath != null && parentDirPath.trim().isNotEmpty)
+        ? parentDirPath.trim().replaceAll('\\', '/')
+        : baseMusicRoot;
+    final fullPath = '$baseDir/$cleaned';
+
     if (Platform.isAndroid) {
       try {
-        final dir = Directory('$baseMusicRoot/$cleaned');
+        final dir = Directory(fullPath);
         if (!await dir.exists()) {
           await dir.create(recursive: true);
         }
       } catch (e) {
-        debugPrint('[AUTO_E2E] Gagal membuat folder di $baseMusicRoot/$cleaned: $e');
+        debugPrint('[AUTO_E2E] Gagal membuat folder di $fullPath: $e');
       }
     }
 
-    return cleaned;
+    final normalized = normalizePickedFolderTarget(fullPath);
+    await saveCustomFolder(normalized);
+    return normalized;
   }
 
   /// Reads the last selected folder from local app storage, or returns `''` if none saved yet.
@@ -254,7 +459,7 @@ class FolderService {
 
     for (final folder in folders) {
       try {
-        final dir = Directory('$baseMusicRoot/$folder');
+        final dir = Directory(resolveFolderDirectoryPath(folder));
         if (!await dir.exists()) continue;
 
         final exactFile = File('${dir.path}/$fileName');
@@ -320,7 +525,7 @@ class FolderService {
 
     for (final folder in allFolders) {
       try {
-        final dir = Directory('$baseMusicRoot/$folder');
+        final dir = Directory(resolveFolderDirectoryPath(folder));
         if (!await dir.exists()) continue;
 
         final exactFile = File('${dir.path}/${track.sanitizedFileName}');
@@ -379,7 +584,7 @@ class FolderService {
     for (final folder in folders) {
       int count = 0;
       try {
-        final dir = Directory('$baseMusicRoot/$folder');
+        final dir = Directory(resolveFolderDirectoryPath(folder));
         if (await dir.exists()) {
           await for (final entity in dir.list(followLinks: false)) {
             if (entity is File &&
@@ -406,9 +611,9 @@ class FolderService {
       throw Exception('File asal tidak ditemukan: $currentFilePath');
     }
 
-    final cleanFolder = sanitizeFolderName(targetFolderName);
+    final cleanFolder = normalizePickedFolderTarget(targetFolderName);
     final fileName = sourceFile.path.split(Platform.pathSeparator).last;
-    final targetDir = Directory('$baseMusicRoot/$cleanFolder');
+    final targetDir = Directory(resolveFolderDirectoryPath(cleanFolder));
     if (!await targetDir.exists()) {
       await targetDir.create(recursive: true);
     }

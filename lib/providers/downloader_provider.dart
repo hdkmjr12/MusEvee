@@ -110,6 +110,7 @@ class DownloaderProvider extends ChangeNotifier {
   LyricsCandidate? get selectedLyricsCandidate => _selectedLyricsCandidate;
   bool get isRomanizing => _isRomanizing;
   RomajiService get romajiService => _romajiService;
+  FolderService get folderService => _folderService;
 
   int get activeQueueCount => _queueItems
       .where(
@@ -154,6 +155,9 @@ class DownloaderProvider extends ChangeNotifier {
 
   bool isSpotifyCollectionInput(String rawInput) =>
       _metadataService.isSpotifyCollectionInput(rawInput);
+
+  bool isYoutubeInput(String rawInput) =>
+      _metadataService.isYoutubeInput(rawInput);
 
   /// Returns the folder name if [track] already exists in one of the Music folders.
   String? duplicateFolderFor(TrackMetadata track) {
@@ -551,8 +555,32 @@ class DownloaderProvider extends ChangeNotifier {
     await _folderService.saveLastSelectedFolder(trimmed);
   }
 
-  Future<String> createAndSelectFolder(String rawName) async {
-    final created = await _folderService.createCustomFolder(rawName);
+  Future<String> selectOrAddCustomFolder(String rawPathOrName) async {
+    final normalized = _folderService.normalizePickedFolderTarget(rawPathOrName);
+    await _folderService.saveCustomFolder(normalized);
+    await _refreshFolderCountsOnly();
+    await selectFolder(normalized);
+    onFolderCreated?.call(normalized);
+    return normalized;
+  }
+
+  Future<String?> pickAndSelectSystemDirectory() async {
+    final picked = await _folderService.pickSystemDirectoryTree();
+    if (picked == null || picked.isEmpty) return null;
+    await _refreshFolderCountsOnly();
+    await selectFolder(picked);
+    onFolderCreated?.call(picked);
+    return picked;
+  }
+
+  Future<String> createAndSelectFolder(
+    String rawName, {
+    String? parentDirPath,
+  }) async {
+    final created = await _folderService.createCustomFolder(
+      rawName,
+      parentDirPath: parentDirPath,
+    );
     await _refreshFolderCountsOnly();
     await selectFolder(created);
     onFolderCreated?.call(created);
@@ -591,6 +619,8 @@ class DownloaderProvider extends ChangeNotifier {
     } else if (_metadataService.isSpotifyInput(trimmed)) {
       final extractedUrl = _metadataService.extractUrlFromSharedText(trimmed);
       await checkTrack(extractedUrl);
+    } else if (_metadataService.isYoutubeInput(trimmed)) {
+      await checkYoutubeTrack(trimmed);
     } else {
       await searchTracks(trimmed);
     }
@@ -776,6 +806,67 @@ class DownloaderProvider extends ChangeNotifier {
     try {
       final baseMetadata =
           await _metadataService.fetchTrackMetadata(spotifyUrl);
+      _trackMetadata = baseMetadata;
+
+      _setState(
+        DownloaderState.fetchingLyrics,
+        progress: 0.75,
+        message: 'Mengambil lirik...',
+      );
+
+      final lyricsResponse = await _lyricsService.fetchLyricsWithCandidates(
+        trackName: baseMetadata.title,
+        artistName: baseMetadata.artist,
+        albumName: baseMetadata.album,
+        durationSeconds: baseMetadata.durationSeconds,
+        targetFolder: _selectedFolder,
+      );
+      _lyricsCandidates = lyricsResponse.candidates;
+      _selectedLyricsCandidate = lyricsResponse.selectedCandidate;
+
+      final enrichedMetadata = baseMetadata.copyWith(
+        syncedLyrics: lyricsResponse.bestResult.syncedLyrics,
+        plainLyrics: lyricsResponse.bestResult.plainLyrics,
+      );
+      _trackMetadata = enrichedMetadata;
+      _preferSyncedLyrics = enrichedMetadata.hasSyncedLyrics;
+      await _checkDuplicatesForTracks([enrichedMetadata]);
+
+      _setState(
+        DownloaderState.readyToDownload,
+        progress: 1.0,
+        message: 'Siap disimpan ke $_selectedFolder',
+      );
+    } catch (e, s) {
+      _handleError(e, s);
+    }
+  }
+
+  /// Checks a YouTube / YouTube Music URL, resolves its metadata & lyrics, and
+  /// prepares it for download with `preferredYoutubeVideoId` pinned.
+  Future<void> checkYoutubeTrack(String youtubeUrl) async {
+    if (isBusy) return;
+
+    await stopPreviewAudio();
+    _errorMessage = null;
+    _savedFilePath = null;
+    _trackMetadata = null;
+    _currentCollection = null;
+    _youtubeCandidates = const [];
+    _selectedYoutubeCandidate = null;
+    _lyricsCandidates = const [];
+    _selectedLyricsCandidate = null;
+    _preferSyncedLyrics = true;
+
+    _setState(
+      DownloaderState.fetchingMetadata,
+      progress: 0.25,
+      message: 'Memuat info YouTube...',
+    );
+
+    try {
+      final baseMetadata =
+          await _metadataService.fetchYoutubeTrackMetadata(youtubeUrl);
       _trackMetadata = baseMetadata;
 
       _setState(

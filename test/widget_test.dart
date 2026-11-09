@@ -47,6 +47,13 @@ void main() {
     await tester.tap(find.byIcon(Icons.cloud_download_outlined).last);
     await tester.pumpAndSettle();
 
+    expect(find.text('Cari lagu atau tempel link...'), findsOneWidget);
+    expect(find.text('Judul / Artis (Romaji J-Pop)'), findsOneWidget);
+    expect(find.text('Link YouTube / YT Music'), findsOneWidget);
+    expect(
+      find.text('Link Spotify (Track, Album & Playlist)'),
+      findsOneWidget,
+    );
     expect(
       find.text(
         'MusEvee All-in-One Downloader (MP3 320kbps + USLT Lyrics)',
@@ -63,7 +70,24 @@ void main() {
   });
 
   test(
-      'True Queue-Order Shuffle advances linearly along visual queue and restores original order',
+      'Rotated Queue places selected song at #1 (index 0) and appends preceding songs at the bottom',
+      () async {
+    final provider = LocalMusicProvider();
+    addTearDown(provider.dispose);
+
+    final songs = List.generate(5, (i) => _mockSong(i + 1));
+    await provider.playSong(songs[2], queueContext: songs); // Song 3
+
+    expect(provider.currentIndex, 0);
+    expect(provider.currentSong?.title, 'Song 3');
+    expect(
+      provider.queue.map((s) => s.title).toList(),
+      ['Song 3', 'Song 4', 'Song 5', 'Song 1', 'Song 2'],
+    );
+  });
+
+  test(
+      'True Queue-Order Shuffle advances linearly along visual queue and restores rotated order',
       () async {
     final provider = LocalMusicProvider();
     addTearDown(provider.dispose);
@@ -71,8 +95,23 @@ void main() {
     final songs = List.generate(8, (i) => _mockSong(i + 1));
     await provider.playSong(songs[2], queueContext: songs);
 
-    expect(provider.currentIndex, 2);
+    const expectedRotatedOrder = <String>[
+      'Song 3',
+      'Song 4',
+      'Song 5',
+      'Song 6',
+      'Song 7',
+      'Song 8',
+      'Song 1',
+      'Song 2',
+    ];
+
+    expect(provider.currentIndex, 0);
     expect(provider.currentSong?.title, 'Song 3');
+    expect(
+      provider.queueEntries.map((e) => e.song.title).toList(),
+      expectedRotatedOrder,
+    );
 
     // Enable shuffle: active song stays at index 0, rest is shuffled physically
     provider.toggleShuffle();
@@ -96,13 +135,13 @@ void main() {
     expect(provider.currentIndex, 1);
     expect(provider.currentSong?.title, shuffledOrder[1]);
 
-    // Turning Shuffle OFF restores exact original queue order while keeping current active song
+    // Turning Shuffle OFF restores exact rotated queue order while keeping current active song
     final activeBeforeRestore = provider.currentSong!.title;
     provider.toggleShuffle();
     expect(provider.isShuffle, isFalse);
     expect(
       provider.queueEntries.map((e) => e.song.title).toList(),
-      songs.map((s) => s.title).toList(),
+      expectedRotatedOrder,
     );
     expect(provider.currentSong?.title, activeBeforeRestore);
   });
@@ -396,5 +435,99 @@ void main() {
       isTrue,
     );
     expect(localProvider.currentSong?.filePath, japan1.filePath);
+  });
+
+  testWidgets(
+      'LocalPlaylistsView renders 6 Musicolet Smart Playlists, Your playlists header, and + New Playlist button',
+      (WidgetTester tester) async {
+    final localProvider = LocalMusicProvider();
+    final downloaderProvider = DownloaderProvider();
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final song1 = _mockSong(1, folderName: 'Music Barat');
+    final song2 = _mockSong(2, folderName: 'Music Japan');
+    final song3 = _mockSong(3, folderName: 'Music Random');
+    localProvider.seedSongsForTesting([song1, song2, song3]);
+    await localProvider.toggleFavorite(song2.filePath);
+
+    // Simulate playing song1 twice and song3 once (song2 remains Not played)
+    localProvider.recordPlayForTesting(song1.filePath, playedAtMs: 1000);
+    localProvider.recordPlayForTesting(song1.filePath, playedAtMs: 2000);
+    localProvider.recordPlayForTesting(song3.filePath, playedAtMs: 3000);
+
+    expect(
+      localProvider
+          .songsForSmartPlaylist(SmartPlaylistId.allSongs)
+          .map((s) => s.title)
+          .toList(),
+      ['Song 1', 'Song 2', 'Song 3'],
+    );
+    expect(
+      localProvider
+          .songsForSmartPlaylist(SmartPlaylistId.favorites)
+          .map((s) => s.title)
+          .toList(),
+      ['Song 2'],
+    );
+    expect(
+      localProvider
+          .songsForSmartPlaylist(SmartPlaylistId.recentlyAdded)
+          .map((s) => s.title)
+          .toList(),
+      ['Song 3', 'Song 2', 'Song 1'],
+    );
+    expect(
+      localProvider
+          .songsForSmartPlaylist(SmartPlaylistId.recentlyPlayed)
+          .map((s) => s.title)
+          .toList(),
+      ['Song 3', 'Song 1'],
+    );
+    expect(
+      localProvider
+          .songsForSmartPlaylist(SmartPlaylistId.mostPlayed)
+          .map((s) => s.title)
+          .toList(),
+      ['Song 1', 'Song 3'],
+    );
+    expect(
+      localProvider
+          .songsForSmartPlaylist(SmartPlaylistId.notPlayed)
+          .map((s) => s.title)
+          .toList(),
+      ['Song 2'],
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: LocalPlaylistsView(
+              onOpenNowPlaying: () {},
+              onMoveLocalSongFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('All songs'), findsOneWidget);
+    expect(find.text('Favorites'), findsOneWidget);
+    expect(find.text('Recently added'), findsOneWidget);
+    expect(find.text('Recently played'), findsOneWidget);
+    expect(find.text('Most played'), findsOneWidget);
+    expect(find.text('Not played'), findsOneWidget);
+    expect(find.text('Your playlists'), findsOneWidget);
+    expect(find.text('New Playlist'), findsOneWidget);
   });
 }

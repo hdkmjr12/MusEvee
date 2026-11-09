@@ -83,6 +83,113 @@ class MetadataService {
     ).hasMatch(trimmed);
   }
 
+  /// Checks whether [rawInput] contains a YouTube or YouTube Music video URL.
+  bool isYoutubeInput(String rawInput) {
+    return extractYoutubeVideoId(rawInput) != null;
+  }
+
+  /// Extracts an 11-character YouTube video ID from a `youtube.com`, `youtu.be`,
+  /// or `music.youtube.com` link if present.
+  String? extractYoutubeVideoId(String rawInput) {
+    final trimmed = rawInput.trim();
+    if (trimmed.isEmpty) return null;
+    final patterns = <RegExp>[
+      RegExp(
+        r'https?://(?:www\.|m\.|music\.)?youtube\.com/watch\?[^\s]*v=([a-zA-Z0-9_-]{11})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'https?://youtu\.be/([a-zA-Z0-9_-]{11})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'https?://(?:www\.|m\.)?youtube\.com/shorts/([a-zA-Z0-9_-]{11})',
+        caseSensitive: false,
+      ),
+    ];
+    for (final rx in patterns) {
+      final m = rx.firstMatch(trimmed);
+      if (m != null && m.group(1) != null) {
+        return m.group(1);
+      }
+    }
+    return null;
+  }
+
+  /// Fetches metadata for a YouTube / YouTube Music link via YouTube oEmbed and
+  /// enriches it with Deezer/iTunes catalog metadata when available while pinning
+  /// `preferredYoutubeVideoId` to the exact linked video.
+  Future<TrackMetadata> fetchYoutubeTrackMetadata(String rawInput) async {
+    final videoId = extractYoutubeVideoId(rawInput);
+    if (videoId == null || videoId.isEmpty) {
+      throw const MetadataException('Tautan YouTube / YT Music tidak valid.');
+    }
+
+    String rawTitle = 'YouTube Track ($videoId)';
+    String rawAuthor = 'YouTube';
+    String thumbUrl = 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+
+    try {
+      final oembedResp = await _dio.get(
+        'https://www.youtube.com/oembed',
+        queryParameters: {
+          'url': 'https://www.youtube.com/watch?v=$videoId',
+          'format': 'json',
+        },
+      );
+      if (oembedResp.data is Map) {
+        final data = Map<String, dynamic>.from(oembedResp.data as Map);
+        final t = (data['title'] ?? '').toString().trim();
+        final a = (data['author_name'] ?? '').toString().trim();
+        final th = (data['thumbnail_url'] ?? '').toString().trim();
+        if (t.isNotEmpty) rawTitle = t;
+        if (a.isNotEmpty) rawAuthor = a;
+        if (th.isNotEmpty) thumbUrl = th;
+      }
+    } catch (_) {}
+
+    final cleanedAuthor = rawAuthor
+        .replaceAll(RegExp(r'\s*-\s*Topic$', caseSensitive: false), '')
+        .replaceAll(RegExp(r'VEVO$', caseSensitive: false), '')
+        .trim();
+    final cleanedTitle = rawTitle
+        .replaceAll(
+          RegExp(
+            r'\s*[\(\[](?:official\s*(?:music\s*)?video|official\s*audio|mv|music\s*video|lyrics?|hd|4k)[\)\]]',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+
+    String parsedArtist = cleanedAuthor.isNotEmpty ? cleanedAuthor : rawAuthor;
+    String parsedTitle = cleanedTitle.isNotEmpty ? cleanedTitle : rawTitle;
+    final dashIdx = parsedTitle.indexOf(' - ');
+    if (dashIdx > 0 && dashIdx + 3 < parsedTitle.length) {
+      parsedArtist = parsedTitle.substring(0, dashIdx).trim();
+      parsedTitle = parsedTitle.substring(dashIdx + 3).trim();
+    }
+
+    try {
+      final catalog = await searchMusicTracks('$parsedArtist $parsedTitle');
+      if (catalog.isNotEmpty) {
+        final best = catalog.first;
+        return best.copyWith(preferredYoutubeVideoId: videoId);
+      }
+    } catch (_) {}
+
+    return TrackMetadata(
+      spotifyUrl: 'https://www.youtube.com/watch?v=$videoId',
+      title: parsedTitle,
+      artist: parsedArtist,
+      album: 'YouTube Music',
+      releaseYear: DateTime.now().year.toString(),
+      coverUrl: thumbUrl,
+      durationSeconds: 0,
+      preferredYoutubeVideoId: videoId,
+    );
+  }
+
   /// Extracts a Spotify URL from shared text (e.g. "Listen on Spotify: https://open.spotify.com/track/...")
   /// or returns the trimmed input.
   String extractUrlFromSharedText(String rawInput) {

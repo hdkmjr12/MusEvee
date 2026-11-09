@@ -70,6 +70,69 @@ class DetectedFolderInfo {
   });
 }
 
+/// Built-in Musicolet Smart Playlist IDs displayed in the top section of
+/// `LocalPlaylistsView`.
+class SmartPlaylistId {
+  static const String allSongs = 'smart_all_songs';
+  static const String favorites = 'smart_favorites';
+  static const String recentlyAdded = 'smart_recently_added';
+  static const String recentlyPlayed = 'smart_recently_played';
+  static const String mostPlayed = 'smart_most_played';
+  static const String notPlayed = 'smart_not_played';
+
+  static const List<String> allIds = <String>[
+    allSongs,
+    favorites,
+    recentlyAdded,
+    recentlyPlayed,
+    mostPlayed,
+    notPlayed,
+  ];
+
+  static bool isSmartId(String id) => allIds.contains(id);
+
+  static String titleFor(String id) {
+    switch (id) {
+      case allSongs:
+        return 'All songs';
+      case favorites:
+        return 'Favorites';
+      case recentlyAdded:
+        return 'Recently added';
+      case recentlyPlayed:
+        return 'Recently played';
+      case mostPlayed:
+        return 'Most played';
+      case notPlayed:
+        return 'Not played';
+      default:
+        return id;
+    }
+  }
+}
+
+/// Persistent play count & last-played timestamp for a local audio track
+/// (`musevee_play_stats_v1.json`).
+class TrackPlayStat {
+  final int playCount;
+  final int lastPlayedMs;
+
+  const TrackPlayStat({
+    required this.playCount,
+    required this.lastPlayedMs,
+  });
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'playCount': playCount,
+        'lastPlayedMs': lastPlayedMs,
+      };
+
+  factory TrackPlayStat.fromJson(Map<String, dynamic> json) => TrackPlayStat(
+        playCount: (json['playCount'] as num?)?.toInt() ?? 0,
+        lastPlayedMs: (json['lastPlayedMs'] as num?)?.toInt() ?? 0,
+      );
+}
+
 class LocalMusicProvider extends ChangeNotifier {
   static const MethodChannel _systemChannel = MethodChannel(
     'com.spotmeta.downloader/system',
@@ -77,6 +140,7 @@ class LocalMusicProvider extends ChangeNotifier {
 
   static const List<double> fontSizePresets = [13.5, 15.5, 18.0, 20.5];
   static const String hiddenFoldersFileName = 'musevee_hidden_folders_v1.json';
+  static const String playStatsFileName = 'musevee_play_stats_v1.json';
 
   final FolderService _folderService;
   final TaggingService _taggingService;
@@ -108,6 +172,7 @@ class LocalMusicProvider extends ChangeNotifier {
   final List<LocalPlaylist> _playlists = [];
   final Set<String> _favoritePaths = {};
   final Set<String> _hiddenFolderPaths = {};
+  final Map<String, TrackPlayStat> _playStatsByPath = {};
   bool _onlyMusicFolders = false;
   bool _isLoadingLibrary = false;
   bool _isSyncingLibrary = false;
@@ -699,6 +764,7 @@ class LocalMusicProvider extends ChangeNotifier {
     if (!Platform.isAndroid) return;
     await _loadHiddenFolders();
     await _loadFavorites();
+    await _loadPlayStats();
     await _loadPlaylists();
     await checkPermissionsStatus();
     final hydrated = await _loadLibraryAndSessionCache();
@@ -1078,6 +1144,17 @@ class LocalMusicProvider extends ChangeNotifier {
           QueueEntry(queueId: _allocateQueueId(), song: startWithSong),
         );
         chosenIdx = 0;
+      } else if (chosenIdx > 0) {
+        // Rotate the queue so the selected song is placed at index 0 (#1 in Queue),
+        // followed by songs after it (chosenIdx + 1 .. end), and then the songs
+        // that originally preceded it (0 .. chosenIdx - 1) appended at the bottom.
+        final tail = baseEntries.sublist(chosenIdx);
+        final head = baseEntries.sublist(0, chosenIdx);
+        baseEntries
+          ..clear()
+          ..addAll(tail)
+          ..addAll(head);
+        chosenIdx = 0;
       }
     }
 
@@ -1354,16 +1431,14 @@ class LocalMusicProvider extends ChangeNotifier {
     await _startCurrentQueueTrack();
   }
 
-  /// Plays every resolvable song of playlist [playlistId] as the active Queue,
-  /// optionally starting from [startSong].
+  /// Plays every resolvable song of playlist [playlistId] (either a Smart Playlist
+  /// or a User Playlist) as the active Queue, optionally starting from [startSong].
   Future<void> playPlaylist(
     String playlistId, {
     bool shuffle = false,
     LocalSong? startSong,
   }) async {
-    final playlist = playlistById(playlistId);
-    if (playlist == null) return;
-    final songs = songsForPlaylist(playlist);
+    final songs = songsForPlaylistId(playlistId);
     if (songs.isEmpty) return;
     _setQueueFromSongs(
       songs,
@@ -1428,7 +1503,8 @@ class LocalMusicProvider extends ChangeNotifier {
     );
   }
 
-  /// Merges songs across multiple playlists ([playlistIds]), deduplicates by `filePath`,
+  /// Merges songs across multiple playlists ([playlistIds], supporting both
+  /// Smart Playlists and User Playlists), deduplicates by `filePath`,
   /// and either replaces the active Queue (with optional Fisher-Yates True Shuffle Mix
   /// across all combined tracks) or appends to the end of the current Queue.
   /// Returns the number of unique songs loaded/appended.
@@ -1445,9 +1521,7 @@ class LocalMusicProvider extends ChangeNotifier {
     for (final rawId in playlistIds) {
       final id = rawId.trim();
       if (id.isEmpty) continue;
-      final playlist = playlistById(id);
-      if (playlist == null) continue;
-      final songs = songsForPlaylist(playlist);
+      final songs = songsForPlaylistId(id);
       for (final song in songs) {
         if (seenPaths.add(song.filePath)) {
           combined.add(song);
@@ -1510,6 +1584,10 @@ class LocalMusicProvider extends ChangeNotifier {
   Future<void> _startCurrentQueueTrack({int startPositionMs = 0}) async {
     final song = currentSong;
     if (song == null) return;
+
+    if (startPositionMs == 0) {
+      _recordTrackPlayed(song.filePath);
+    }
 
     final sessionId = ++_playbackSessionId;
     _lastCompletedSessionId = -1;
@@ -2744,9 +2822,101 @@ class LocalMusicProvider extends ChangeNotifier {
   }
 
   // ===========================================================================
-  // LOCAL PLAYLISTS (`musicevee_playlists_v1.json`) & SMART DEDUPLICATION
+  // LOCAL PLAYLISTS (`musicevee_playlists_v1.json`), 6 SMART PLAYLISTS &
+  // PLAY STATS (`musevee_play_stats_v1.json`)
   // ===========================================================================
   static const String playlistsFileName = 'musicevee_playlists_v1.json';
+
+  int playCountFor(String filePath) =>
+      _playStatsByPath[filePath]?.playCount ?? 0;
+
+  int lastPlayedMsFor(String filePath) =>
+      _playStatsByPath[filePath]?.lastPlayedMs ?? 0;
+
+  void _recordTrackPlayed(String filePath, {int? playedAtMs}) {
+    if (filePath.trim().isEmpty) return;
+    final prev = _playStatsByPath[filePath];
+    final nowMs = playedAtMs ?? DateTime.now().millisecondsSinceEpoch;
+    _playStatsByPath[filePath] = TrackPlayStat(
+      playCount: (prev?.playCount ?? 0) + 1,
+      lastPlayedMs: nowMs,
+    );
+    _savePlayStats();
+  }
+
+  @visibleForTesting
+  void recordPlayForTesting(String filePath, {int? playedAtMs}) {
+    _recordTrackPlayed(filePath, playedAtMs: playedAtMs);
+    notifyListeners();
+  }
+
+  /// Resolves songs for one of the 6 Musicolet built-in Smart Playlists:
+  /// - `smart_all_songs`: All active visible songs (`_allSongs`)
+  /// - `smart_favorites`: Songs marked as Favorite (`_favoritePaths`)
+  /// - `smart_recently_added`: Sorted by `lastModifiedMs` descending
+  /// - `smart_recently_played`: Songs with `playCount > 0`, sorted by `lastPlayedMs` descending
+  /// - `smart_most_played`: Songs with `playCount > 0`, sorted by `playCount` descending
+  /// - `smart_not_played`: Songs with `playCount == 0`
+  List<LocalSong> songsForSmartPlaylist(String smartId) {
+    switch (smartId) {
+      case SmartPlaylistId.allSongs:
+        return List<LocalSong>.from(_allSongs);
+      case SmartPlaylistId.favorites:
+        return _allSongs
+            .where((s) => _favoritePaths.contains(s.filePath))
+            .toList();
+      case SmartPlaylistId.recentlyAdded:
+        final sorted = List<LocalSong>.from(_allSongs)
+          ..sort((a, b) {
+            final cmp = b.lastModifiedMs.compareTo(a.lastModifiedMs);
+            if (cmp != 0) return cmp;
+            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+          });
+        return sorted;
+      case SmartPlaylistId.recentlyPlayed:
+        final played = _allSongs
+            .where((s) => playCountFor(s.filePath) > 0)
+            .toList()
+          ..sort((a, b) {
+            final cmp =
+                lastPlayedMsFor(b.filePath).compareTo(lastPlayedMsFor(a.filePath));
+            if (cmp != 0) return cmp;
+            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+          });
+        return played;
+      case SmartPlaylistId.mostPlayed:
+        final played = _allSongs
+            .where((s) => playCountFor(s.filePath) > 0)
+            .toList()
+          ..sort((a, b) {
+            final countCmp =
+                playCountFor(b.filePath).compareTo(playCountFor(a.filePath));
+            if (countCmp != 0) return countCmp;
+            final recCmp =
+                lastPlayedMsFor(b.filePath).compareTo(lastPlayedMsFor(a.filePath));
+            if (recCmp != 0) return recCmp;
+            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+          });
+        return played;
+      case SmartPlaylistId.notPlayed:
+        return _allSongs
+            .where((s) => playCountFor(s.filePath) == 0)
+            .toList();
+      default:
+        return const <LocalSong>[];
+    }
+  }
+
+  /// Resolves songs for any playlist identifier (either a `SmartPlaylistId` or
+  /// a user-created `LocalPlaylist.id`).
+  List<LocalSong> songsForPlaylistId(String id) {
+    if (SmartPlaylistId.isSmartId(id)) {
+      return songsForSmartPlaylist(id);
+    }
+    final playlist = playlistById(id);
+    if (playlist == null) return const <LocalSong>[];
+    return songsForPlaylist(playlist);
+  }
 
   LocalPlaylist? playlistById(String id) {
     for (final p in _playlists) {
@@ -2934,6 +3104,13 @@ class LocalMusicProvider extends ChangeNotifier {
 
   Future<void> _remapPlaylistPath(String oldPath, String? newPath) async {
     if (oldPath == newPath) return;
+    final prevStat = _playStatsByPath.remove(oldPath);
+    if (prevStat != null && newPath != null && newPath.isNotEmpty) {
+      _playStatsByPath[newPath] = prevStat;
+    }
+    if (prevStat != null) {
+      await _savePlayStats();
+    }
     bool changed = false;
     for (int i = 0; i < _playlists.length; i++) {
       final paths = _playlists[i].songPaths;
@@ -2951,6 +3128,40 @@ class LocalMusicProvider extends ChangeNotifier {
       changed = true;
     }
     if (changed) await _savePlaylists();
+  }
+
+  Future<void> _loadPlayStats() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final f = File('${docs.path}/$playStatsFileName');
+      if (!await f.exists()) return;
+      final decoded = jsonDecode(await f.readAsString());
+      if (decoded is! Map) return;
+      _playStatsByPath.clear();
+      for (final entry in decoded.entries) {
+        final path = entry.key.toString();
+        final val = entry.value;
+        if (path.isNotEmpty && val is Map) {
+          _playStatsByPath[path] = TrackPlayStat.fromJson(
+            Map<String, dynamic>.from(val),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _savePlayStats() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final f = File('${docs.path}/$playStatsFileName');
+      final payload = <String, dynamic>{
+        for (final entry in _playStatsByPath.entries)
+          entry.key: entry.value.toJson(),
+      };
+      await f.writeAsString(jsonEncode(payload), flush: true);
+    } catch (_) {}
   }
 
   Future<void> _loadPlaylists() async {

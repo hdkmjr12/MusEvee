@@ -7,6 +7,7 @@ import '../models/local_song.dart';
 import '../models/track_metadata.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
+import '../services/folder_service.dart';
 import '../widgets/batch_playlist_sheet.dart';
 import '../widgets/local_library_views.dart';
 import '../widgets/musicolet_bottom_strip.dart';
@@ -215,7 +216,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     FocusScope.of(context).unfocus();
 
     final isCollection = provider.isSpotifyCollectionInput(raw);
-    final isSpotifyTrack = provider.isSpotifyTrackInput(raw) ||
+    final isDirectLink = provider.isSpotifyTrackInput(raw) ||
+        provider.isYoutubeInput(raw) ||
         raw.contains('spotify.com') ||
         raw.startsWith('spotify:track:');
 
@@ -233,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
         );
       }
-    } else if (isSpotifyTrack && provider.trackMetadata != null) {
+    } else if (isDirectLink && provider.trackMetadata != null) {
       await _openTrackPreviewSheet(provider);
     }
   }
@@ -328,88 +330,476 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _showCreateFolderDialog(DownloaderProvider provider) async {
-    final folderController = TextEditingController();
     final hairline = Colors.white.withValues(alpha: 0.09);
-    final createdName = await showDialog<String>(
+    String currentDirPath = FolderService.baseMusicRoot;
+    List<BrowsedDirectoryEntry> subDirs =
+        await provider.folderService.browseStorageDirectories(currentDirPath);
+    bool isLoadingDirs = false;
+
+    if (!mounted) return;
+
+    final pickedTarget = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: _surfaceCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: hairline, width: 0.8),
-          ),
-          title: const Text(
-            'Buat Folder Musik Baru',
-            style: TextStyle(
-              color: _textPrimary,
-              fontSize: 15.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.2,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Masukkan nama folder baru di /storage/emulated/0/Music:',
-                style: TextStyle(
-                  color: _textMuted,
-                  fontSize: 12.5,
-                  height: 1.4,
+      isScrollControlled: true,
+      backgroundColor: _surfaceCard,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            Future<void> navigateToDir(String nextPath) async {
+              setModalState(() {
+                currentDirPath = nextPath;
+                isLoadingDirs = true;
+              });
+              final loaded = await provider.folderService
+                  .browseStorageDirectories(nextPath);
+              if (ctx.mounted) {
+                setModalState(() {
+                  subDirs = loaded;
+                  isLoadingDirs = false;
+                });
+              }
+            }
+
+            Future<void> promptNewSubfolder() async {
+              final folderController = TextEditingController();
+              final rawName = await showDialog<String>(
+                context: ctx,
+                builder: (dialogCtx) {
+                  return AlertDialog(
+                    backgroundColor: _surfaceCard,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: hairline, width: 0.8),
+                    ),
+                    title: const Text(
+                      'Buat Folder Musik Baru',
+                      style: TextStyle(
+                        color: _textPrimary,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Masukkan nama folder baru di $currentDirPath:',
+                          style: const TextStyle(
+                            color: _textMuted,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: folderController,
+                          autofocus: true,
+                          style: const TextStyle(
+                            color: _textPrimary,
+                            fontSize: 14,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: 'Contoh: Music Anime / Music Indo',
+                            prefixIcon: Icon(
+                              Icons.create_new_folder_outlined,
+                              color: _primaryAccent,
+                              size: 19,
+                            ),
+                          ),
+                          onSubmitted: (v) {
+                            final t = v.trim();
+                            if (t.isNotEmpty) Navigator.of(dialogCtx).pop(t);
+                          },
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogCtx).pop(),
+                        child: const Text(
+                          'Batal',
+                          style: TextStyle(color: _textMuted),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          final text = folderController.text.trim();
+                          if (text.isNotEmpty) {
+                            Navigator.of(dialogCtx).pop(text);
+                          }
+                        },
+                        child: const Text('Buat & Pilih'),
+                      ),
+                    ],
+                  );
+                },
+              );
+              folderController.dispose();
+              if (rawName != null && rawName.isNotEmpty && ctx.mounted) {
+                final created = await provider.createAndSelectFolder(
+                  rawName,
+                  parentDirPath: currentDirPath,
+                );
+                if (ctx.mounted) {
+                  Navigator.of(ctx).pop(created);
+                }
+              }
+            }
+
+            final canGoUp =
+                currentDirPath.length > FolderService.baseStorageRoot.length &&
+                currentDirPath.startsWith(FolderService.baseStorageRoot);
+            final currentTargetLabel = FolderService.displayFolderChipLabel(
+              provider.folderService.normalizePickedFolderTarget(currentDirPath),
+            );
+
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.80,
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: folderController,
-                autofocus: true,
-                style: const TextStyle(color: _textPrimary, fontSize: 14),
-                decoration: const InputDecoration(
-                  hintText: 'Contoh: Music Anime / Music Indo',
-                  prefixIcon: Icon(
-                    Icons.create_new_folder_outlined,
-                    color: _primaryAccent,
-                    size: 19,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.folder_open_rounded,
+                            color: _primaryAccent,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Pilih atau Buat Folder Tujuan',
+                              style: TextStyle(
+                                color: _textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              foregroundColor: _primaryAccent,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: promptNewSubfolder,
+                            icon: const Icon(
+                              Icons.create_new_folder_outlined,
+                              size: 16,
+                            ),
+                            label: const Text(
+                              '+ Folder Baru',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Current Browsed Path Bar + Up Button
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _surfaceSubtle,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: hairline, width: 0.8),
+                        ),
+                        child: Row(
+                          children: [
+                            if (canGoUp)
+                              InkWell(
+                                onTap: () {
+                                  final lastSlash =
+                                      currentDirPath.lastIndexOf('/');
+                                  if (lastSlash > 0) {
+                                    final parent = currentDirPath.substring(
+                                      0,
+                                      lastSlash,
+                                    );
+                                    navigateToDir(
+                                      parent.isEmpty
+                                          ? FolderService.baseStorageRoot
+                                          : parent,
+                                    );
+                                  }
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: Icon(
+                                    Icons.arrow_upward_rounded,
+                                    size: 17,
+                                    color: _primaryAccent,
+                                  ),
+                                ),
+                              ),
+                            Expanded(
+                              child: Text(
+                                currentDirPath,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _textPrimary,
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _primaryAccent,
+                                foregroundColor: Colors.white,
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                              onPressed: () async {
+                                final chosen = await provider
+                                    .selectOrAddCustomFolder(currentDirPath);
+                                if (ctx.mounted) {
+                                  Navigator.of(ctx).pop(chosen);
+                                }
+                              },
+                              icon: const Icon(Icons.check_rounded, size: 15),
+                              label: Text(
+                                'Pilih "$currentTargetLabel"',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // System Folder Picker Option (`ACTION_OPEN_DOCUMENT_TREE`)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _textPrimary,
+                            backgroundColor: _bgCanvas,
+                            side: BorderSide(color: hairline, width: 0.8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 9,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () async {
+                            final picked =
+                                await provider.pickAndSelectSystemDirectory();
+                            if (picked != null &&
+                                picked.isNotEmpty &&
+                                ctx.mounted) {
+                              Navigator.of(ctx).pop(picked);
+                            }
+                          },
+                          icon: const Icon(
+                            Icons.folder_copy_rounded,
+                            size: 16,
+                            color: _primaryAccent,
+                          ),
+                          label: const Text(
+                            'Buka Pemilih Folder Sistem Android (Storage Explorer)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      const Text(
+                        'Subfolder di dalam direktori ini (ketuk untuk masuk, atau ketuk "Pilih"):',
+                        style: TextStyle(
+                          color: _textMuted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+
+                      Flexible(
+                        child: isLoadingDirs
+                            ? const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: _primaryAccent,
+                                  ),
+                                ),
+                              )
+                            : subDirs.isEmpty
+                                ? Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 18,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        'Belum ada subfolder di $currentDirPath.\nKamu bisa memilih direktori ini langsung atau ketuk "+ Folder Baru".',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: _textMuted,
+                                          fontSize: 12,
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    shrinkWrap: true,
+                                    itemCount: subDirs.length,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: 6),
+                                    itemBuilder: (_, idx) {
+                                      final entry = subDirs[idx];
+                                      return Material(
+                                        color: _surfaceSubtle,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          side: BorderSide(
+                                            color: hairline,
+                                            width: 0.8,
+                                          ),
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: InkWell(
+                                          onTap: () =>
+                                              navigateToDir(entry.path),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 9,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.folder_rounded,
+                                                  color: _primaryAccent,
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        entry.name,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          color: _textPrimary,
+                                                          fontSize: 13.5,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                      Text(
+                                                        '${entry.mp3Count} file MP3',
+                                                        style: const TextStyle(
+                                                          color: _textMuted,
+                                                          fontSize: 11,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                TextButton(
+                                                  style: TextButton.styleFrom(
+                                                    foregroundColor:
+                                                        _primaryAccent,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                  ),
+                                                  onPressed: () async {
+                                                    final chosen = await provider
+                                                        .selectOrAddCustomFolder(
+                                                      entry.path,
+                                                    );
+                                                    if (ctx.mounted) {
+                                                      Navigator.of(ctx)
+                                                          .pop(chosen);
+                                                    }
+                                                  },
+                                                  child: const Text(
+                                                    'Pilih',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text(
-                'Batal',
-                style: TextStyle(color: _textMuted),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final text = folderController.text.trim();
-                if (text.isNotEmpty) {
-                  Navigator.of(ctx).pop(text);
-                }
-              },
-              child: const Text('Buat'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
 
-    if (createdName != null && createdName.isNotEmpty && mounted) {
-      final result = await provider.createAndSelectFolder(createdName);
-      if (mounted) {
-        context.read<LocalMusicProvider>().registerFolder(result);
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Folder "$result" siap digunakan.'),
-          ),
-        );
-      }
+    if (pickedTarget != null && pickedTarget.isNotEmpty && mounted) {
+      context.read<LocalMusicProvider>().registerFolder(pickedTarget);
+      final label = FolderService.displayFolderChipLabel(pickedTarget);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Folder tujuan "$label" siap digunakan.'),
+        ),
+      );
     }
   }
 
@@ -1128,8 +1518,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onChanged: (_) => setState(() {}),
                         onSubmitted: (_) => _submitOmnibox(provider),
                         decoration: InputDecoration(
-                          hintText:
-                              'Cari judul lagu atau tempel link Spotify...',
+                          hintText: 'Cari lagu atau tempel link...',
                           fillColor: _surfaceSubtle,
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -1202,9 +1591,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     _buildDownloadQueueButton(provider, totalActiveCount),
                   ],
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 8),
 
-                // Target Folder Chips (`Music Barat`, `Music Japan`, `Music Random`, `+ Baru`)
+                // Supported Input Feature Badges (Search Title/Artist + Romaji, YouTube/YTM, Spotify Track/Album/Playlist)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildDownloaderCapabilityPill(
+                        icon: Icons.music_note_rounded,
+                        iconColor: _primaryAccent,
+                        label: 'Judul / Artis (Romaji J-Pop)',
+                        hairline: hairline,
+                      ),
+                      const SizedBox(width: 6),
+                      _buildDownloaderCapabilityPill(
+                        icon: Icons.play_circle_fill_rounded,
+                        iconColor: const Color(0xFFFF4444),
+                        label: 'Link YouTube / YT Music',
+                        hairline: hairline,
+                      ),
+                      const SizedBox(width: 6),
+                      _buildDownloaderCapabilityPill(
+                        icon: Icons.album_rounded,
+                        iconColor: const Color(0xFF1ED760),
+                        label: 'Link Spotify (Track, Album & Playlist)',
+                        hairline: hairline,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Target Folder Chips (`Music Barat`, `Music Japan`, `Music Random`, `+`)
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
@@ -1226,6 +1645,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       ...provider.availableFolders.map((folder) {
                         final isSelected = folder == provider.selectedFolder;
+                        final chipLabel =
+                            FolderService.displayFolderChipLabel(folder);
                         return Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
@@ -1242,7 +1663,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             label: Text(
-                              folder,
+                              chipLabel,
                               style: TextStyle(
                                 color:
                                     isSelected ? Colors.white : _textPrimary,
@@ -1257,18 +1678,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         );
                       }),
                       ActionChip(
+                        tooltip: 'Pilih atau Buat Folder Tujuan',
                         visualDensity: VisualDensity.compact,
                         backgroundColor: _surfaceCard,
                         side: BorderSide(color: hairline, width: 0.8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
+                        avatar: const Icon(
+                          Icons.create_new_folder_rounded,
+                          size: 14,
+                          color: _primaryAccent,
+                        ),
                         label: const Text(
-                          '+ Baru',
+                          '+',
                           style: TextStyle(
                             color: _primaryAccent,
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         onPressed: () => _showCreateFolderDialog(provider),
@@ -1319,6 +1746,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         },
                       )
                     : _buildDownloaderEmptyState(provider),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDownloaderCapabilityPill({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required Color hairline,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: _surfaceSubtle.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: hairline, width: 0.7),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12.5, color: iconColor),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _textMuted,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

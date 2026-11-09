@@ -6,6 +6,26 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.5] — 2026-04-20 (Context-Aware & Rotated Queue `#1`, Perombakan Halaman `Playlists` ala Musicolet dengan 6 Smart Playlists + `Your playlists`, Fix Duplikasi Aplikasi di Recent Apps `singleTask`, & Interactive Folder Explorer pada Downloader)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Perilaku Queue Baru: Context-Aware & Rotated Queue (`lib/providers/local_music_provider.dart`, `lib/widgets/local_library_views.dart`, `test/widget_test.dart`):**
+  - **Ganti Isi Queue Sesuai Konteks Asal:** Memilih lagu dari **Folder**, **Playlist** (baik Smart Playlist maupun User Playlist), atau **Search Lokal** (`localProvider.allSongs`) otomatis mengganti `queue` dengan seluruh lagu dari konteks asal tersebut.
+  - **Rotated Queue agar Lagu Terpilih Berada di Urutan `#1` (`index 0`):** Merotasi urutan daftar di `_setQueueFromSongs` sehingga lagu yang diketuk selalu ditempatkan di indeks `0` (paling atas di tab `Queue`), diikuti oleh lagu-lagu setelahnya (`chosenIdx + 1 .. akhir`), dan lagu-lagu yang tadinya berada di atasnya (`0 .. chosenIdx - 1`) dipindahkan ke bagian paling bawah antrean (serta disimpan ke `_originalQueueEntries` agar saat Shuffle dimatikan urutan terotasi tetap terjaga).
+- **Perombakan Halaman `Playlists` ala Musicolet (`lib/widgets/local_library_views.dart`, `lib/providers/local_music_provider.dart`, `android/app/src/main/kotlin/com/example/spotmeta_downloader/MainActivity.kt`):**
+  - **6 Auto-Generated Smart Playlists di Bagian Atas:** Menampilkan 6 baris kategori otomatis bergaya Musicolet (`All songs`, `Favorites`, `Recently added`, `Recently played`, `Most played`, `Not played`) lengkap dengan ikon putih bersih, jumlah lagu dinamis, tampilan *drill-down*, serta dukungan pilih-banyak (*multi-select*) untuk digabungkan bersama playlist lain.
+  - **Pelacakan Statistik Pemutaran Persisten (`musevee_play_stats_v1.json`):** Mencatat `playCount` dan `lastPlayedMs` setiap kali lagu mulai diputar di `_startCurrentQueueTrack`, menyimpannya ke `musevee_play_stats_v1.json`, memetakan ulang path saat lagu di-retag/dipindah/dihapus, serta menyinkronkannya di `syncPersistentAppState()`.
+  - **Bagian Bawah `Your playlists` + Tombol `+ New Playlist`:** Menampilkan sub-header **`Your playlists`** berwarna hijau khas Musicolet (`#4CAF50`), diikuti tombol ber-border **`+ New Playlist`**, daftar playlist buatan pengguna, dan tombol mengambang `_MorphingMergeActionBar` di kanan bawah.
+- **Fix Bug Duplikasi Aplikasi di Android Recent Apps (`android/app/src/main/AndroidManifest.xml`, `MainActivity.kt`):**
+  - Mengubah `android:launchMode="singleTop"` menjadi `android:launchMode="singleTask"` pada `MainActivity` dan menghapus `android:taskAffinity=""` sehingga membuka aplikasi dari ikon Launcher, membagikan link dari Spotify/YouTube (`Intent.ACTION_SEND`), maupun mengetuk notifikasi `MediaSession` / Live Island selalu diarahkan ke satu instance tunggal `MusEvee` melalui `onNewIntent(intent)`.
+- **Penyempurnaan UI Tab Downloader & Interactive Folder Explorer pada Tombol `+` (`lib/screens/home_screen.dart`, `lib/services/folder_service.dart`, `lib/services/tagging_service.dart`, `lib/services/metadata_service.dart`, `lib/providers/downloader_provider.dart`, `MainActivity.kt`):**
+  - **Teks Petunjuk Ringkas & 3 Badge Fitur Downloader:** Memperpendek `hintText` Omnibox menjadi `"Cari lagu atau tempel link..."` agar tidak pernah terpotong (`...`) dan menampilkan 3 pill informasi fitur di bawah kolom pencarian (`Judul / Artis (Romaji J-Pop)`, `Link YouTube / YT Music`, `Link Spotify (Track, Album & Playlist)`), disertai dukungan ekstraksi langsung tautan YouTube / YT Music (`fetchYoutubeTrackMetadata`).
+  - **Interactive Folder Picker / Storage Explorer pada Tombol `+` di "Simpan ke:":** Mengetuk chip **`+`** kini membuka modal penjelajah direktori interaktif yang memungkinkan pengguna memilih direktori `/storage/emulated/0/Music` (`Music (Utama)`) secara langsung, menelusuri subfolder di penyimpanan internal, membuat subfolder baru di lokasi mana pun, atau membuka *System Folder Picker* Android (`Intent.ACTION_OPEN_DOCUMENT_TREE`), lalu menyimpannya secara persisten di `musevee_custom_folders_v1.json`.
+- **Bump Versi & Pembaruan CI/CD (`pubspec.yaml`, `.github/workflows/build_apk.yml`):**
+  - Menaikkan versi aplikasi ke `4.5.0+10` dan memperbarui artefak serta GitHub Release otomatis menjadi `MusEvee-v4.5-arm64.apk` (`v4.5.0`).
+
+---
+
 ## [v4.4] — 2026-11-09 (6-Tab Sliding Bottom Navigation + Headerless Full-Content UI + Download Queue Modal Sheet, Smooth Relaxed Equalizer Bars, & Multi-Folder / Multi-Playlist Queue Merger via Bottom-Right FAB)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)

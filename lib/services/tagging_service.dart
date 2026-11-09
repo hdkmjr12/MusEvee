@@ -563,8 +563,11 @@ class TaggingService {
       final baseNameLower = baseName.toLowerCase();
       final targetLower = fileName.toLowerCase();
 
-      final publicDirs = [
-        '${FolderService.baseMusicRoot}/$cleanFolder',
+      final primaryTargetDir = folderSvc.resolveFolderDirectoryPath(
+        targetFolderName.trim().isNotEmpty ? targetFolderName : 'Music Barat',
+      );
+      final publicDirs = <String>[
+        primaryTargetDir,
         '${FolderService.fallbackDownloadRoot}/$cleanFolder',
       ];
 

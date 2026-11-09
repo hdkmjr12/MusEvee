@@ -64,8 +64,10 @@ class MainActivity : FlutterActivity() {
     private val reqWriteMedia = 2103
     private val reqNotificationPermission = 2104
     private val reqNotificationSettings = 2105
+    private val reqPickDirectoryTree = 2106
     private var pendingAllFilesResult: MethodChannel.Result? = null
     private var pendingNotificationResult: MethodChannel.Result? = null
+    private var pendingPickDirectoryResult: MethodChannel.Result? = null
     private var pendingDeleteResult: MethodChannel.Result? = null
     private var pendingDeletePath: String? = null
     private var pendingWriteResult: MethodChannel.Result? = null
@@ -257,6 +259,9 @@ class MainActivity : FlutterActivity() {
                 }
                 "openNotificationSettings" -> {
                     openAppNotificationSettingsNative(result)
+                }
+                "pickDirectoryTree" -> {
+                    openSystemDirectoryPickerNative(result)
                 }
                 "getPermissionsStatus" -> {
                     result.success(
@@ -2435,8 +2440,82 @@ class MainActivity : FlutterActivity() {
                 }
                 return
             }
+            reqPickDirectoryTree -> {
+                val cb = pendingPickDirectoryResult
+                pendingPickDirectoryResult = null
+                if (resultCode == Activity.RESULT_OK && data?.data != null) {
+                    val treeUri = data.data!!
+                    try {
+                        val takeFlags = data.flags and
+                            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        contentResolver.takePersistableUriPermission(treeUri, takeFlags)
+                    } catch (_: Exception) {
+                    }
+                    val resolvedPath = resolveTreeUriToFileSystemPath(treeUri)
+                    cb?.success(resolvedPath)
+                } else {
+                    cb?.success(null)
+                }
+                return
+            }
         }
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun openSystemDirectoryPickerNative(result: MethodChannel.Result) {
+        try {
+            pendingPickDirectoryResult?.success(null)
+            pendingPickDirectoryResult = result
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                )
+            }
+            startActivityForResult(intent, reqPickDirectoryTree)
+        } catch (_: Exception) {
+            pendingPickDirectoryResult = null
+            result.success(null)
+        }
+    }
+
+    private fun resolveTreeUriToFileSystemPath(treeUri: Uri): String? {
+        try {
+            val rawPath = Uri.decode(treeUri.toString())
+            val primaryMarker = "primary:"
+            val idx = rawPath.lastIndexOf(primaryMarker)
+            if (idx != -1) {
+                val rel = rawPath.substring(idx + primaryMarker.length).trim('/')
+                return if (rel.isEmpty()) {
+                    "/storage/emulated/0/Music"
+                } else {
+                    "/storage/emulated/0/$rel"
+                }
+            }
+            val treeSeg = treeUri.lastPathSegment ?: return null
+            if (treeSeg.startsWith("primary:")) {
+                val rel = treeSeg.removePrefix("primary:").trim('/')
+                return if (rel.isEmpty()) {
+                    "/storage/emulated/0/Music"
+                } else {
+                    "/storage/emulated/0/$rel"
+                }
+            }
+            if (treeSeg.contains(":")) {
+                val parts = treeSeg.split(":", limit = 2)
+                val vol = parts[0]
+                val rel = parts.getOrNull(1)?.trim('/') ?: ""
+                if (vol.equals("home", ignoreCase = true)) {
+                    return if (rel.isEmpty()) "/storage/emulated/0/Documents" else "/storage/emulated/0/Documents/$rel"
+                }
+                val candidate = if (rel.isEmpty()) "/storage/$vol" else "/storage/$vol/$rel"
+                if (File(candidate).exists()) return candidate
+            }
+        } catch (_: Exception) {
+        }
+        return null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -2452,6 +2531,7 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         pendingAllFilesResult = null
         pendingNotificationResult = null
+        pendingPickDirectoryResult = null
         pendingDeleteResult = null
         pendingDeletePath = null
         pendingWriteResult = null
@@ -2507,6 +2587,8 @@ class MainActivity : FlutterActivity() {
                 File(appFlutterDir, "musevee_player_session.json") to File(backupDir, "musevee_player_session.json"),
                 File(appFlutterDir, "musicevee_player_session.json") to File(backupDir, "musicevee_player_session.json"),
                 File(appFlutterDir, "musevee_hidden_folders_v1.json") to File(backupDir, "musevee_hidden_folders_v1.json"),
+                File(appFlutterDir, "musevee_play_stats_v1.json") to File(backupDir, "musevee_play_stats_v1.json"),
+                File(appFlutterDir, "musevee_custom_folders_v1.json") to File(backupDir, "musevee_custom_folders_v1.json"),
                 File(appFlutterDir, "last_selected_folder.txt") to File(backupDir, "last_selected_folder.txt"),
                 File(sharedPrefsDir, "FlutterSharedPreferences.xml") to File(backupDir, "FlutterSharedPreferences.xml")
             )
