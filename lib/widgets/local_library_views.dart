@@ -8,18 +8,12 @@ import '../models/local_playlist.dart';
 import '../models/local_song.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
+import '../theme/musevee_palette.dart';
 import '../utils/app_strings.dart';
 import 'pressable_scale.dart';
 import 'tag_editor_sheet.dart';
 
 // Shared Musicolet Dark Surface Palette
-const Color _kBg = Color(0xFF0E1014);
-const Color _kCard = Color(0xFF17191E);
-const Color _kSubtle = Color(0xFF22252D);
-const Color _kAccent = Color(0xFF3898EC);
-const Color _kText = Color(0xFFF2F4F7);
-const Color _kMuted = Color(0xFF98A2B3);
-const Color _kEmerald = Color(0xFF10B981);
 
 // =============================================================================
 // TAB 0: PLAYBACK QUEUE (`=♪`)
@@ -36,7 +30,7 @@ class PlaybackQueueView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = context.palette.hairline;
 
     return Consumer<LocalMusicProvider>(
       builder: (context, localProvider, _) {
@@ -44,23 +38,23 @@ class PlaybackQueueView extends StatelessWidget {
         final currentIdx = localProvider.currentIndex;
 
         return Container(
-          color: _kBg,
+          color: context.palette.bgCanvas,
           child: Column(
             children: [
               // Musicolet Queue Sub-Header
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
                 decoration: BoxDecoration(
-                  color: _kCard,
+                  color: context.palette.surfaceCard,
                   border: Border(
                     bottom: BorderSide(color: hairline, width: 0.8),
                   ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.queue_music_rounded,
-                      color: Colors.white,
+                      color: context.palette.textPrimary,
                       size: 19,
                     ),
                     const SizedBox(width: 8),
@@ -68,8 +62,8 @@ class PlaybackQueueView extends StatelessWidget {
                       entries.isEmpty
                           ? 'Now Playing Queue (0)'
                           : 'Queue (${currentIdx >= 0 ? currentIdx + 1 : 0}/${entries.length})',
-                      style: const TextStyle(
-                        color: _kText,
+                      style: TextStyle(
+                        color: context.palette.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.2,
@@ -84,12 +78,12 @@ class PlaybackQueueView extends StatelessWidget {
                         icon: Icon(
                           Icons.shuffle_rounded,
                           size: 18,
-                          color: localProvider.isShuffle ? _kAccent : _kMuted,
+                          color: localProvider.isShuffle ? context.palette.accent : context.palette.textMuted,
                         ),
                       ),
                       TextButton(
                         style: TextButton.styleFrom(
-                          foregroundColor: _kMuted,
+                          foregroundColor: context.palette.textMuted,
                           visualDensity: VisualDensity.compact,
                         ),
                         onPressed: localProvider.clearQueue,
@@ -111,26 +105,26 @@ class PlaybackQueueView extends StatelessWidget {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.queue_music_rounded,
                                 size: 42,
-                                color: _kMuted,
+                                color: context.palette.textMuted,
                               ),
                               const SizedBox(height: 10),
-                              const Text(
+                              Text(
                                 'Antrean putar masih kosong',
                                 style: TextStyle(
-                                  color: _kText,
+                                  color: context.palette.textPrimary,
                                   fontSize: 14.5,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              const Text(
+                              Text(
                                 'Pilih lagu dari Folders (📁) atau unduh lagu baru di Downloader (⬇).',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: _kMuted,
+                                  color: context.palette.textMuted,
                                   fontSize: 12.5,
                                 ),
                               ),
@@ -138,7 +132,7 @@ class PlaybackQueueView extends StatelessWidget {
                               if (localProvider.allSongs.isNotEmpty)
                                 ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: _kAccent,
+                                    backgroundColor: context.palette.accent,
                                     foregroundColor: Colors.white,
                                   ),
                                   onPressed: () {
@@ -157,7 +151,7 @@ class PlaybackQueueView extends StatelessWidget {
                               else
                                 ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: _kAccent,
+                                    backgroundColor: context.palette.accent,
                                     foregroundColor: Colors.white,
                                   ),
                                   onPressed: onNavigateToDownloader,
@@ -184,7 +178,7 @@ class PlaybackQueueView extends StatelessWidget {
                           return Material(
                             key: ValueKey(entry.queueId),
                             color: isCurrent
-                                ? _kAccent.withValues(alpha: 0.12)
+                                ? context.palette.accent.withValues(alpha: 0.12)
                                 : Colors.transparent,
                             child: InkWell(
                               onTap: () {
@@ -206,13 +200,13 @@ class PlaybackQueueView extends StatelessWidget {
                                                 isPlaying:
                                                     localProvider.isPlaying,
                                                 size: 17,
-                                                color: _kAccent,
+                                                color: context.palette.accent,
                                               ),
                                             )
                                           : Text(
                                               '${index + 1}',
-                                              style: const TextStyle(
-                                                color: _kMuted,
+                                              style: TextStyle(
+                                                color: context.palette.textMuted,
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -232,9 +226,7 @@ class PlaybackQueueView extends StatelessWidget {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: isCurrent
-                                                  ? Colors.white
-                                                  : _kText,
+                                              color: context.palette.textPrimary,
                                               fontSize: 13.5,
                                               fontWeight: isCurrent
                                                   ? FontWeight.w700
@@ -246,8 +238,8 @@ class PlaybackQueueView extends StatelessWidget {
                                             '${song.artist} • ${song.formattedDuration}',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: _kMuted,
+                                            style: TextStyle(
+                                              color: context.palette.textMuted,
                                               fontSize: 11.5,
                                             ),
                                           ),
@@ -259,20 +251,20 @@ class PlaybackQueueView extends StatelessWidget {
                                       tooltip: 'Hapus dari antrean',
                                       onPressed: () =>
                                           localProvider.removeFromQueue(index),
-                                      icon: const Icon(
+                                      icon: Icon(
                                         Icons.close_rounded,
                                         size: 17,
-                                        color: _kMuted,
+                                        color: context.palette.textMuted,
                                       ),
                                     ),
                                     ReorderableDragStartListener(
                                       index: index,
-                                      child: const Padding(
-                                        padding: EdgeInsets.all(4),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(4),
                                         child: Icon(
                                           Icons.drag_handle_rounded,
                                           size: 18,
-                                          color: _kMuted,
+                                          color: context.palette.textMuted,
                                         ),
                                       ),
                                     ),
@@ -358,7 +350,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
     BuildContext context,
     LocalMusicProvider localProvider,
   ) async {
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = context.palette.hairline;
     final initialDetected = localProvider.detectedFoldersInfo;
     final Set<String> draftHiddenPaths = <String>{
       for (final info in initialDetected)
@@ -368,7 +360,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
 
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: _kCard,
+      backgroundColor: context.palette.surfaceCard,
       isScrollControlled: true,
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -412,7 +404,9 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             height: 4,
                             margin: const EdgeInsets.only(top: 10, bottom: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white24,
+                              color: context.palette.textMuted.withValues(
+                                alpha: 0.35,
+                              ),
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
@@ -425,34 +419,34 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                 width: 34,
                                 height: 34,
                                 decoration: BoxDecoration(
-                                  color: _kSubtle,
+                                  color: context.palette.surfaceSubtle,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 alignment: Alignment.center,
-                                child: const Icon(
+                                child: Icon(
                                   Icons.tune_rounded,
-                                  color: _kAccent,
+                                  color: context.palette.accent,
                                   size: 18,
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              const Expanded(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Kelola / Sembunyikan Folder',
                                       style: TextStyle(
-                                        color: _kText,
+                                        color: context.palette.textPrimary,
                                         fontSize: 15,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    SizedBox(height: 2),
+                                    const SizedBox(height: 2),
                                     Text(
                                       'Pilih folder lalu ketuk Terapkan untuk memperbarui pustaka & antrean.',
                                       style: TextStyle(
-                                        color: _kMuted,
+                                        color: context.palette.textMuted,
                                         fontSize: 11.5,
                                       ),
                                     ),
@@ -462,7 +456,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                               if (draftHiddenCount > 0 || draftOnlyMusic)
                                 TextButton(
                                   style: TextButton.styleFrom(
-                                    foregroundColor: _kAccent,
+                                    foregroundColor: context.palette.accent,
                                     visualDensity: VisualDensity.compact,
                                   ),
                                   onPressed: () {
@@ -493,12 +487,12 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             ),
                             decoration: BoxDecoration(
                               color: draftOnlyMusic
-                                  ? _kAccent.withValues(alpha: 0.14)
-                                  : _kSubtle.withValues(alpha: 0.45),
+                                  ? context.palette.accent.withValues(alpha: 0.14)
+                                  : context.palette.surfaceSubtle.withValues(alpha: 0.45),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: draftOnlyMusic
-                                    ? _kAccent.withValues(alpha: 0.45)
+                                    ? context.palette.accent.withValues(alpha: 0.45)
                                     : hairline,
                                 width: 0.8,
                               ),
@@ -507,11 +501,11 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                               children: [
                                 Icon(
                                   Icons.filter_alt_outlined,
-                                  color: draftOnlyMusic ? _kAccent : _kMuted,
+                                  color: draftOnlyMusic ? context.palette.accent : context.palette.textMuted,
                                   size: 19,
                                 ),
                                 const SizedBox(width: 10),
-                                const Expanded(
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -519,16 +513,16 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                       Text(
                                         'Filter kata "Music"',
                                         style: TextStyle(
-                                          color: _kText,
+                                          color: context.palette.textPrimary,
                                           fontSize: 12.8,
                                           fontWeight: FontWeight.w700,
                                         ),
                                       ),
-                                      SizedBox(height: 1),
+                                      const SizedBox(height: 1),
                                       Text(
                                         'Sembunyikan otomatis folder tanpa kata "Music"',
                                         style: TextStyle(
-                                          color: _kMuted,
+                                          color: context.palette.textMuted,
                                           fontSize: 11,
                                         ),
                                       ),
@@ -540,9 +534,9 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                     'manage_folders_only_music_switch',
                                   ),
                                   value: draftOnlyMusic,
-                                  activeThumbColor: _kAccent,
+                                  activeThumbColor: context.palette.accent,
                                   activeTrackColor:
-                                      _kAccent.withValues(alpha: 0.35),
+                                      context.palette.accent.withValues(alpha: 0.35),
                                   onChanged: (onlyMusic) {
                                     setModalState(() {
                                       draftOnlyMusic = onlyMusic;
@@ -575,8 +569,8 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                           ),
                         ),
                         if (detected.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 20,
                               vertical: 32,
                             ),
@@ -584,7 +578,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                               child: Text(
                                 'Belum ada folder audio yang terdeteksi di penyimpanan.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(color: _kMuted, fontSize: 12.5),
+                                style: TextStyle(color: context.palette.textMuted, fontSize: 12.5),
                               ),
                             ),
                           )
@@ -610,13 +604,13 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: _kSubtle.withValues(
+                                    color: context.palette.surfaceSubtle.withValues(
                                       alpha: isVisible ? 0.65 : 0.3,
                                     ),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: isModifiedInDraft
-                                          ? _kAccent.withValues(alpha: 0.55)
+                                          ? context.palette.accent.withValues(alpha: 0.55)
                                           : hairline,
                                       width: isModifiedInDraft ? 1.0 : 0.8,
                                     ),
@@ -627,7 +621,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                         isVisible
                                             ? Icons.folder_rounded
                                             : Icons.folder_off_outlined,
-                                        color: isVisible ? _kAccent : _kMuted,
+                                        color: isVisible ? context.palette.accent : context.palette.textMuted,
                                         size: 21,
                                       ),
                                       const SizedBox(width: 12),
@@ -646,8 +640,8 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                         TextOverflow.ellipsis,
                                                     style: TextStyle(
                                                       color: isVisible
-                                                          ? _kText
-                                                          : _kMuted,
+                                                          ? context.palette.textPrimary
+                                                          : context.palette.textMuted,
                                                       fontSize: 13.5,
                                                       fontWeight:
                                                           FontWeight.w700,
@@ -662,7 +656,10 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                     vertical: 1.5,
                                                   ),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.black26,
+                                                    color: context
+                                                        .palette
+                                                        .bgCanvas
+                                                        .withValues(alpha: 0.7),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                       4,
@@ -670,8 +667,8 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   ),
                                                   child: Text(
                                                     '${info.songCount} lagu',
-                                                    style: const TextStyle(
-                                                      color: _kMuted,
+                                                    style: TextStyle(
+                                                      color: context.palette.textMuted,
                                                       fontSize: 10.5,
                                                       fontWeight:
                                                           FontWeight.w600,
@@ -685,8 +682,8 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                               info.folderPath,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                color: _kMuted,
+                                              style: TextStyle(
+                                                color: context.palette.textMuted,
                                                 fontSize: 11,
                                               ),
                                             ),
@@ -698,9 +695,9 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                           'folder_visibility_switch_${info.folderName}',
                                         ),
                                         value: isVisible,
-                                        activeThumbColor: _kAccent,
+                                        activeThumbColor: context.palette.accent,
                                         activeTrackColor:
-                                            _kAccent.withValues(alpha: 0.35),
+                                            context.palette.accent.withValues(alpha: 0.35),
                                         onChanged: (showFolder) {
                                           setModalState(() {
                                             if (showFolder) {
@@ -734,7 +731,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                       'manage_folders_cancel_button',
                                     ),
                                     style: OutlinedButton.styleFrom(
-                                      foregroundColor: _kText,
+                                      foregroundColor: context.palette.textPrimary,
                                       side: BorderSide(
                                         color: hairline,
                                         width: 0.9,
@@ -785,11 +782,11 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                       ),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: hasDraftChanges
-                                            ? _kAccent
-                                            : _kSubtle,
+                                            ? context.palette.accent
+                                            : context.palette.surfaceSubtle,
                                         foregroundColor: hasDraftChanges
                                             ? Colors.white
-                                            : _kText,
+                                            : context.palette.textPrimary,
                                         elevation: hasDraftChanges ? 4 : 0,
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 11,
@@ -799,7 +796,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                               BorderRadius.circular(8),
                                           side: BorderSide(
                                             color: hasDraftChanges
-                                                ? _kAccent
+                                                ? context.palette.accent
                                                 : hairline,
                                             width: 0.9,
                                           ),
@@ -873,7 +870,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
 
   @override
   Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = context.palette.hairline;
 
     return Consumer2<LocalMusicProvider, DownloaderProvider>(
       builder: (context, localProvider, downloaderProvider, _) {
@@ -932,7 +929,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
             _countUniqueSongsForFolders(folderMap, selectedList);
 
         return Container(
-          color: _kBg,
+          color: context.palette.bgCanvas,
           child: Stack(
             children: [
               Column(
@@ -941,7 +938,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                   Container(
                     padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
                     decoration: BoxDecoration(
-                      color: _kCard,
+                      color: context.palette.surfaceCard,
                       border: Border(
                         bottom: BorderSide(color: hairline, width: 0.8),
                       ),
@@ -952,7 +949,9 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                           _isSelectionMode
                               ? Icons.library_add_check_rounded
                               : Icons.folder_rounded,
-                          color: _isSelectionMode ? _kAccent : Colors.white,
+                          color: _isSelectionMode
+                              ? context.palette.accent
+                              : context.palette.textPrimary,
                           size: 19,
                         ),
                         const SizedBox(width: 8),
@@ -963,8 +962,8 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                 : 'Folders (${folderNames.length})',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _kText,
+                            style: TextStyle(
+                              color: context.palette.textPrimary,
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
                             ),
@@ -973,7 +972,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                         if (_isSelectionMode && folderNames.length > 1)
                           TextButton(
                             style: TextButton.styleFrom(
-                              foregroundColor: _kAccent,
+                              foregroundColor: context.palette.accent,
                               visualDensity: VisualDensity.compact,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 6),
@@ -1001,7 +1000,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                         TextButton.icon(
                           style: TextButton.styleFrom(
                             foregroundColor:
-                                hiddenCount > 0 ? _kAccent : _kText,
+                                hiddenCount > 0 ? context.palette.accent : context.palette.textPrimary,
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                           ),
@@ -1031,10 +1030,10 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             visualDensity: VisualDensity.compact,
                             tooltip: AppStrings.localSearchShortcutTooltip,
                             onPressed: widget.onOpenAllSongsSearch,
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.search_rounded,
                               size: 19,
-                              color: _kText,
+                              color: context.palette.textPrimary,
                             ),
                           ),
                         if (_isSelectionMode)
@@ -1042,10 +1041,10 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             visualDensity: VisualDensity.compact,
                             tooltip: 'Batal Pilih',
                             onPressed: _exitSelectionMode,
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.close_rounded,
                               size: 18,
-                              color: _kMuted,
+                              color: context.palette.textMuted,
                             ),
                           ),
                       ],
@@ -1061,10 +1060,10 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.folder_open_rounded,
                                     size: 42,
-                                    color: _kMuted,
+                                    color: context.palette.textMuted,
                                   ),
                                   const SizedBox(height: 10),
                                   Text(
@@ -1072,18 +1071,18 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                         ? 'Semua folder sedang disembunyikan ($hiddenCount folder)'
                                         : 'Belum ada folder berisi lagu yang terdeteksi',
                                     textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: _kText,
+                                    style: TextStyle(
+                                      color: context.palette.textPrimary,
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
-                                  const Text(
+                                  Text(
                                     'Unduh lagu lewat tab Downloader atau pindai ulang penyimpanan perangkat Anda.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      color: _kMuted,
+                                      color: context.palette.textMuted,
                                       fontSize: 12,
                                     ),
                                   ),
@@ -1091,9 +1090,9 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                     const SizedBox(height: 12),
                                     OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
-                                        foregroundColor: _kAccent,
-                                        side: const BorderSide(
-                                          color: _kAccent,
+                                        foregroundColor: context.palette.accent,
+                                        side: BorderSide(
+                                          color: context.palette.accent,
                                           width: 0.9,
                                         ),
                                       ),
@@ -1138,13 +1137,13 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                 isSelectionMode: _isSelectionMode,
                                 child: Material(
                                   color: isSelected
-                                      ? _kAccent.withValues(alpha: 0.14)
-                                      : _kCard,
+                                      ? context.palette.accent.withValues(alpha: 0.14)
+                                      : context.palette.surfaceCard,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     side: BorderSide(
                                       color: isSelected
-                                          ? _kAccent.withValues(alpha: 0.75)
+                                          ? context.palette.accent.withValues(alpha: 0.75)
                                           : hairline,
                                       width: isSelected ? 1.1 : 0.8,
                                     ),
@@ -1176,16 +1175,16 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                             height: 42,
                                             decoration: BoxDecoration(
                                               color: isSelected
-                                                  ? _kAccent
+                                                  ? context.palette.accent
                                                       .withValues(alpha: 0.22)
-                                                  : _kSubtle,
+                                                  : context.palette.surfaceSubtle,
                                               borderRadius:
                                                   BorderRadius.circular(6),
                                             ),
                                             alignment: Alignment.center,
-                                            child: const Icon(
+                                            child: Icon(
                                               Icons.folder_rounded,
-                                              color: _kAccent,
+                                              color: context.palette.accent,
                                               size: 22,
                                             ),
                                           ),
@@ -1201,9 +1200,9 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
-                                                    color: isSelected
-                                                        ? Colors.white
-                                                        : _kText,
+                                                    color: context
+                                                        .palette
+                                                        .textPrimary,
                                                     fontSize: 14.5,
                                                     fontWeight: FontWeight.w700,
                                                   ),
@@ -1214,8 +1213,8 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: _kMuted,
+                                                  style: TextStyle(
+                                                    color: context.palette.textMuted,
                                                     fontSize: 11.5,
                                                   ),
                                                 ),
@@ -1233,19 +1232,20 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                     .playFolder(folder);
                                                 widget.onOpenNowPlaying();
                                               },
-                                              icon: const Icon(
+                                              icon: Icon(
                                                 Icons.play_circle_fill_rounded,
-                                                color: Colors.white,
+                                                color:
+                                                    context.palette.textPrimary,
                                                 size: 27,
                                               ),
                                             ),
                                             PopupMenuButton<String>(
-                                              icon: const Icon(
+                                              icon: Icon(
                                                 Icons.more_vert_rounded,
                                                 size: 18,
-                                                color: _kMuted,
+                                                color: context.palette.textMuted,
                                               ),
-                                              color: _kSubtle,
+                                              color: context.palette.surfaceSubtle,
                                               onSelected: (value) async {
                                                 if (value == 'shuffle') {
                                                   localProvider.playFolder(
@@ -1299,13 +1299,13 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   }
                                                 }
                                               },
-                                              itemBuilder: (_) => const [
+                                              itemBuilder: (_) => [
                                                 PopupMenuItem(
                                                   value: 'shuffle',
                                                   child: Text(
                                                     'Acak Folder (Shuffle)',
                                                     style: TextStyle(
-                                                      color: _kText,
+                                                      color: context.palette.textPrimary,
                                                       fontSize: 13,
                                                     ),
                                                   ),
@@ -1315,7 +1315,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   child: Text(
                                                     'Tambahkan ke Antrean Saat Ini (+ Queue)',
                                                     style: TextStyle(
-                                                      color: _kText,
+                                                      color: context.palette.textPrimary,
                                                       fontSize: 13,
                                                     ),
                                                   ),
@@ -1325,7 +1325,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   child: Text(
                                                     'Pilih untuk Digabung (Multi-Folder)',
                                                     style: TextStyle(
-                                                      color: _kAccent,
+                                                      color: context.palette.accent,
                                                       fontSize: 13,
                                                       fontWeight:
                                                           FontWeight.w600,
@@ -1337,7 +1337,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                                                   child: Text(
                                                     'Sembunyikan Folder Ini',
                                                     style: TextStyle(
-                                                      color: _kMuted,
+                                                      color: context.palette.textMuted,
                                                       fontSize: 13,
                                                     ),
                                                   ),
@@ -1516,7 +1516,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       decoration: BoxDecoration(
-        color: _kCard,
+        color: context.palette.surfaceCard,
         border: Border(
           bottom: BorderSide(color: hairline, width: 0.8),
         ),
@@ -1529,28 +1529,28 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               controller: _allSongsSearchController,
               focusNode: _allSongsSearchFocusNode,
               autofocus: _shouldAutoFocusAllSongsSearch,
-              style: const TextStyle(color: _kText, fontSize: 13.5),
+              style: TextStyle(color: context.palette.textPrimary, fontSize: 13.5),
               onChanged: localProvider.setLocalSearchQuery,
               decoration: InputDecoration(
                 hintText: AppStrings.localSearchHint,
-                hintStyle: const TextStyle(color: _kMuted, fontSize: 13),
+                hintStyle: TextStyle(color: context.palette.textMuted, fontSize: 13),
                 filled: true,
-                fillColor: _kSubtle,
+                fillColor: context.palette.surfaceSubtle,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 10,
                 ),
-                prefixIcon: const Icon(
+                prefixIcon: Icon(
                   Icons.search_rounded,
-                  color: _kMuted,
+                  color: context.palette.textMuted,
                   size: 19,
                 ),
                 suffixIcon: localProvider.localSearchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.close_rounded,
                           size: 17,
-                          color: _kMuted,
+                          color: context.palette.textMuted,
                         ),
                         onPressed: () {
                           _allSongsSearchController.clear();
@@ -1568,8 +1568,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(
-                    color: _kAccent,
+                  borderSide: BorderSide(
+                    color: context.palette.accent,
                     width: 1.2,
                   ),
                 ),
@@ -1581,7 +1581,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
             selected: localProvider.filterFavoritesOnly,
             showCheckmark: false,
             tooltip: AppStrings.filterFavoritesTooltip,
-            backgroundColor: _kSubtle,
+            backgroundColor: context.palette.surfaceSubtle,
             selectedColor: const Color(0xFFFF5A6E).withValues(alpha: 0.20),
             side: BorderSide(
               color: localProvider.filterFavoritesOnly
@@ -1596,7 +1596,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               size: 16,
               color: localProvider.filterFavoritesOnly
                   ? const Color(0xFFFF5A6E)
-                  : _kMuted,
+                  : context.palette.textMuted,
             ),
             onSelected: (_) => localProvider.toggleFilterFavoritesOnly(),
           ),
@@ -1684,27 +1684,27 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _kCard,
-        title: const Text(
+        backgroundColor: context.palette.surfaceCard,
+        title: Text(
           'Hapus Playlist?',
           style: TextStyle(
-            color: _kText,
+            color: context.palette.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w700,
           ),
         ),
         content: Text(
           'Playlist "${playlist.name}" akan dihapus. File lagu di HP tetap aman.',
-          style: const TextStyle(color: Color(0xFFD0D5DD), fontSize: 13),
+          style: TextStyle(color: context.palette.textMuted, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Batal', style: TextStyle(color: _kMuted)),
+            child: Text('Batal', style: TextStyle(color: context.palette.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF04438),
+              backgroundColor: MusEveePalette.error,
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -1724,7 +1724,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
 
   @override
   Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = context.palette.hairline;
 
     return Consumer2<LocalMusicProvider, DownloaderProvider>(
       builder: (context, localProvider, downloaderProvider, _) {
@@ -1887,7 +1887,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
           const musicoletGreen = Color(0xFF4CAF50);
           body = Container(
             key: const ValueKey('pl_list'),
-            color: _kBg,
+            color: context.palette.bgCanvas,
             child: Stack(
               children: [
                 Column(
@@ -1895,7 +1895,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                     Container(
                       padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
                       decoration: BoxDecoration(
-                        color: _kCard,
+                        color: context.palette.surfaceCard,
                         border: Border(
                           bottom: BorderSide(color: hairline, width: 0.8),
                         ),
@@ -1906,7 +1906,9 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                             _isSelectionMode
                                 ? Icons.library_add_check_rounded
                                 : Icons.library_music_rounded,
-                            color: _isSelectionMode ? _kAccent : Colors.white,
+                            color: _isSelectionMode
+                                ? context.palette.accent
+                                : context.palette.textPrimary,
                             size: 19,
                           ),
                           const SizedBox(width: 8),
@@ -1917,8 +1919,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                   : AppStrings.tabPlaylistsTooltip,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _kText,
+                              style: TextStyle(
+                                color: context.palette.textPrimary,
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -1927,7 +1929,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                           if (_isSelectionMode) ...[
                             TextButton(
                               style: TextButton.styleFrom(
-                                foregroundColor: _kAccent,
+                                foregroundColor: context.palette.accent,
                                 visualDensity: VisualDensity.compact,
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 6),
@@ -1956,10 +1958,10 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                               visualDensity: VisualDensity.compact,
                               tooltip: 'Batal Pilih',
                               onPressed: _exitSelectionMode,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.close_rounded,
                                 size: 18,
-                                color: _kMuted,
+                                color: context.palette.textMuted,
                               ),
                             ),
                           ] else
@@ -1976,10 +1978,10 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                   _openAllSongsAndFocusSearch();
                                 }
                               },
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.search_rounded,
                                 size: 19,
-                                color: _kText,
+                                color: context.palette.textPrimary,
                               ),
                             ),
                         ],
@@ -2045,7 +2047,9 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                   children: [
                                                     Icon(
                                                       icon,
-                                                      color: Colors.white,
+                                                      color: context
+                                                          .palette
+                                                          .textPrimary,
                                                       size: 23,
                                                     ),
                                                     const SizedBox(width: 16),
@@ -2055,8 +2059,10 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         maxLines: 1,
                                                         overflow: TextOverflow
                                                             .ellipsis,
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
+                                                        style: TextStyle(
+                                                          color: context
+                                                              .palette
+                                                              .textPrimary,
                                                           fontSize: 15,
                                                           fontWeight:
                                                               FontWeight.w500,
@@ -2065,20 +2071,20 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                     ),
                                                     Text(
                                                       '${songs.length}',
-                                                      style: const TextStyle(
-                                                        color: _kMuted,
+                                                      style: TextStyle(
+                                                        color: context.palette.textMuted,
                                                         fontSize: 12.5,
                                                         fontWeight:
                                                             FontWeight.w600,
                                                       ),
                                                     ),
                                                     PopupMenuButton<String>(
-                                                      icon: const Icon(
+                                                      icon: Icon(
                                                         Icons.more_vert_rounded,
                                                         size: 18,
-                                                        color: _kMuted,
+                                                        color: context.palette.textMuted,
                                                       ),
-                                                      color: _kSubtle,
+                                                      color: context.palette.surfaceSubtle,
                                                       onSelected:
                                                           (value) async {
                                                         if (value == 'play') {
@@ -2123,13 +2129,13 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         }
                                                       },
                                                       itemBuilder: (_) =>
-                                                          const [
+                                                          [
                                                         PopupMenuItem(
                                                           value: 'play',
                                                           child: Text(
                                                             'Putar Semua',
                                                             style: TextStyle(
-                                                              color: _kText,
+                                                              color: context.palette.textPrimary,
                                                               fontSize: 13,
                                                             ),
                                                           ),
@@ -2139,7 +2145,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                           child: Text(
                                                             'Acak Playlist (Shuffle)',
                                                             style: TextStyle(
-                                                              color: _kText,
+                                                              color: context.palette.textPrimary,
                                                               fontSize: 13,
                                                             ),
                                                           ),
@@ -2149,7 +2155,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                           child: Text(
                                                             'Tambahkan ke Antrean Saat Ini (+ Queue)',
                                                             style: TextStyle(
-                                                              color: _kText,
+                                                              color: context.palette.textPrimary,
                                                               fontSize: 13,
                                                             ),
                                                           ),
@@ -2166,9 +2172,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                     ),
                                     Divider(
                                       height: 1,
-                                      color: Colors.white.withValues(
-                                        alpha: 0.05,
-                                      ),
+                                      color: hairline,
                                     ),
                                   ],
                                 ],
@@ -2201,11 +2205,11 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                             child: PressableScale(
                               pressedScale: 0.96,
                               child: Material(
-                                color: _kCard,
+                                color: context.palette.surfaceCard,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                   side: BorderSide(
-                                    color: Colors.white.withValues(alpha: 0.14),
+                                    color: hairline,
                                     width: 0.9,
                                   ),
                                 ),
@@ -2236,8 +2240,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                         const SizedBox(width: 8),
                                         Text(
                                           AppStrings.newPlaylist,
-                                          style: const TextStyle(
-                                            color: Colors.white,
+                                          style: TextStyle(
+                                            color: context.palette.textPrimary,
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -2260,7 +2264,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                               child: Text(
                                 AppStrings.noUserPlaylistsHint,
                                 style: TextStyle(
-                                  color: _kMuted.withValues(alpha: 0.85),
+                                  color: context.palette.textMuted.withValues(alpha: 0.85),
                                   fontSize: 12.5,
                                 ),
                               ),
@@ -2283,14 +2287,14 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                       pressedScale: 0.98,
                                       child: Material(
                                         color: isSelected
-                                            ? _kAccent.withValues(alpha: 0.14)
-                                            : _kCard,
+                                            ? context.palette.accent.withValues(alpha: 0.14)
+                                            : context.palette.surfaceCard,
                                         shape: RoundedRectangleBorder(
                                           borderRadius:
                                               BorderRadius.circular(8),
                                           side: BorderSide(
                                             color: isSelected
-                                                ? _kAccent.withValues(
+                                                ? context.palette.accent.withValues(
                                                     alpha: 0.75,
                                                   )
                                                 : hairline,
@@ -2343,9 +2347,9 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         overflow: TextOverflow
                                                             .ellipsis,
                                                         style: TextStyle(
-                                                          color: isSelected
-                                                              ? Colors.white
-                                                              : _kText,
+                                                          color: context
+                                                              .palette
+                                                              .textPrimary,
                                                           fontSize: 14,
                                                           fontWeight:
                                                               FontWeight.w700,
@@ -2354,8 +2358,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                       const SizedBox(height: 3),
                                                       Text(
                                                         '${resolved.length} lagu',
-                                                        style: const TextStyle(
-                                                          color: _kMuted,
+                                                        style: TextStyle(
+                                                          color: context.palette.textMuted,
                                                           fontSize: 12,
                                                         ),
                                                       ),
@@ -2375,21 +2379,23 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                       );
                                                       widget.onOpenNowPlaying();
                                                     },
-                                                    icon: const Icon(
+                                                    icon: Icon(
                                                       Icons
                                                           .play_circle_fill_rounded,
-                                                      color: Colors.white,
+                                                      color: context
+                                                          .palette
+                                                          .textPrimary,
                                                       size: 27,
                                                     ),
                                                   ),
                                                 if (!_isSelectionMode)
                                                   PopupMenuButton<String>(
-                                                    icon: const Icon(
+                                                    icon: Icon(
                                                       Icons.more_vert_rounded,
                                                       size: 18,
-                                                      color: _kMuted,
+                                                      color: context.palette.textMuted,
                                                     ),
-                                                    color: _kSubtle,
+                                                    color: context.palette.surfaceSubtle,
                                                     onSelected: (value) async {
                                                       if (value == 'rename') {
                                                         await _promptRename(
@@ -2440,13 +2446,13 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         );
                                                       }
                                                     },
-                                                    itemBuilder: (_) => const [
+                                                    itemBuilder: (_) => [
                                                       PopupMenuItem(
                                                         value: 'shuffle',
                                                         child: Text(
                                                           'Acak Playlist (Shuffle)',
                                                           style: TextStyle(
-                                                            color: _kText,
+                                                            color: context.palette.textPrimary,
                                                             fontSize: 13,
                                                           ),
                                                         ),
@@ -2456,7 +2462,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         child: Text(
                                                           'Tambahkan ke Antrean Saat Ini (+ Queue)',
                                                           style: TextStyle(
-                                                            color: _kText,
+                                                            color: context.palette.textPrimary,
                                                             fontSize: 13,
                                                           ),
                                                         ),
@@ -2466,7 +2472,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         child: Text(
                                                           'Pilih untuk Digabung (Multi-Playlist)',
                                                           style: TextStyle(
-                                                            color: _kAccent,
+                                                            color: context.palette.accent,
                                                             fontSize: 13,
                                                             fontWeight:
                                                                 FontWeight.w600,
@@ -2478,12 +2484,12 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                                         child: Text(
                                                           'Ganti Nama',
                                                           style: TextStyle(
-                                                            color: _kText,
+                                                            color: context.palette.textPrimary,
                                                             fontSize: 13,
                                                           ),
                                                         ),
                                                       ),
-                                                      PopupMenuItem(
+                                                      const PopupMenuItem(
                                                         value: 'delete',
                                                         child: Text(
                                                           'Hapus Playlist',
@@ -2595,11 +2601,11 @@ Future<String?> showPlaylistNameDialog(
   final result = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      backgroundColor: _kCard,
+      backgroundColor: context.palette.surfaceCard,
       title: Text(
         title,
-        style: const TextStyle(
-          color: _kText,
+        style: TextStyle(
+          color: context.palette.textPrimary,
           fontSize: 16,
           fontWeight: FontWeight.w700,
         ),
@@ -2607,12 +2613,12 @@ Future<String?> showPlaylistNameDialog(
       content: TextField(
         controller: controller,
         autofocus: true,
-        style: const TextStyle(color: _kText, fontSize: 14),
+        style: TextStyle(color: context.palette.textPrimary, fontSize: 14),
         decoration: InputDecoration(
           hintText: 'Nama playlist',
-          hintStyle: const TextStyle(color: _kMuted),
+          hintStyle: TextStyle(color: context.palette.textMuted),
           filled: true,
-          fillColor: _kSubtle,
+          fillColor: context.palette.surfaceSubtle,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(6),
             borderSide: BorderSide.none,
@@ -2623,11 +2629,11 @@ Future<String?> showPlaylistNameDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('Batal', style: TextStyle(color: _kMuted)),
+          child: Text('Batal', style: TextStyle(color: context.palette.textMuted)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: _kAccent,
+            backgroundColor: context.palette.accent,
             foregroundColor: Colors.white,
           ),
           onPressed: () => Navigator.of(ctx).pop(controller.text),
@@ -2636,7 +2642,6 @@ Future<String?> showPlaylistNameDialog(
       ],
     ),
   );
-  controller.dispose();
   final trimmed = result?.trim() ?? '';
   return trimmed.isEmpty ? null : trimmed;
 }
@@ -2650,7 +2655,7 @@ Future<void> showAddToPlaylistSheet(
   final messenger = ScaffoldMessenger.maybeOf(context);
   final selected = await showModalBottomSheet<String>(
     context: context,
-    backgroundColor: _kCard,
+    backgroundColor: context.palette.surfaceCard,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -2671,22 +2676,22 @@ Future<void> showAddToPlaylistSheet(
                   'Tambah "${song.title}" ke Playlist',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _kText,
+                  style: TextStyle(
+                    color: context.palette.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.playlist_add_rounded, color: _kAccent),
-                title: const Text(
+                leading: Icon(Icons.playlist_add_rounded, color: context.palette.accent),
+                title: Text(
                   'Playlist Baru…',
-                  style: TextStyle(color: _kAccent, fontWeight: FontWeight.w700),
+                  style: TextStyle(color: context.palette.accent, fontWeight: FontWeight.w700),
                 ),
                 onTap: () => Navigator.of(ctx).pop('__new__'),
               ),
-              Divider(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              Divider(height: 1, color: context.palette.hairline),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
@@ -2698,16 +2703,16 @@ Future<void> showAddToPlaylistSheet(
                               ? Icons.check_circle_rounded
                               : Icons.queue_music_rounded,
                           color: p.songPaths.contains(song.filePath)
-                              ? _kEmerald
-                              : _kMuted,
+                              ? MusEveePalette.emerald
+                              : context.palette.textMuted,
                         ),
                         title: Text(
                           p.name,
-                          style: const TextStyle(color: _kText, fontSize: 14),
+                          style: TextStyle(color: context.palette.textPrimary, fontSize: 14),
                         ),
                         subtitle: Text(
                           '${p.songCount} lagu',
-                          style: const TextStyle(color: _kMuted, fontSize: 11.5),
+                          style: TextStyle(color: context.palette.textMuted, fontSize: 11.5),
                         ),
                         onTap: () => Navigator.of(ctx).pop(p.id),
                       ),
@@ -2767,16 +2772,16 @@ Widget _buildSongDrillDownView({
   String emptyMessage = 'Folder ini belum berisi file MP3.',
   Future<void> Function(LocalSong song)? onRemoveFromPlaylist,
 }) {
-  final hairline = Colors.white.withValues(alpha: 0.08);
+  final hairline = context.palette.hairline;
 
   return Container(
-    color: _kBg,
+    color: context.palette.bgCanvas,
     child: Column(
       children: [
         Container(
           padding: const EdgeInsets.fromLTRB(6, 8, 10, 8),
           decoration: BoxDecoration(
-            color: _kCard,
+            color: context.palette.surfaceCard,
             border: Border(bottom: BorderSide(color: hairline, width: 0.8)),
           ),
           child: Row(
@@ -2784,9 +2789,9 @@ Widget _buildSongDrillDownView({
               IconButton(
                 visualDensity: VisualDensity.compact,
                 onPressed: onBack,
-                icon: const Icon(
+                icon: Icon(
                   Icons.arrow_back_rounded,
-                  color: Colors.white,
+                  color: context.palette.textPrimary,
                   size: 20,
                 ),
               ),
@@ -2799,8 +2804,8 @@ Widget _buildSongDrillDownView({
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _kText,
+                      style: TextStyle(
+                        color: context.palette.textPrimary,
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -2809,7 +2814,7 @@ Widget _buildSongDrillDownView({
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _kMuted, fontSize: 11.5),
+                      style: TextStyle(color: context.palette.textMuted, fontSize: 11.5),
                     ),
                   ],
                 ),
@@ -2820,9 +2825,9 @@ Widget _buildSongDrillDownView({
                     visualDensity: VisualDensity.compact,
                     tooltip: 'Tambahkan Semua ke Antrean (+ Queue)',
                     onPressed: onAddAllToQueue,
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.playlist_add_rounded,
-                      color: Colors.white70,
+                      color: context.palette.textMuted,
                       size: 20,
                     ),
                   ),
@@ -2830,9 +2835,9 @@ Widget _buildSongDrillDownView({
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Acak Semua',
                   onPressed: onShuffleAll,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.shuffle_rounded,
-                    color: Colors.white70,
+                    color: context.palette.textMuted,
                     size: 19,
                   ),
                 ),
@@ -2840,9 +2845,9 @@ Widget _buildSongDrillDownView({
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Putar Semua',
                   onPressed: onPlayAll,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.play_circle_fill_rounded,
-                    color: _kAccent,
+                    color: context.palette.accent,
                     size: 26,
                   ),
                 ),
@@ -2903,14 +2908,14 @@ class _LocalSongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCurrent = localProvider.currentSong?.filePath == song.filePath;
-    final hairline = Colors.white.withValues(alpha: 0.07);
+    final hairline = context.palette.hairline;
 
     return Material(
-      color: isCurrent ? _kAccent.withValues(alpha: 0.14) : _kCard,
+      color: isCurrent ? context.palette.accent.withValues(alpha: 0.14) : context.palette.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(
-          color: isCurrent ? _kAccent.withValues(alpha: 0.45) : hairline,
+          color: isCurrent ? context.palette.accent.withValues(alpha: 0.45) : hairline,
           width: 0.8,
         ),
       ),
@@ -2936,7 +2941,7 @@ class _LocalSongTile extends StatelessWidget {
                           AnimatedEqualizerIcon(
                             isPlaying: localProvider.isPlaying,
                             size: 15,
-                            color: _kAccent,
+                            color: context.palette.accent,
                           ),
                           const SizedBox(width: 6),
                         ],
@@ -2946,7 +2951,7 @@ class _LocalSongTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: isCurrent ? Colors.white : _kText,
+                              color: context.palette.textPrimary,
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
                             ),
@@ -2959,7 +2964,7 @@ class _LocalSongTile extends StatelessWidget {
                       '${song.artist} • ${song.folderName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _kMuted, fontSize: 11.5),
+                      style: TextStyle(color: context.palette.textMuted, fontSize: 11.5),
                     ),
                     if (song.hasLyrics) ...[
                       const SizedBox(height: 3),
@@ -2970,7 +2975,7 @@ class _LocalSongTile extends StatelessWidget {
                             width: 5,
                             height: 5,
                             decoration: const BoxDecoration(
-                              color: _kEmerald,
+                              color: MusEveePalette.emerald,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -2978,7 +2983,7 @@ class _LocalSongTile extends StatelessWidget {
                           Text(
                             song.hasSyncedLyrics ? 'Synced LRC' : 'USLT Lyrics',
                             style: const TextStyle(
-                              color: _kEmerald,
+                              color: MusEveePalette.emerald,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
                             ),
@@ -2992,19 +2997,19 @@ class _LocalSongTile extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 song.formattedDuration,
-                style: const TextStyle(
-                  color: _kMuted,
+                style: TextStyle(
+                  color: context.palette.textMuted,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               PopupMenuButton<String>(
-                icon: const Icon(
+                icon: Icon(
                   Icons.more_vert_rounded,
                   size: 18,
-                  color: _kMuted,
+                  color: context.palette.textMuted,
                 ),
-                color: _kSubtle,
+                color: context.palette.surfaceSubtle,
                 onSelected: (value) async {
                   if (value == 'play_next') {
                     localProvider.addToQueue(song, playNext: true);
@@ -3041,33 +3046,33 @@ class _LocalSongTile extends StatelessWidget {
                     final confirmed = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        backgroundColor: _kCard,
-                        title: const Text(
+                        backgroundColor: context.palette.surfaceCard,
+                        title: Text(
                           'Hapus File Lagu?',
                           style: TextStyle(
-                            color: _kText,
+                            color: context.palette.textPrimary,
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                         content: Text(
                           'Hapus permanen "${song.title}" dari folder ${song.folderName}?',
-                          style: const TextStyle(
-                            color: Color(0xFFD0D5DD),
+                          style: TextStyle(
+                            color: context.palette.textMuted,
                             fontSize: 13,
                           ),
                         ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.of(ctx).pop(false),
-                            child: const Text(
+                            child: Text(
                               'Batal',
-                              style: TextStyle(color: _kMuted),
+                              style: TextStyle(color: context.palette.textMuted),
                             ),
                           ),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFF04438),
+                              backgroundColor: MusEveePalette.error,
                               foregroundColor: Colors.white,
                             ),
                             onPressed: () => Navigator.of(ctx).pop(true),
@@ -3093,47 +3098,47 @@ class _LocalSongTile extends StatelessWidget {
                   }
                 },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'play_next',
                     child: Text(
                       'Putar Berikutnya',
-                      style: TextStyle(color: _kText, fontSize: 13),
+                      style: TextStyle(color: context.palette.textPrimary, fontSize: 13),
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'add_queue',
                     child: Text(
                       'Tambah ke Antrean (=+)',
-                      style: TextStyle(color: _kText, fontSize: 13),
+                      style: TextStyle(color: context.palette.textPrimary, fontSize: 13),
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'add_playlist',
                     child: Text(
                       'Tambah ke Playlist',
-                      style: TextStyle(color: _kText, fontSize: 13),
+                      style: TextStyle(color: context.palette.textPrimary, fontSize: 13),
                     ),
                   ),
                   if (onRemoveFromPlaylist != null)
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'remove_playlist',
                       child: Text(
                         'Keluarkan dari Playlist',
-                        style: TextStyle(color: _kText, fontSize: 13),
+                        style: TextStyle(color: context.palette.textPrimary, fontSize: 13),
                       ),
                     ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'edit_tag',
                     child: Text(
                       'Edit Tag & Auto-Romaji (✎)',
-                      style: TextStyle(color: _kText, fontSize: 13),
+                      style: TextStyle(color: context.palette.textPrimary, fontSize: 13),
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'move',
                     child: Text(
                       'Pindah Folder',
-                      style: TextStyle(color: _kText, fontSize: 13),
+                      style: TextStyle(color: context.palette.textPrimary, fontSize: 13),
                     ),
                   ),
                   const PopupMenuItem(
@@ -3165,6 +3170,7 @@ class _LocalCoverThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(5);
+    final palette = context.palette;
 
     if (coverPath != null && coverPath!.isNotEmpty) {
       final targetCachePx = (size * 3).round().clamp(96, 256);
@@ -3177,25 +3183,26 @@ class _LocalCoverThumb extends StatelessWidget {
           cacheWidth: targetCachePx,
           fit: BoxFit.cover,
           gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) => _fallback(radius),
+          errorBuilder: (context, error, stackTrace) =>
+              _fallback(radius, palette),
         ),
       );
     }
-    return _fallback(radius);
+    return _fallback(radius, palette);
   }
 
-  Widget _fallback(BorderRadius radius) {
+  Widget _fallback(BorderRadius radius, MusEveePalette palette) {
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: _kSubtle,
+        color: palette.surfaceSubtle,
         borderRadius: radius,
       ),
       alignment: Alignment.center,
       child: Icon(
         Icons.music_note_rounded,
-        color: _kMuted,
+        color: palette.textMuted,
         size: size * 0.42,
       ),
     );
@@ -3219,12 +3226,12 @@ class _EmptyLocalHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 38, color: _kMuted),
+            Icon(icon, size: 38, color: context.palette.textMuted),
             const SizedBox(height: 10),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: _kMuted, fontSize: 13),
+              style: TextStyle(color: context.palette.textMuted, fontSize: 13),
             ),
           ],
         ),
@@ -3333,9 +3340,9 @@ class _MographSelectCheckbox extends StatelessWidget {
                 curve: isSelected ? Curves.easeOutBack : Curves.easeOutCubic,
                 builder: (context, t, _) {
                   if (!isSelected && t < 0.05) {
-                    return const Icon(
+                    return Icon(
                       Icons.radio_button_unchecked_rounded,
-                      color: _kMuted,
+                      color: context.palette.textMuted,
                       size: 22,
                     );
                   }
@@ -3348,9 +3355,9 @@ class _MographSelectCheckbox extends StatelessWidget {
                     children: [
                       Opacity(
                         opacity: (1.0 - clamped).clamp(0.0, 1.0),
-                        child: const Icon(
+                        child: Icon(
                           Icons.radio_button_unchecked_rounded,
-                          color: _kMuted,
+                          color: context.palette.textMuted,
                           size: 22,
                         ),
                       ),
@@ -3360,9 +3367,9 @@ class _MographSelectCheckbox extends StatelessWidget {
                           scale: scale.clamp(0.0, 1.35),
                           child: Opacity(
                             opacity: clamped,
-                            child: const Icon(
+                            child: Icon(
                               Icons.check_circle_rounded,
-                              color: _kAccent,
+                              color: context.palette.accent,
                               size: 22,
                             ),
                           ),
@@ -3509,13 +3516,13 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                     (28.0 + ((14.0 - 28.0) * rawT)).clamp(12.0, 32.0);
 
                 final bgColor = Color.lerp(
-                  const Color(0xFF1F2530),
-                  const Color(0xFF1D2129),
+                  context.palette.surfaceSubtle,
+                  context.palette.surfaceCard,
                   rawT,
                 )!;
                 final borderColor = Color.lerp(
-                  _kAccent.withValues(alpha: 0.50),
-                  Colors.white.withValues(alpha: 0.15),
+                  context.palette.accent.withValues(alpha: 0.50),
+                  context.palette.hairline,
                   rawT,
                 )!;
 
@@ -3525,7 +3532,9 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                 return Material(
                   color: bgColor,
                   elevation: 10 + (rawT * 4),
-                  shadowColor: Colors.black.withValues(alpha: 0.72),
+                  shadowColor: Colors.black.withValues(
+                    alpha: context.isDarkMode ? 0.72 : 0.22,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(currentRadius),
                     side: BorderSide(color: borderColor, width: 1.0),
@@ -3554,10 +3563,10 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                         0.0,
                                         1.0,
                                       ),
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.library_add_check_rounded,
                                         size: 26,
-                                        color: _kAccent,
+                                        color: context.palette.accent,
                                       ),
                                     ),
                                   ),
@@ -3600,7 +3609,7 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: _kAccent.withValues(
+                                              color: context.palette.accent.withValues(
                                                 alpha: 0.18,
                                               ),
                                               borderRadius:
@@ -3608,21 +3617,21 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                             ),
                                             child: Text(
                                               widget.label,
-                                              style: const TextStyle(
-                                                color: _kAccent,
+                                              style: TextStyle(
+                                                color: context.palette.accent,
                                                 fontSize: 11.5,
                                                 fontWeight: FontWeight.w700,
                                               ),
                                             ),
                                           ),
                                           const SizedBox(width: 8),
-                                          const Expanded(
+                                          Expanded(
                                             child: Text(
                                               'Gabungkan ke Antrean (Deduplikasi Otomatis)',
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                color: _kMuted,
+                                                color: context.palette.textMuted,
                                                 fontSize: 11,
                                               ),
                                             ),
@@ -3636,10 +3645,10 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                               child: Transform.rotate(
                                                 angle: (1.0 - rawT) *
                                                     (-math.pi * 0.5),
-                                                child: const Icon(
+                                                child: Icon(
                                                   Icons.close_rounded,
                                                   size: 17,
-                                                  color: _kMuted,
+                                                  color: context.palette.textMuted,
                                                 ),
                                               ),
                                             ),
@@ -3664,7 +3673,7 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                                   icon:
                                                       Icons.play_arrow_rounded,
                                                   label: 'Putar',
-                                                  backgroundColor: _kAccent,
+                                                  backgroundColor: context.palette.accent,
                                                   foregroundColor: Colors.white,
                                                   onTap: widget.onPlayCombined,
                                                 ),
@@ -3679,11 +3688,12 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                                 child: _ActionPillButton(
                                                   icon: Icons.shuffle_rounded,
                                                   label: 'Shuffle Mix',
-                                                  backgroundColor:
-                                                      const Color(0xFF282D38),
-                                                  foregroundColor: _kText,
-                                                  borderColor: Colors.white
-                                                      .withValues(alpha: 0.14),
+                                                  backgroundColor: context
+                                                      .palette
+                                                      .surfaceSubtle,
+                                                  foregroundColor: context.palette.textPrimary,
+                                                  borderColor:
+                                                      context.palette.hairline,
                                                   onTap:
                                                       widget.onShuffleCombined,
                                                 ),
@@ -3699,11 +3709,12 @@ class _MorphingMergeActionBarState extends State<_MorphingMergeActionBar>
                                                   icon: Icons
                                                       .playlist_add_rounded,
                                                   label: '+ Queue',
-                                                  backgroundColor:
-                                                      const Color(0xFF282D38),
-                                                  foregroundColor: _kText,
-                                                  borderColor: Colors.white
-                                                      .withValues(alpha: 0.14),
+                                                  backgroundColor: context
+                                                      .palette
+                                                      .surfaceSubtle,
+                                                  foregroundColor: context.palette.textPrimary,
+                                                  borderColor:
+                                                      context.palette.hairline,
                                                   onTap: widget.onAppendQueue,
                                                 ),
                                               ),

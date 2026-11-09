@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/local_music_provider.dart';
+import '../theme/musevee_palette.dart';
 import 'pressable_scale.dart';
 
 class MusicoletMiniPlayer extends StatelessWidget {
@@ -16,6 +17,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     return Consumer<LocalMusicProvider>(
       builder: (context, localProvider, _) {
         final song = localProvider.currentSong;
@@ -24,14 +26,14 @@ class MusicoletMiniPlayer extends StatelessWidget {
         }
 
         return Material(
-          color: const Color(0xFF14171E),
+          color: palette.surfaceCard,
           child: InkWell(
             onTap: onTapOpenNowPlaying,
             child: Container(
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.09),
+                    color: palette.hairline,
                     width: 0.7,
                   ),
                 ),
@@ -52,9 +54,9 @@ class MusicoletMiniPlayer extends StatelessWidget {
                       return LinearProgressIndicator(
                         value: progress,
                         minHeight: 2.0,
-                        backgroundColor: Colors.white.withValues(alpha: 0.10),
+                        backgroundColor: palette.hairline,
                         valueColor:
-                            const AlwaysStoppedAnimation<Color>(Colors.white),
+                            AlwaysStoppedAnimation<Color>(palette.textPrimary),
                       );
                     },
                   ),
@@ -67,7 +69,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
                           // 38x38 Cover Art
                           ClipRRect(
                             borderRadius: BorderRadius.circular(4),
-                            child: _buildMiniCover(song.coverFilePath),
+                            child: _buildMiniCover(song.coverFilePath, palette),
                           ),
                           const SizedBox(width: 10),
 
@@ -81,8 +83,8 @@ class MusicoletMiniPlayer extends StatelessWidget {
                                   song.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: palette.textPrimary,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: -0.2,
@@ -93,8 +95,8 @@ class MusicoletMiniPlayer extends StatelessWidget {
                                   '${song.artist} • ${song.folderName}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Color(0xFF98A2B3),
+                                  style: TextStyle(
+                                    color: palette.textMuted,
                                     fontSize: 11.5,
                                   ),
                                 ),
@@ -108,9 +110,9 @@ class MusicoletMiniPlayer extends StatelessWidget {
                               visualDensity: VisualDensity.compact,
                               tooltip: 'Sebelumnya',
                               onPressed: localProvider.playPrevious,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.skip_previous_rounded,
-                                color: Colors.white70,
+                                color: palette.textMuted,
                                 size: 22,
                               ),
                             ),
@@ -124,7 +126,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
                               icon: MographPlayPauseIcon(
                                 isPlaying: localProvider.isPlaying,
                                 size: 27,
-                                color: Colors.white,
+                                color: palette.textPrimary,
                               ),
                             ),
                           ),
@@ -133,9 +135,9 @@ class MusicoletMiniPlayer extends StatelessWidget {
                               visualDensity: VisualDensity.compact,
                               tooltip: 'Berikutnya',
                               onPressed: localProvider.playNext,
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.skip_next_rounded,
-                                color: Colors.white70,
+                                color: palette.textMuted,
                                 size: 22,
                               ),
                             ),
@@ -153,7 +155,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
     );
   }
 
-  Widget _buildMiniCover(String? path) {
+  Widget _buildMiniCover(String? path, MusEveePalette palette) {
     if (path != null && path.isNotEmpty) {
       return Image.file(
         File(path),
@@ -162,21 +164,21 @@ class MusicoletMiniPlayer extends StatelessWidget {
         cacheWidth: 144,
         fit: BoxFit.cover,
         gaplessPlayback: true,
-        errorBuilder: (context, error, stackTrace) => _placeholder(),
+        errorBuilder: (context, error, stackTrace) => _placeholder(palette),
       );
     }
-    return _placeholder();
+    return _placeholder(palette);
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(MusEveePalette palette) {
     return Container(
       width: 38,
       height: 38,
-      color: const Color(0xFF22252D),
+      color: palette.surfaceSubtle,
       alignment: Alignment.center,
-      child: const Icon(
+      child: Icon(
         Icons.music_note_rounded,
-        color: Color(0xFF98A2B3),
+        color: palette.textMuted,
         size: 18,
       ),
     );

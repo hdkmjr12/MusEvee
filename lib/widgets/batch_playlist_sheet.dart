@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/track_metadata.dart';
 import '../providers/downloader_provider.dart';
 import '../services/metadata_service.dart';
+import '../theme/musevee_palette.dart';
 
 class BatchPlaylistSheet extends StatefulWidget {
   final SpotifyCollectionResult collection;
@@ -21,10 +22,11 @@ class BatchPlaylistSheet extends StatefulWidget {
     required Future<void> Function(DownloaderProvider provider)
         onCreateNewFolder,
   }) {
+    final palette = context.palette;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -40,13 +42,6 @@ class BatchPlaylistSheet extends StatefulWidget {
 }
 
 class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
-  static const Color _surfaceCard = Color(0xFF17191E);
-  static const Color _surfaceSubtle = Color(0xFF22252D);
-  static const Color _primaryBlue = Color(0xFF3898EC);
-  static const Color _textDark = Color(0xFFF2F4F7);
-  static const Color _textMuted = Color(0xFF98A2B3);
-  static const Color _amberDot = Color(0xFFF59E0B);
-
   late final Set<int> _selectedIndices;
 
   @override
@@ -71,11 +66,12 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final screenHeight = MediaQuery.of(context).size.height;
     final tracks = widget.collection.tracks;
     final allSelected =
         tracks.isNotEmpty && _selectedIndices.length == tracks.length;
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = palette.hairline;
 
     return Consumer<DownloaderProvider>(
       builder: (context, provider, _) {
@@ -94,7 +90,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.22),
+                        color: palette.textMuted.withValues(alpha: 0.35),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -108,7 +104,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                         width: 64,
                         height: 64,
                         decoration: BoxDecoration(
-                          color: _surfaceSubtle,
+                          color: palette.surfaceSubtle,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: hairline, width: 0.8),
                         ),
@@ -120,9 +116,9 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                                 height: 64,
                                 fit: BoxFit.cover,
                                 errorBuilder: (context, error, stackTrace) =>
-                                    _buildPlaceholder(64),
+                                    _buildPlaceholder(64, palette),
                               )
-                            : _buildPlaceholder(64),
+                            : _buildPlaceholder(64, palette),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -135,8 +131,8 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                                 Container(
                                   width: 6,
                                   height: 6,
-                                  decoration: const BoxDecoration(
-                                    color: _primaryBlue,
+                                  decoration: BoxDecoration(
+                                    color: palette.accent,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
@@ -145,8 +141,8 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                                   widget.collection.collectionType == 'album'
                                       ? 'ALBUM'
                                       : 'PLAYLIST',
-                                  style: const TextStyle(
-                                    color: _primaryBlue,
+                                  style: TextStyle(
+                                    color: palette.accent,
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 0.5,
@@ -159,8 +155,8 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                               widget.collection.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _textDark,
+                              style: TextStyle(
+                                color: palette.textPrimary,
                                 fontSize: 15.5,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -0.3,
@@ -171,8 +167,8 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                               '${widget.collection.subtitle.isNotEmpty ? "${widget.collection.subtitle} • " : ""}${tracks.length} Lagu',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _textMuted,
+                              style: TextStyle(
+                                color: palette.textMuted,
                                 fontSize: 12,
                               ),
                             ),
@@ -182,7 +178,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                       TextButton(
                         onPressed: _toggleSelectAll,
                         style: TextButton.styleFrom(
-                          foregroundColor: _primaryBlue,
+                          foregroundColor: palette.accent,
                           visualDensity: VisualDensity.compact,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
@@ -204,7 +200,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                   Flexible(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: _surfaceSubtle,
+                        color: palette.surfaceSubtle,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: hairline, width: 0.8),
                       ),
@@ -225,7 +221,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                           return CheckboxListTile(
                             value: isChecked,
                             dense: true,
-                            activeColor: _primaryBlue,
+                            activeColor: palette.accent,
                             checkColor: Colors.white,
                             checkboxShape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4),
@@ -248,8 +244,8 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                               track.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _textDark,
+                              style: TextStyle(
+                                color: palette.textPrimary,
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -0.2,
@@ -262,8 +258,8 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                                   '${track.artist} • ${track.formattedDuration}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: _textMuted,
+                                  style: TextStyle(
+                                    color: palette.textMuted,
                                     fontSize: 12,
                                   ),
                                 ),
@@ -276,7 +272,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                                         width: 5,
                                         height: 5,
                                         decoration: const BoxDecoration(
-                                          color: _amberDot,
+                                          color: MusEveePalette.amber,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -284,7 +280,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                                       Text(
                                         'Sudah ada di $dupFolder',
                                         style: const TextStyle(
-                                          color: _amberDot,
+                                          color: MusEveePalette.amber,
                                           fontSize: 11,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -302,10 +298,10 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                   const SizedBox(height: 14),
 
                   // Target Folder Selector Row
-                  const Text(
+                  Text(
                     'Folder Tujuan:',
                     style: TextStyle(
-                      color: _textDark,
+                      color: palette.textPrimary,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.2,
@@ -323,10 +319,10 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                             child: ChoiceChip(
                               selected: isSelected,
                               showCheckmark: false,
-                              backgroundColor: _surfaceSubtle,
-                              selectedColor: _primaryBlue,
+                              backgroundColor: palette.surfaceSubtle,
+                              selectedColor: palette.accent,
                               side: BorderSide(
-                                color: isSelected ? _primaryBlue : hairline,
+                                color: isSelected ? palette.accent : hairline,
                                 width: 0.8,
                               ),
                               shape: RoundedRectangleBorder(
@@ -335,7 +331,9 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                               label: Text(
                                 folder,
                                 style: TextStyle(
-                                  color: isSelected ? Colors.white : _textDark,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : palette.textPrimary,
                                   fontSize: 12.5,
                                   fontWeight: isSelected
                                       ? FontWeight.w700
@@ -347,15 +345,15 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                           );
                         }),
                         ActionChip(
-                          backgroundColor: _surfaceCard,
+                          backgroundColor: palette.surfaceCard,
                           side: BorderSide(color: hairline, width: 0.8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          label: const Text(
+                          label: Text(
                             '+ Baru',
                             style: TextStyle(
-                              color: _primaryBlue,
+                              color: palette.accent,
                               fontSize: 12.5,
                               fontWeight: FontWeight.w700,
                             ),
@@ -372,7 +370,7 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
                     height: 48,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryBlue,
+                        backgroundColor: palette.accent,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -429,15 +427,15 @@ class _BatchPlaylistSheetState extends State<BatchPlaylistSheet> {
     );
   }
 
-  Widget _buildPlaceholder(double size) {
+  Widget _buildPlaceholder(double size, MusEveePalette palette) {
     return Container(
       width: size,
       height: size,
-      color: _surfaceSubtle,
+      color: palette.surfaceSubtle,
       alignment: Alignment.center,
       child: Icon(
         Icons.album_outlined,
-        color: _textMuted,
+        color: palette.textMuted,
         size: size * 0.42,
       ),
     );

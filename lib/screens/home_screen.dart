@@ -10,6 +10,7 @@ import '../models/track_metadata.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../services/folder_service.dart';
+import '../theme/musevee_palette.dart';
 import '../utils/app_strings.dart';
 import '../widgets/batch_playlist_sheet.dart';
 import '../widgets/local_library_views.dart';
@@ -43,13 +44,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const int _tabSettings = 5;
 
   // Dark Musicolet Surface Palette
-  static const Color _bgCanvas = Color(0xFF0E1014);
-  static const Color _surfaceCard = Color(0xFF17191E);
-  static const Color _surfaceSubtle = Color(0xFF22252D);
-  static const Color _primaryAccent = Color(0xFF3898EC);
-  static const Color _textPrimary = Color(0xFFF2F4F7);
-  static const Color _textMuted = Color(0xFF98A2B3);
-  static const Color _redDot = Color(0xFFF04438);
 
   static const List<TrackMetadata> _fallbackForYouTracks = [
     TrackMetadata(
@@ -394,29 +388,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _showPrivatePlaylistErrorDialog(String message) async {
     if (!mounted) return;
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = context.palette.hairline;
     await showDialog<void>(
       context: context,
       builder: (dialogCtx) {
         return AlertDialog(
-          backgroundColor: _surfaceCard,
+          backgroundColor: context.palette.surfaceCard,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: hairline, width: 0.8),
           ),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(
+              const Icon(
                 Icons.lock_outline_rounded,
                 color: Color(0xFFF79009),
                 size: 21,
               ),
-              SizedBox(width: 10),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Playlist Spotify Tidak Dapat Diakses',
                   style: TextStyle(
-                    color: _textPrimary,
+                    color: context.palette.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -426,8 +420,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           content: Text(
             message,
-            style: const TextStyle(
-              color: _textMuted,
+            style: TextStyle(
+              color: context.palette.textMuted,
               fontSize: 13,
               height: 1.4,
             ),
@@ -435,10 +429,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text(
+              child: Text(
                 'Mengerti',
                 style: TextStyle(
-                  color: _primaryAccent,
+                  color: context.palette.accent,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -482,7 +476,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _showCreateFolderDialog(DownloaderProvider provider) async {
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = context.palette.hairline;
     String currentDirPath = FolderService.baseMusicRoot;
     List<BrowsedDirectoryEntry> subDirs =
         await provider.folderService.browseStorageDirectories(currentDirPath);
@@ -493,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final pickedTarget = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: _surfaceCard,
+      backgroundColor: context.palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -521,15 +515,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 context: ctx,
                 builder: (dialogCtx) {
                   return AlertDialog(
-                    backgroundColor: _surfaceCard,
+                    backgroundColor: context.palette.surfaceCard,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(color: hairline, width: 0.8),
                     ),
-                    title: const Text(
+                    title: Text(
                       'Buat Folder Musik Baru',
                       style: TextStyle(
-                        color: _textPrimary,
+                        color: context.palette.textPrimary,
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.2,
@@ -541,8 +535,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       children: [
                         Text(
                           'Masukkan nama folder baru di $currentDirPath:',
-                          style: const TextStyle(
-                            color: _textMuted,
+                          style: TextStyle(
+                            color: context.palette.textMuted,
                             fontSize: 12,
                             height: 1.4,
                           ),
@@ -551,15 +545,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         TextField(
                           controller: folderController,
                           autofocus: true,
-                          style: const TextStyle(
-                            color: _textPrimary,
+                          style: TextStyle(
+                            color: context.palette.textPrimary,
                             fontSize: 14,
                           ),
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: 'Contoh: Music Anime / Music Indo',
                             prefixIcon: Icon(
                               Icons.create_new_folder_outlined,
-                              color: _primaryAccent,
+                              color: context.palette.accent,
                               size: 19,
                             ),
                           ),
@@ -573,9 +567,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.of(dialogCtx).pop(),
-                        child: const Text(
+                        child: Text(
                           'Batal',
-                          style: TextStyle(color: _textMuted),
+                          style: TextStyle(color: context.palette.textMuted),
                         ),
                       ),
                       ElevatedButton(
@@ -627,24 +621,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           height: 4,
                           margin: const EdgeInsets.only(bottom: 12),
                           decoration: BoxDecoration(
-                            color: Colors.white24,
+                            color: context.palette.textMuted.withValues(
+                              alpha: 0.35,
+                            ),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
                       ),
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.folder_open_rounded,
-                            color: _primaryAccent,
+                            color: context.palette.accent,
                             size: 20,
                           ),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
                               'Pilih atau Buat Folder Tujuan',
                               style: TextStyle(
-                                color: _textPrimary,
+                                color: context.palette.textPrimary,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -652,7 +648,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           TextButton.icon(
                             style: TextButton.styleFrom(
-                              foregroundColor: _primaryAccent,
+                              foregroundColor: context.palette.accent,
                               visualDensity: VisualDensity.compact,
                             ),
                             onPressed: promptNewSubfolder,
@@ -679,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: _surfaceSubtle,
+                          color: context.palette.surfaceSubtle,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: hairline, width: 0.8),
                         ),
@@ -702,12 +698,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     );
                                   }
                                 },
-                                child: const Padding(
-                                  padding: EdgeInsets.only(right: 8),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 8),
                                   child: Icon(
                                     Icons.arrow_upward_rounded,
                                     size: 17,
-                                    color: _primaryAccent,
+                                    color: context.palette.accent,
                                   ),
                                 ),
                               ),
@@ -716,8 +712,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 currentDirPath,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: _textPrimary,
+                                style: TextStyle(
+                                  color: context.palette.textPrimary,
                                   fontSize: 12,
                                   fontFamily: 'monospace',
                                   fontWeight: FontWeight.w600,
@@ -727,7 +723,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             const SizedBox(width: 8),
                             ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _primaryAccent,
+                                backgroundColor: context.palette.accent,
                                 foregroundColor: Colors.white,
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.symmetric(
@@ -764,8 +760,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: _textPrimary,
-                            backgroundColor: _bgCanvas,
+                            foregroundColor: context.palette.textPrimary,
+                            backgroundColor: context.palette.bgCanvas,
                             side: BorderSide(color: hairline, width: 0.8),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
@@ -784,10 +780,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               Navigator.of(ctx).pop(picked);
                             }
                           },
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.folder_copy_rounded,
                             size: 16,
-                            color: _primaryAccent,
+                            color: context.palette.accent,
                           ),
                           label: const Text(
                             'Buka Pemilih Folder Sistem Android (Storage Explorer)',
@@ -800,10 +796,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: 10),
 
-                      const Text(
+                      Text(
                         'Subfolder di dalam direktori ini (ketuk untuk masuk, atau ketuk "Pilih"):',
                         style: TextStyle(
-                          color: _textMuted,
+                          color: context.palette.textMuted,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -812,12 +808,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                       Flexible(
                         child: isLoadingDirs
-                            ? const Padding(
-                                padding: EdgeInsets.all(24),
+                            ? Padding(
+                                padding: const EdgeInsets.all(24),
                                 child: Center(
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: _primaryAccent,
+                                    color: context.palette.accent,
                                   ),
                                 ),
                               )
@@ -830,8 +826,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       child: Text(
                                         'Belum ada subfolder di $currentDirPath.\nKamu bisa memilih direktori ini langsung atau ketuk "+ Folder Baru".',
                                         textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          color: _textMuted,
+                                        style: TextStyle(
+                                          color: context.palette.textMuted,
                                           fontSize: 12,
                                           height: 1.4,
                                         ),
@@ -846,7 +842,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     itemBuilder: (_, idx) {
                                       final entry = subDirs[idx];
                                       return Material(
-                                        color: _surfaceSubtle,
+                                        color: context.palette.surfaceSubtle,
                                         shape: RoundedRectangleBorder(
                                           borderRadius:
                                               BorderRadius.circular(8),
@@ -866,9 +862,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                             ),
                                             child: Row(
                                               children: [
-                                                const Icon(
+                                                Icon(
                                                   Icons.folder_rounded,
-                                                  color: _primaryAccent,
+                                                  color: context.palette.accent,
                                                   size: 20,
                                                 ),
                                                 const SizedBox(width: 10),
@@ -883,8 +879,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                         maxLines: 1,
                                                         overflow: TextOverflow
                                                             .ellipsis,
-                                                        style: const TextStyle(
-                                                          color: _textPrimary,
+                                                        style: TextStyle(
+                                                          color: context.palette.textPrimary,
                                                           fontSize: 13.5,
                                                           fontWeight:
                                                               FontWeight.w700,
@@ -892,8 +888,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                       ),
                                                       Text(
                                                         '${entry.mp3Count} file MP3',
-                                                        style: const TextStyle(
-                                                          color: _textMuted,
+                                                        style: TextStyle(
+                                                          color: context.palette.textMuted,
                                                           fontSize: 11,
                                                         ),
                                                       ),
@@ -903,7 +899,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                 TextButton(
                                                   style: TextButton.styleFrom(
                                                     foregroundColor:
-                                                        _primaryAccent,
+                                                        context.palette.accent,
                                                     visualDensity:
                                                         VisualDensity.compact,
                                                   ),
@@ -1043,10 +1039,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required String currentFolder,
     required List<String> availableFolders,
   }) {
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = context.palette.hairline;
     return showModalBottomSheet<String>(
       context: context,
-      backgroundColor: _surfaceCard,
+      backgroundColor: context.palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1063,7 +1059,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: context.palette.textMuted.withValues(alpha: 0.35),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1071,8 +1067,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 16),
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: _textPrimary,
+                  style: TextStyle(
+                    color: context.palette.textPrimary,
                     fontSize: 15.5,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1082,7 +1078,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: _textMuted, fontSize: 12.5),
+                  style: TextStyle(color: context.palette.textMuted, fontSize: 12.5),
                 ),
                 const SizedBox(height: 14),
                 Wrap(
@@ -1094,10 +1090,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       return ChoiceChip(
                         selected: isCurrent,
                         showCheckmark: false,
-                        backgroundColor: _surfaceSubtle,
-                        selectedColor: _primaryAccent,
+                        backgroundColor: context.palette.surfaceSubtle,
+                        selectedColor: context.palette.accent,
                         side: BorderSide(
-                          color: isCurrent ? _primaryAccent : hairline,
+                          color: isCurrent ? context.palette.accent : hairline,
                           width: 0.8,
                         ),
                         shape: RoundedRectangleBorder(
@@ -1115,13 +1111,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ? Icons.folder_rounded
                                   : Icons.folder_outlined,
                               size: 15,
-                              color: isCurrent ? Colors.white : _textMuted,
+                              color: isCurrent ? Colors.white : context.palette.textMuted,
                             ),
                             const SizedBox(width: 6),
                             Text(
                               isCurrent ? '$folder (Saat Ini)' : folder,
                               style: TextStyle(
-                                color: isCurrent ? Colors.white : _textPrimary,
+                                color: isCurrent ? Colors.white : context.palette.textPrimary,
                                 fontSize: 12.5,
                                 fontWeight: isCurrent
                                     ? FontWeight.w700
@@ -1136,7 +1132,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       );
                     }),
                     ActionChip(
-                      backgroundColor: _surfaceCard,
+                      backgroundColor: context.palette.surfaceCard,
                       side: BorderSide(color: hairline, width: 0.8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
@@ -1145,15 +1141,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         horizontal: 10,
                         vertical: 9,
                       ),
-                      avatar: const Icon(
+                      avatar: Icon(
                         Icons.add_rounded,
                         size: 15,
-                        color: _primaryAccent,
+                        color: context.palette.accent,
                       ),
-                      label: const Text(
+                      label: Text(
                         'Folder Baru',
                         style: TextStyle(
-                          color: _primaryAccent,
+                          color: context.palette.accent,
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1184,7 +1180,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final isOnNowPlaying = _selectedTabIndex == _tabNowPlaying;
 
         return Scaffold(
-          backgroundColor: _bgCanvas,
+          backgroundColor: context.palette.bgCanvas,
           body: SafeArea(
             top: !isOnNowPlaying,
             bottom: false,
@@ -1267,7 +1263,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildPermissionOnboardingBanner(LocalMusicProvider localProvider) {
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = context.palette.hairline;
     final missingAllFiles = !localProvider.hasAllFilesAccess;
     final missingNotif = !localProvider.hasNotificationPermission;
 
@@ -1275,10 +1271,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: _primaryAccent.withValues(alpha: 0.35),
+          color: context.palette.accent.withValues(alpha: 0.35),
           width: 0.8,
         ),
       ),
@@ -1292,34 +1288,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 width: 26,
                 height: 26,
                 decoration: BoxDecoration(
-                  color: _primaryAccent.withValues(alpha: 0.14),
+                  color: context.palette.accent.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(
+                child: Icon(
                   Icons.verified_user_outlined,
-                  color: _primaryAccent,
+                  color: context.palette.accent,
                   size: 15,
                 ),
               ),
               const SizedBox(width: 9),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Setup Izin Cepat MusEvee',
                       style: TextStyle(
-                        color: _textPrimary,
+                        color: context.palette.textPrimary,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Aktifkan akses penuh agar fitur hapus lagu, pindah folder, edit tag/lirik berjalan 1 klik, serta notifikasi & Live Island tampil otomatis.',
                       style: TextStyle(
-                        color: _textMuted,
+                        color: context.palette.textMuted,
                         fontSize: 11,
                         height: 1.3,
                       ),
@@ -1333,10 +1329,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                 tooltip: 'Sembunyikan',
                 onPressed: localProvider.dismissPermissionBanner,
-                icon: const Icon(
+                icon: Icon(
                   Icons.close_rounded,
                   size: 16,
-                  color: _textMuted,
+                  color: context.palette.textMuted,
                 ),
               ),
             ],
@@ -1349,15 +1345,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (missingAllFiles)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor: _primaryAccent.withValues(alpha: 0.18),
+                    foregroundColor: context.palette.textPrimary,
+                    backgroundColor: context.palette.accent.withValues(alpha: 0.18),
                     minimumSize: const Size(0, 30),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
                       vertical: 5,
                     ),
                     side: BorderSide(
-                      color: _primaryAccent.withValues(alpha: 0.6),
+                      color: context.palette.accent.withValues(alpha: 0.6),
                       width: 0.8,
                     ),
                     shape: RoundedRectangleBorder(
@@ -1378,8 +1374,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (missingNotif)
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: _textPrimary,
-                    backgroundColor: _surfaceSubtle,
+                    foregroundColor: context.palette.textPrimary,
+                    backgroundColor: context.palette.surfaceSubtle,
                     minimumSize: const Size(0, 30),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -1392,10 +1388,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                   onPressed: () =>
                       localProvider.requestNotificationAndLiveIslandPermission(),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.notifications_active_outlined,
                     size: 14,
-                    color: _primaryAccent,
+                    color: context.palette.accent,
                   ),
                   label: const Text(
                     'Aktifkan Notifikasi & Live Island',
@@ -1417,12 +1413,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // ===========================================================================
   Future<void> _openDownloadQueueHistorySheet() async {
     if (!mounted) return;
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final hairline = context.palette.hairline;
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: _surfaceCard,
+      backgroundColor: context.palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1434,7 +1430,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 10, 10, 8),
                 decoration: BoxDecoration(
-                  color: _surfaceCard,
+                  color: context.palette.surfaceCard,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(16),
                   ),
@@ -1450,7 +1446,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         width: 38,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white24,
+                          color: context.palette.textMuted.withValues(
+                            alpha: 0.35,
+                          ),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -1458,17 +1456,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.downloading_rounded,
                           size: 18,
-                          color: _primaryAccent,
+                          color: context.palette.accent,
                         ),
                         const SizedBox(width: 8),
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Antrean & Riwayat Unduhan',
                             style: TextStyle(
-                              color: _textPrimary,
+                              color: context.palette.textPrimary,
                               fontSize: 14.5,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1478,10 +1476,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           visualDensity: VisualDensity.compact,
                           tooltip: 'Tutup',
                           onPressed: () => Navigator.of(sheetCtx).pop(),
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.close_rounded,
                             size: 19,
-                            color: _textMuted,
+                            color: context.palette.textMuted,
                           ),
                         ),
                       ],
@@ -1521,7 +1519,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DownloaderProvider provider,
     int totalActiveCount,
   ) {
-    final hairline = Colors.white.withValues(alpha: 0.10);
+    final hairline = context.palette.hairline;
     final hasHistory = provider.queueItems.isNotEmpty;
     final isActive = totalActiveCount > 0 || provider.isDownloading;
 
@@ -1534,12 +1532,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           height: 43,
           decoration: BoxDecoration(
             color: isActive
-                ? _primaryAccent.withValues(alpha: 0.16)
-                : _surfaceSubtle,
+                ? context.palette.accent.withValues(alpha: 0.16)
+                : context.palette.surfaceSubtle,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isActive
-                  ? _primaryAccent.withValues(alpha: 0.55)
+                  ? context.palette.accent.withValues(alpha: 0.55)
                   : hairline,
               width: 0.8,
             ),
@@ -1557,8 +1555,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ? provider.progress.clamp(0.0, 1.0)
                         : null,
                     strokeWidth: 2.0,
-                    color: _primaryAccent,
-                    backgroundColor: Colors.white12,
+                    color: context.palette.accent,
+                    backgroundColor: context.palette.hairline,
                   ),
                 ),
               Icon(
@@ -1567,8 +1565,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     : Icons.playlist_add_check_circle_outlined,
                 size: isActive ? 16 : 20,
                 color: isActive
-                    ? Colors.white
-                    : (hasHistory ? _textPrimary : _textMuted),
+                    ? context.palette.accent
+                    : (hasHistory ? context.palette.textPrimary : context.palette.textMuted),
               ),
               if (totalActiveCount > 0)
                 Positioned(
@@ -1584,9 +1582,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       minHeight: 15,
                     ),
                     decoration: BoxDecoration(
-                      color: _redDot,
+                      color: MusEveePalette.error,
                       borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: _surfaceCard, width: 1.2),
+                      border: Border.all(color: context.palette.surfaceCard, width: 1.2),
                     ),
                     alignment: Alignment.center,
                     child: Text(
@@ -1607,8 +1605,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Container(
                     width: 6,
                     height: 6,
-                    decoration: const BoxDecoration(
-                      color: _primaryAccent,
+                    decoration: BoxDecoration(
+                      color: context.palette.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -1632,16 +1630,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final rawText = _inputController.text.trim();
     final isSpotify =
         rawText.contains('spotify.com') || rawText.startsWith('spotify:track:');
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = context.palette.hairline;
 
     return Container(
-      color: _bgCanvas,
+      color: context.palette.bgCanvas,
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
             decoration: BoxDecoration(
-              color: _surfaceCard,
+              color: context.palette.surfaceCard,
               border: Border(
                 bottom: BorderSide(color: hairline, width: 0.8),
               ),
@@ -1656,8 +1654,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         controller: _inputController,
                         focusNode: _searchFocusNode,
                         textInputAction: TextInputAction.search,
-                        style: const TextStyle(
-                          color: _textPrimary,
+                        style: TextStyle(
+                          color: context.palette.textPrimary,
                           fontSize: 13.5,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1668,7 +1666,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onSubmitted: (_) => _submitOmnibox(provider),
                         decoration: InputDecoration(
                           hintText: AppStrings.omniboxHint,
-                          fillColor: _surfaceSubtle,
+                          fillColor: context.palette.surfaceSubtle,
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 11,
@@ -1677,7 +1675,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             isSpotify
                                 ? Icons.link_rounded
                                 : Icons.cloud_download_outlined,
-                            color: isSpotify ? _primaryAccent : _textMuted,
+                            color: isSpotify ? context.palette.accent : context.palette.textMuted,
                             size: 19,
                           ),
                           suffixIcon: rawText.isEmpty
@@ -1687,8 +1685,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       : () => _pasteAndSubmit(provider),
                                   child: Text(
                                     AppStrings.pasteButton,
-                                    style: const TextStyle(
-                                      color: _primaryAccent,
+                                    style: TextStyle(
+                                      color: context.palette.accent,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1696,9 +1694,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 )
                               : IconButton(
                                   tooltip: AppStrings.clearTooltip,
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.close_rounded,
-                                    color: _textMuted,
+                                    color: context.palette.textMuted,
                                     size: 18,
                                   ),
                                   onPressed: () {
@@ -1721,7 +1719,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         height: 43,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryAccent,
+                            backgroundColor: context.palette.accent,
                             foregroundColor: Colors.white,
                             minimumSize: const Size(0, 43),
                             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1757,7 +1755,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     children: [
                       _buildDownloaderCapabilityPill(
                         icon: Icons.music_note_rounded,
-                        iconColor: _primaryAccent,
+                        iconColor: context.palette.accent,
                         label: AppStrings.capabilityTitleArtist,
                         hairline: hairline,
                       ),
@@ -1785,16 +1783,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.folder_outlined,
                         size: 14,
-                        color: _textMuted,
+                        color: context.palette.textMuted,
                       ),
                       const SizedBox(width: 5),
                       Text(
                         AppStrings.saveToLabel,
-                        style: const TextStyle(
-                          color: _textMuted,
+                        style: TextStyle(
+                          color: context.palette.textMuted,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1810,10 +1808,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             selected: isSelected,
                             showCheckmark: false,
                             visualDensity: VisualDensity.compact,
-                            backgroundColor: _surfaceSubtle,
-                            selectedColor: _primaryAccent,
+                            backgroundColor: context.palette.surfaceSubtle,
+                            selectedColor: context.palette.accent,
                             side: BorderSide(
-                              color: isSelected ? _primaryAccent : hairline,
+                              color: isSelected ? context.palette.accent : hairline,
                               width: 0.8,
                             ),
                             shape: RoundedRectangleBorder(
@@ -1823,7 +1821,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               chipLabel,
                               style: TextStyle(
                                 color:
-                                    isSelected ? Colors.white : _textPrimary,
+                                    isSelected ? Colors.white : context.palette.textPrimary,
                                 fontSize: 11.5,
                                 fontWeight: isSelected
                                     ? FontWeight.w700
@@ -1837,20 +1835,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ActionChip(
                         tooltip: 'Pilih atau Buat Folder Tujuan',
                         visualDensity: VisualDensity.compact,
-                        backgroundColor: _surfaceCard,
+                        backgroundColor: context.palette.surfaceCard,
                         side: BorderSide(color: hairline, width: 0.8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        avatar: const Icon(
+                        avatar: Icon(
                           Icons.create_new_folder_rounded,
                           size: 14,
-                          color: _primaryAccent,
+                          color: context.palette.accent,
                         ),
-                        label: const Text(
+                        label: Text(
                           '+',
                           style: TextStyle(
-                            color: _primaryAccent,
+                            color: context.palette.accent,
                             fontSize: 12.5,
                             fontWeight: FontWeight.w800,
                           ),
@@ -1870,19 +1868,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(
+                        SizedBox(
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.2,
-                            color: _primaryAccent,
+                            color: context.palette.accent,
                           ),
                         ),
                         const SizedBox(height: 12),
                         Text(
                           AppStrings.searchingCatalogStatus,
-                          style: const TextStyle(
-                            color: _textMuted,
+                          style: TextStyle(
+                            color: context.palette.textMuted,
                             fontSize: 13,
                           ),
                         ),
@@ -1921,7 +1919,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _surfaceSubtle.withValues(alpha: 0.75),
+        color: context.palette.surfaceSubtle.withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: hairline, width: 0.7),
       ),
@@ -1932,8 +1930,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(width: 5),
           Text(
             label,
-            style: const TextStyle(
-              color: _textMuted,
+            style: TextStyle(
+              color: context.palette.textMuted,
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
             ),
@@ -1947,7 +1945,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DownloaderProvider provider,
     LocalMusicProvider localProvider,
   ) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = context.palette.hairline;
     final isOffline =
         provider.isDiscoveryOffline ||
         (provider.state == DownloaderState.error && provider.isOfflineError);
@@ -1974,15 +1972,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
-            color: _surfaceCard,
+            color: context.palette.surfaceCard,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: hairline, width: 0.8),
           ),
           child: Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.cloud_download_rounded,
-                color: _primaryAccent,
+                color: context.palette.accent,
                 size: 18,
               ),
               const SizedBox(width: 9),
@@ -1992,8 +1990,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   children: [
                     Text(
                       AppStrings.downloaderCardTitle,
-                      style: const TextStyle(
-                        color: _textPrimary,
+                      style: TextStyle(
+                        color: context.palette.textPrimary,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -2001,8 +1999,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 2),
                     Text(
                       AppStrings.downloaderCardDesc,
-                      style: const TextStyle(
-                        color: _textMuted,
+                      style: TextStyle(
+                        color: context.palette.textMuted,
                         fontSize: 11,
                         height: 1.35,
                       ),
@@ -2011,14 +2009,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               if (provider.isLoadingDiscovery)
-                const Padding(
-                  padding: EdgeInsets.only(left: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
                   child: SizedBox(
                     width: 14,
                     height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 1.8,
-                      color: _primaryAccent,
+                      color: context.palette.accent,
                     ),
                   ),
                 )
@@ -2030,10 +2028,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     provider.dismissStatusBanner();
                     _triggerDiscoveryLoadIfNeeded(forceRefresh: true);
                   },
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.refresh_rounded,
                     size: 17,
-                    color: _textMuted,
+                    color: context.palette.textMuted,
                   ),
                 ),
             ],
@@ -2047,7 +2045,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           title: AppStrings.forYouTitle,
           subtitle: AppStrings.forYouSubtitle(provider.forYouSeedArtists),
           icon: Icons.auto_awesome_rounded,
-          iconColor: _primaryAccent,
+          iconColor: context.palette.accent,
           tracks: forYouItems,
           provider: provider,
           hairline: hairline,
@@ -2090,10 +2088,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       key: const ValueKey('downloader_offline_card'),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: context.palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: _redDot.withValues(alpha: 0.45),
+          color: MusEveePalette.error.withValues(alpha: 0.45),
           width: 0.9,
         ),
       ),
@@ -2104,13 +2102,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: _redDot.withValues(alpha: 0.14),
+              color: MusEveePalette.error.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
             child: const Icon(
               Icons.wifi_off_rounded,
-              color: _redDot,
+              color: MusEveePalette.error,
               size: 18,
             ),
           ),
@@ -2121,8 +2119,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 Text(
                   AppStrings.offlineTitle,
-                  style: const TextStyle(
-                    color: _textPrimary,
+                  style: TextStyle(
+                    color: context.palette.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
@@ -2130,8 +2128,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 3),
                 Text(
                   AppStrings.offlineSubtitle,
-                  style: const TextStyle(
-                    color: _textMuted,
+                  style: TextStyle(
+                    color: context.palette.textMuted,
                     fontSize: 11.5,
                     height: 1.35,
                   ),
@@ -2140,15 +2138,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 OutlinedButton.icon(
                   key: const ValueKey('downloader_offline_retry_button'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor: _primaryAccent.withValues(alpha: 0.18),
+                    foregroundColor: context.palette.textPrimary,
+                    backgroundColor: context.palette.accent.withValues(alpha: 0.18),
                     minimumSize: const Size(0, 32),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 6,
                     ),
                     side: BorderSide(
-                      color: _primaryAccent.withValues(alpha: 0.65),
+                      color: context.palette.accent.withValues(alpha: 0.65),
                       width: 0.8,
                     ),
                     shape: RoundedRectangleBorder(
@@ -2202,8 +2200,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(width: 6),
             Text(
               title,
-              style: const TextStyle(
-                color: _textPrimary,
+              style: TextStyle(
+                color: context.palette.textPrimary,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.15,
@@ -2215,8 +2213,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _textMuted,
+                style: TextStyle(
+                  color: context.palette.textMuted,
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
                 ),
@@ -2261,7 +2259,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         width: 110,
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: _surfaceCard,
+          color: context.palette.surfaceCard,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: hairline, width: 0.8),
         ),
@@ -2317,8 +2315,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               track.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _textPrimary,
+              style: TextStyle(
+                color: context.palette.textPrimary,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 height: 1.15,
@@ -2329,8 +2327,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               track.artist,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _textMuted,
+              style: TextStyle(
+                color: context.palette.textMuted,
                 fontSize: 10.5,
                 fontWeight: FontWeight.w500,
                 height: 1.15,
@@ -2344,11 +2342,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildCarouselCoverPlaceholder() {
     return Container(
-      color: _surfaceSubtle,
+      color: context.palette.surfaceSubtle,
       alignment: Alignment.center,
-      child: const Icon(
+      child: Icon(
         Icons.music_note_rounded,
-        color: _textMuted,
+        color: context.palette.textMuted,
         size: 26,
       ),
     );
@@ -2360,10 +2358,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildFloatingMiniProgressBanner(DownloaderProvider provider) {
     final isError = provider.state == DownloaderState.error;
     final pct = (provider.progress * 100).round();
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = context.palette.hairline;
 
     return Material(
-      color: const Color(0xFF181C24),
+      color: context.palette.surfaceCard,
       child: InkWell(
         onTap: _openDownloadQueueHistorySheet,
         child: Container(
@@ -2380,9 +2378,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 LinearProgressIndicator(
                   value: provider.progress.clamp(0.0, 1.0),
                   minHeight: 2.0,
-                  backgroundColor: _surfaceSubtle,
+                  backgroundColor: context.palette.surfaceSubtle,
                   valueColor:
-                      const AlwaysStoppedAnimation<Color>(_primaryAccent),
+                      AlwaysStoppedAnimation<Color>(context.palette.accent),
                 ),
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -2392,12 +2390,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Row(
                   children: [
                     if (provider.isDownloading)
-                      const SizedBox(
+                      SizedBox(
                         width: 13,
                         height: 13,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: _primaryAccent,
+                          color: context.palette.accent,
                         ),
                       )
                     else
@@ -2405,7 +2403,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         width: 7,
                         height: 7,
                         decoration: BoxDecoration(
-                          color: isError ? _redDot : _primaryAccent,
+                          color: isError ? MusEveePalette.error : context.palette.accent,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -2416,7 +2414,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isError ? _redDot : _textPrimary,
+                          color: isError ? MusEveePalette.error : context.palette.textPrimary,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -2426,8 +2424,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       Text(
                         '$pct%',
-                        style: const TextStyle(
-                          color: _primaryAccent,
+                        style: TextStyle(
+                          color: context.palette.accent,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                         ),
@@ -2444,10 +2442,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         tooltip: AppStrings.closeTooltip,
                         onPressed: provider.dismissStatusBanner,
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.close_rounded,
                           size: 15,
-                          color: _textMuted,
+                          color: context.palette.textMuted,
                         ),
                       ),
                     ],

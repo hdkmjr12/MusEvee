@@ -83,6 +83,19 @@ class AppStrings {
   // ===========================================================================
   static String get settingsHeaderTitle =>
       isIndonesian ? 'Pengaturan' : 'Settings';
+  static String get settingsAppearanceSection =>
+      isIndonesian ? 'Tampilan' : 'Appearance';
+  static String get settingsThemeTitle =>
+      isIndonesian ? 'Tema Aplikasi' : 'App Theme';
+  static String get themeDarkTitle => isIndonesian ? 'Gelap' : 'Dark';
+  static String get themeDarkSubtitle => isIndonesian
+      ? 'Permukaan gelap khas Musicolet'
+      : 'Signature Musicolet dark surface';
+  static String get themeLightTitle => isIndonesian ? 'Terang' : 'Light';
+  static String get themeLightSubtitle => isIndonesian
+      ? 'Permukaan terang bersih berkonsep kontras tinggi'
+      : 'Clean high-contrast light surface';
+
   static String get settingsDownloadsSection =>
       isIndonesian ? 'Unduhan' : 'Downloads';
   static String get settingsDownloadQualityTitle =>
@@ -102,7 +115,7 @@ class AppStrings {
   static String get settingsDownloadQualityNote => isIndonesian
       ? 'Pengaturan ini hanya memengaruhi ukuran file hasil unduhan, bukan penggunaan data saat mengunduh.'
       : 'This setting only affects the downloaded output file size, not data usage during download.';
-  static String get appVersionFooter => 'MusEvee v4.7';
+  static String get appVersionFooter => 'MusEvee v4.8';
 
   // ===========================================================================
   // SMART PLAYLISTS & PLAYLISTS TAB

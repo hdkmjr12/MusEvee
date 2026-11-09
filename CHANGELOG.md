@@ -6,6 +6,32 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.8] — 2026-11-09 (Sentralisasi Palet Warna `MusEveePalette` (`ThemeExtension`), Tema Gelap & Terang (`Dark` / `Light Mode`), serta Toggle Tema Persisten di Tab `Settings`)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Sentralisasi Palet Warna dengan `MusEveePalette` (`lib/theme/musevee_palette.dart`):**
+  - Membuat `class MusEveePalette extends ThemeExtension<MusEveePalette>` yang mengimplementasikan `copyWith` dan `lerp` secara penuh dengan 9 field token warna: `bgCanvas`, `bottomBar`, `surfaceCard`, `surfaceSubtle`, `accent`, `textPrimary`, `textMuted`, `hairline`, dan `appBar`.
+  - Mendefinisikan dua konstanta palet:
+    - **`MusEveePalette.dark` (Default — Identik 100% dengan tampilan Musicolet Dark sebelumnya):** `bgCanvas: #0E1014`, `bottomBar: #0A0C10`, `surfaceCard: #17191E`, `surfaceSubtle: #22252D`, `accent: #3898EC`, `textPrimary: #F2F4F7`, `textMuted: #98A2B3`, `hairline: Colors.white` alpha `0.09` (`#17FFFFFF`), `appBar: #12151C`.
+    - **`MusEveePalette.light` (Mode Terang Bersih dengan Kontras Tinggi):** `bgCanvas: #F6F7F9`, `bottomBar: #FFFFFF`, `surfaceCard: #FFFFFF`, `surfaceSubtle: #ECEEF1`, `accent: #1D74C6`, `textPrimary: #181A1F`, `textMuted: #667085`, `hairline: Colors.black` alpha `0.09` (`#17000000`), `appBar: #FFFFFF`.
+  - Menyediakan warna semantik konstan lintas tema (`emerald: #10B981`, `amber: #F59E0B`, `error: #F04438`, `snackBarBg: #1F242F`) serta ekstensi `BuildContext` (`context.palette` & `context.isDarkMode`).
+- **Migrasi Seluruh Pemakaian Warna di `lib/` ke `context.palette`:**
+  - Mengaudit dan memigrasikan seluruh pemakaian warna permukaan, teks, ikon, border/divider, serta *drag handle* di `lib/main.dart`, `lib/screens/home_screen.dart`, `lib/widgets/local_library_views.dart`, `lib/widgets/now_playing_view.dart`, `lib/widgets/track_preview_sheet.dart`, `lib/widgets/tag_editor_sheet.dart`, `lib/widgets/queue_history_view.dart`, `lib/widgets/batch_playlist_sheet.dart`, `lib/widgets/search_result_tile.dart`, `lib/widgets/musicolet_bottom_strip.dart`, `lib/widgets/musicolet_mini_player.dart`, `lib/widgets/pressable_scale.dart`, `lib/widgets/musevee_logo.dart`, dan `lib/widgets/settings_view.dart` ke `context.palette`, serta menghapus konstanta warna lokal per-file (`_kBg`, `_kCard`, `_surfaceCard`, `_bgCanvas`, dsb.).
+  - Mempertahankan pengecualian kontras visual: (1) teks, ikon, dan scrim di atas gambar `Cover Art` tetap putih di kedua mode, (2) teks/ikon di atas tombol berlatar aksen/error penuh dan badge tetap putih, (3) ekstraksi warna sampul untuk *Dynamic Ambient Background*, serta (4) warna semantik (`emerald`, `amber`, `error`).
+- **Dukungan Tema `Dark` / `Light` Persisten di `SettingsProvider`, `main.dart`, & `SettingsView` (`lib/providers/settings_provider.dart`, `lib/main.dart`, `lib/widgets/settings_view.dart`, `lib/utils/app_strings.dart`):**
+  - Menambahkan field `themeMode` (`ThemeMode.dark` | `ThemeMode.light`, default `ThemeMode.dark`) ke `SettingsProvider` yang disimpan pada file `musevee_settings_v1.json` yang sama dengan backward-compatibility penuh terhadap file `v4.7` (tanpa kunci `"themeMode"` otomatis terbaca sebagai `ThemeMode.dark`).
+  - Menghubungkan `_MusEveeAppState` ke `SettingsProvider` sehingga `MaterialApp.themeMode` (`_buildDarkTheme()` & `_buildLightTheme()`) dan `SystemChrome.setSystemUIOverlayStyle` (ikon status bar & navigation bar otomatis gelap `Brightness.dark` di atas latar terang saat mode `Terang` aktif) langsung diperbarui seketika saat toggle diganti tanpa restart aplikasi.
+  - Menambahkan seksi **"Tampilan" / "Appearance"** di bagian atas `SettingsView` (di atas seksi *"Unduhan"*), berisi pemilih dua opsi **Gelap / Dark** (`Icons.dark_mode_rounded`) dan **Terang / Light** (`Icons.light_mode_rounded`), serta memperbarui footer versi menjadi `"MusEvee v4.8"`.
+- **Adaptasi Khusus `NowPlayingView` & Embedded Lyrics pada Mode Terang (`lib/widgets/now_playing_view.dart`):**
+  - **Dynamic Ambient Background (`_buildAmbientGradientColors`):** Pada mode gelap tetap menggunakan gradasi gelap dari warna dominan sampul ke `#0E1014` tanpa perubahan; pada mode terang mencampur warna dominan sampul `82%` ke arah putih (`Color.lerp(raw, Colors.white, 0.82)!` di bagian atas dan `0.90` di bagian tengah) lalu bergradasi ke `palette.bgCanvas` (`#F6F7F9`), serta menggunakan `palette.textPrimary` / `palette.textMuted` untuk teks judul, artis, album, waktu, seekbar, dan tombol kontrol di atas latar ambient.
+  - **Active Lyric Line Ribbon (`_buildLyricsOverlayBody`):** Pada mode gelap tetap menggunakan pita `Colors.black.withValues(alpha: 0.45)` dengan teks putih **Bold**; pada mode terang menggunakan pita `Colors.white.withValues(alpha: 0.65)` dengan teks `#181A1F` **Bold** di atas gambar sampul yang di-scrim.
+- **Verifikasi Lintas Layar & Pengujian Otomatis (`test/settings_provider_test.dart`, `test/widget_test.dart`):**
+  - **Laporan Verifikasi Mode Terang (`Light Mode`) & Mode Gelap (`Dark Mode`):** Diverifikasi pada seluruh 6 tab utama (`0: Queue`, `1: Now Playing` dengan lagu aktif + lirik tersinkronisasi + warna dominan sampul, `2: Folders` + modal *Kelola Folder*, `3: Playlists` + drill-down *All songs* & dialog *Playlist Baru*, `4: Downloader` + 3 *Horizontal Carousels* & modal *Antrean & Riwayat Unduhan*, `5: Settings`), serta `TrackPreviewSheet` dan `TagEditorSheet`. Seluruh teks, ikon, garis batas `hairline`, dan kontrol terbaca jelas di atas permukaan terang tanpa elemen "putih di atas putih", dan tampilan Mode Gelap dikonfirmasi **tidak berubah** dari `v4.7`.
+- **Bump Versi & Pembaruan CI/CD (`pubspec.yaml`, `.github/workflows/build_apk.yml`):**
+  - Menaikkan versi aplikasi ke `4.8.0+13` dan memperbarui artefak serta GitHub Release otomatis menjadi `MusEvee-v4.8-arm64.apk` (`v4.8.0`).
+
+---
+
 ## [v4.7] — 2026-11-09 (Tab Ke-6 `Settings`, Pilihan Kualitas Unduhan MP3 `320`/`192`/`128 kbps` via `SettingsProvider`, & Integrasi Pencarian Lokal di Dalam `All songs`)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)

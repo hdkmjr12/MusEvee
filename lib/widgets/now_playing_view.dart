@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/local_song.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
+import '../theme/musevee_palette.dart';
 import 'local_library_views.dart';
 import 'pressable_scale.dart';
 import 'tag_editor_sheet.dart';
@@ -73,10 +74,33 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     });
   }
 
-  /// Darkens and tones the extracted Cover Art dominant color so Musicolet's
-  /// Dynamic Ambient Background looks rich (e.g. muted dark purple for YOASOBI,
-  /// dark olive-grey for ASCA) while keeping white typography 100% legible.
-  List<Color> _buildAmbientGradientColors(LocalSong? song) {
+  /// Computes the Dynamic Ambient Background gradient from the Cover Art's
+  /// dominant color:
+  /// - Dark Mode: darkens and tones the dominant color toward `#0A0C10`.
+  /// - Light Mode: blends the dominant color 82% toward white
+  ///   (`Color.lerp(raw, Colors.white, 0.82)!`) and grades to `palette.bgCanvas`
+  ///   (`#F6F7F9`).
+  List<Color> _buildAmbientGradientColors(
+    BuildContext context,
+    LocalSong? song,
+  ) {
+    final palette = context.palette;
+    final isDark = context.isDarkMode;
+
+    if (!isDark) {
+      if (song == null) {
+        return [
+          const Color(0xFFEEF1F6),
+          const Color(0xFFF3F5F8),
+          palette.bgCanvas,
+        ];
+      }
+      final raw = Color(song.dominantColorValue);
+      final tunedTop = Color.lerp(raw, Colors.white, 0.82)!;
+      final tunedMid = Color.lerp(tunedTop, palette.bgCanvas, 0.56)!;
+      return [tunedTop, tunedMid, palette.bgCanvas];
+    }
+
     const baseBottom = Color(0xFF0A0C10);
     if (song == null) {
       return const [
@@ -102,7 +126,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     return Consumer2<LocalMusicProvider, DownloaderProvider>(
       builder: (context, localProvider, downloaderProvider, _) {
         final song = localProvider.currentSong;
-        final gradientColors = _buildAmbientGradientColors(song);
+        final gradientColors = _buildAmbientGradientColors(context, song);
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 450),
@@ -419,12 +443,12 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             // Left: `Embedded lyrics ⌄` Dropdown
             PopupMenuButton<String>(
               tooltip: 'Mode & Sumber Lirik',
-              color: const Color(0xFF1C2028),
+              color: context.palette.surfaceSubtle,
               offset: const Offset(0, 34),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
                 side: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: context.palette.hairline,
                   width: 0.8,
                 ),
               ),
@@ -467,12 +491,15 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                             ? Icons.radio_button_checked
                             : Icons.radio_button_off,
                         size: 16,
-                        color: Colors.white,
+                        color: context.palette.textPrimary,
                       ),
                       const SizedBox(width: 10),
-                      const Text(
+                      Text(
                         'Lirik Berjalan (Synced)',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(
+                          color: context.palette.textPrimary,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
@@ -487,47 +514,56 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                             ? Icons.radio_button_checked
                             : Icons.radio_button_off,
                         size: 16,
-                        color: Colors.white,
+                        color: context.palette.textPrimary,
                       ),
                       const SizedBox(width: 10),
-                      const Text(
+                      Text(
                         'Lirik Polos (Plain)',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(
+                          color: context.palette.textPrimary,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const PopupMenuDivider(),
-                const PopupMenuItem<String>(
+                PopupMenuItem<String>(
                   value: 'lrclib',
                   child: Row(
                     children: [
                       Icon(
                         Icons.cloud_download_outlined,
                         size: 16,
-                        color: Color(0xFF3898EC),
+                        color: context.palette.accent,
                       ),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Text(
                         'Ganti Kandidat Lirik (LRCLIB)',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(
+                          color: context.palette.textPrimary,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const PopupMenuItem<String>(
+                PopupMenuItem<String>(
                   value: 'romaji',
                   child: Row(
                     children: [
                       Icon(
                         Icons.auto_awesome_rounded,
                         size: 16,
-                        color: Color(0xFF3898EC),
+                        color: context.palette.accent,
                       ),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Text(
                         '✨ Auto-Romaji Lirik',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(
+                          color: context.palette.textPrimary,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
@@ -672,11 +708,17 @@ class _NowPlayingViewState extends State<NowPlayingView> {
       );
     }
 
-    // 1. Synced LRC Mode with Musicolet Dark Ribbon Highlight & Tap-to-Seek
+    // 1. Synced LRC Mode with Musicolet Ribbon Highlight & Tap-to-Seek
     if (localProvider.lyricsDisplayMode == EmbeddedLyricsDisplayMode.synced &&
         song.hasSyncedLyrics) {
       final entries = song.parsedSyncedLyrics;
       final verticalPad = viewportHeight * 0.36;
+      final isDark = context.isDarkMode;
+      final activeRibbonColor = isDark
+          ? Colors.black.withValues(alpha: 0.45)
+          : Colors.white.withValues(alpha: 0.65);
+      final activeTextColor =
+          isDark ? Colors.white : MusEveePalette.light.textPrimary;
 
       return ListView.builder(
         controller: _syncedScrollController,
@@ -695,10 +737,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                // Musicolet signature horizontal dark ribbon on active line
-                color: isActive
-                    ? Colors.black.withValues(alpha: 0.45)
-                    : Colors.transparent,
+                // Musicolet signature horizontal ribbon on active line
+                color: isActive ? activeRibbonColor : Colors.transparent,
               ),
               alignment: Alignment.center,
               child: Text(
@@ -708,7 +748,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: isActive
-                      ? Colors.white
+                      ? activeTextColor
                       : Colors.white.withValues(alpha: 0.46),
                   fontSize: isActive ? fontSize + 0.5 : fontSize - 0.5,
                   fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
@@ -836,12 +876,16 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   }
 
   Widget _buildEmptyLibraryPanel(LocalMusicProvider localProvider) {
+    final palette = context.palette;
+    final isDark = context.isDarkMode;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.38),
+        color: isDark
+            ? Colors.black.withValues(alpha: 0.38)
+            : palette.surfaceCard.withValues(alpha: 0.86),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: palette.hairline,
           width: 0.8,
         ),
       ),
@@ -853,14 +897,14 @@ class _NowPlayingViewState extends State<NowPlayingView> {
           Icon(
             Icons.music_note_rounded,
             size: 52,
-            color: Colors.white.withValues(alpha: 0.30),
+            color: palette.textMuted.withValues(alpha: 0.55),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Belum ada lagu yang sedang diputar',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white,
+              color: palette.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
@@ -872,7 +916,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 : 'Pilih lagu dari tab Folders (📁) atau unduh lagu baru dengan lirik otomatis di tab Downloader (⬇).',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.62),
+              color: palette.textMuted,
               fontSize: 12.5,
               height: 1.4,
             ),
@@ -885,10 +929,12 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             children: [
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  backgroundColor: Colors.white.withValues(alpha: 0.06),
+                  foregroundColor: palette.textPrimary,
+                  backgroundColor: palette.surfaceSubtle.withValues(
+                    alpha: isDark ? 0.35 : 0.75,
+                  ),
                   side: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.22),
+                    color: palette.hairline,
                     width: 0.8,
                   ),
                 ),
@@ -898,7 +944,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
               ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3898EC),
+                  backgroundColor: palette.accent,
                   foregroundColor: Colors.white,
                   minimumSize: const Size(0, 40),
                 ),
@@ -917,6 +963,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   // MIDDLE SECTION: TRACK INFO + MUSICOLET UTILITY ICON ROW
   // ---------------------------------------------------------------------------
   Widget _buildTrackInfoSection(LocalSong? song) {
+    final palette = context.palette;
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       child: Column(
@@ -928,8 +975,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: palette.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w700,
               letterSpacing: -0.2,
@@ -941,8 +988,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFD0D5DD),
+            style: TextStyle(
+              color: palette.textPrimary.withValues(alpha: 0.82),
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -953,8 +1000,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF8E96A4),
+            style: TextStyle(
+              color: palette.textMuted,
               fontSize: 13,
               fontWeight: FontWeight.w400,
             ),
@@ -970,6 +1017,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     required DownloaderProvider downloaderProvider,
     required LocalSong? song,
   }) {
+    final palette = context.palette;
     final isFav = song != null && localProvider.isFavorite(song.filePath);
     final playMode = localProvider.playMode;
     final isShuffle = localProvider.isShuffle;
@@ -988,7 +1036,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             child: Icon(
               isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
               size: 20,
-              color: isFav ? const Color(0xFFFF5A6E) : Colors.white70,
+              color: isFav ? const Color(0xFFFF5A6E) : palette.textMuted,
             ),
           ),
 
@@ -998,10 +1046,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             enabled: song != null,
             onTap:
                 song == null ? null : () => _showSongInfoDialog(context, song),
-            child: const Icon(
+            child: Icon(
               Icons.info_outline_rounded,
               size: 20,
-              color: Colors.white70,
+              color: palette.textMuted,
             ),
           ),
 
@@ -1021,10 +1069,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                       ),
                     );
                   },
-            child: const Icon(
+            child: Icon(
               Icons.playlist_add_rounded,
               size: 22,
-              color: Colors.white70,
+              color: palette.textMuted,
             ),
           ),
 
@@ -1051,15 +1099,17 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
                     color: song != null
-                        ? Colors.white.withValues(alpha: 0.45)
-                        : Colors.white24,
+                        ? palette.textMuted.withValues(alpha: 0.65)
+                        : palette.hairline,
                     width: 1.0,
                   ),
                 ),
                 child: Icon(
                   Icons.more_horiz_rounded,
                   size: 16,
-                  color: song != null ? Colors.white70 : Colors.white24,
+                  color: song != null
+                      ? palette.textMuted
+                      : palette.textMuted.withValues(alpha: 0.35),
                 ),
               ),
             ),
@@ -1072,7 +1122,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             tooltip: _playModeTooltip(playMode),
             enabled: true,
             onTap: localProvider.cyclePlayMode,
-            child: _buildPlayModeGlyph(playMode),
+            child: _buildPlayModeGlyph(playMode, palette),
           ),
 
           // Right 2: Shuffle (`🔀`)
@@ -1083,7 +1133,9 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             child: Icon(
               Icons.shuffle_rounded,
               size: 20,
-              color: isShuffle ? Colors.white : Colors.white54,
+              color: isShuffle
+                  ? palette.textPrimary
+                  : palette.textMuted.withValues(alpha: 0.72),
             ),
           ),
         ],
@@ -1131,32 +1183,39 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     }
   }
 
-  Widget _buildPlayModeGlyph(MusicoletPlayMode mode) {
+  Widget _buildPlayModeGlyph(
+    MusicoletPlayMode mode,
+    MusEveePalette palette,
+  ) {
     switch (mode) {
       case MusicoletPlayMode.repeatAll:
-        return const Icon(Icons.repeat_rounded, size: 20, color: Colors.white);
+        return Icon(
+          Icons.repeat_rounded,
+          size: 20,
+          color: palette.textPrimary,
+        );
       case MusicoletPlayMode.repeatOne:
-        return const Icon(
+        return Icon(
           Icons.repeat_one_rounded,
           size: 20,
-          color: Colors.white,
+          color: palette.textPrimary,
         );
       case MusicoletPlayMode.playSingleStop:
         // Musicolet's iconic `1→` indicator
-        return const Text(
+        return Text(
           '1→',
           style: TextStyle(
-            color: Colors.white,
+            color: palette.textPrimary,
             fontSize: 13.5,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
           ),
         );
       case MusicoletPlayMode.playQueueOnce:
-        return const Icon(
+        return Icon(
           Icons.trending_flat_rounded,
           size: 20,
-          color: Colors.white70,
+          color: palette.textMuted,
         );
     }
   }
@@ -1165,6 +1224,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   // BOTTOM SECTION: SEEKBAR & TRANSPORT CONTROLS
   // ---------------------------------------------------------------------------
   Widget _buildSeekbarRow(LocalMusicProvider localProvider, LocalSong? song) {
+    final palette = context.palette;
     return ValueListenableBuilder<PlaybackProgress>(
       valueListenable: localProvider.progressNotifier,
       builder: (context, progress, _) {
@@ -1180,10 +1240,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
               width: 38,
               child: Text(
                 LocalSong.formatMillis(currentMs.round()),
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: palette.textMuted,
                   fontSize: 11.5,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),
@@ -1191,10 +1251,11 @@ class _NowPlayingViewState extends State<NowPlayingView> {
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 2.4,
-                  activeTrackColor: Colors.white,
-                  inactiveTrackColor: Colors.white.withValues(alpha: 0.24),
-                  thumbColor: Colors.white,
-                  overlayColor: Colors.white.withValues(alpha: 0.14),
+                  activeTrackColor: palette.textPrimary,
+                  inactiveTrackColor:
+                      palette.textPrimary.withValues(alpha: 0.24),
+                  thumbColor: palette.textPrimary,
+                  overlayColor: palette.textPrimary.withValues(alpha: 0.14),
                   thumbShape:
                       const RoundSliderThumbShape(enabledThumbRadius: 6.2),
                   overlayShape:
@@ -1228,10 +1289,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
               child: Text(
                 song != null ? LocalSong.formatMillis(rawTotal) : '0:00',
                 textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: palette.textMuted,
                   fontSize: 11.5,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ),
@@ -1246,6 +1307,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     LocalMusicProvider localProvider,
     LocalSong? song,
   ) {
+    final palette = context.palette;
     final vol = localProvider.volume;
     final IconData volIcon = vol <= 0.01
         ? Icons.volume_off_rounded
@@ -1261,7 +1323,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
             child: IconButton(
               tooltip: 'Volume Audio',
               onPressed: () => _showVolumeSheet(context, localProvider),
-              icon: Icon(volIcon, color: Colors.white70, size: 22),
+              icon: Icon(volIcon, color: palette.textMuted, size: 22),
             ),
           ),
 
@@ -1277,7 +1339,9 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   iconSize: 34,
                   icon: Icon(
                     Icons.skip_previous_rounded,
-                    color: song == null ? Colors.white30 : Colors.white,
+                    color: song == null
+                        ? palette.textMuted.withValues(alpha: 0.35)
+                        : palette.textPrimary,
                   ),
                 ),
               ),
@@ -1296,7 +1360,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                       child: MographPlayPauseIcon(
                         isPlaying: localProvider.isPlaying,
                         size: 46,
-                        color: Colors.white,
+                        color: palette.textPrimary,
                       ),
                     ),
                   ),
@@ -1311,7 +1375,9 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   iconSize: 34,
                   icon: Icon(
                     Icons.skip_next_rounded,
-                    color: song == null ? Colors.white30 : Colors.white,
+                    color: song == null
+                        ? palette.textMuted.withValues(alpha: 0.35)
+                        : palette.textPrimary,
                   ),
                 ),
               ),
@@ -1334,9 +1400,9 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   );
                 }
               },
-              icon: const Icon(
+              icon: Icon(
                 Icons.equalizer_rounded,
-                color: Colors.white70,
+                color: palette.textMuted,
                 size: 22,
               ),
             ),
@@ -1350,30 +1416,31 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   // DIALOGS & SHEETS: FILE INFO `(i)`, `[...]` MENU, VOLUME, LRCLIB PICKER
   // ---------------------------------------------------------------------------
   void _showSongInfoDialog(BuildContext context, LocalSong song) {
+    final palette = context.palette;
     showDialog<void>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF17191E),
+          backgroundColor: palette.surfaceCard,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
-              color: Colors.white.withValues(alpha: 0.10),
+              color: palette.hairline,
               width: 0.8,
             ),
           ),
-          title: const Row(
+          title: Row(
             children: [
               Icon(
                 Icons.info_outline_rounded,
-                color: Color(0xFF3898EC),
+                color: palette.accent,
                 size: 20,
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
                 'Informasi File & Tag ID3',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: palette.textPrimary,
                   fontSize: 15.5,
                   fontWeight: FontWeight.w700,
                 ),
@@ -1385,23 +1452,26 @@ class _NowPlayingViewState extends State<NowPlayingView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _infoRow('Judul', song.title),
-                _infoRow('Artis', song.artist),
-                _infoRow('Album', song.album),
-                if (song.year.isNotEmpty) _infoRow('Tahun', song.year),
-                _infoRow('Folder', song.folderName),
-                _infoRow('Path File', song.filePath),
-                _infoRow('Durasi', song.formattedDuration),
-                _infoRow('Ukuran', song.formattedFileSize),
+                _infoRow(palette, 'Judul', song.title),
+                _infoRow(palette, 'Artis', song.artist),
+                _infoRow(palette, 'Album', song.album),
+                if (song.year.isNotEmpty) _infoRow(palette, 'Tahun', song.year),
+                _infoRow(palette, 'Folder', song.folderName),
+                _infoRow(palette, 'Path File', song.filePath),
+                _infoRow(palette, 'Durasi', song.formattedDuration),
+                _infoRow(palette, 'Ukuran', song.formattedFileSize),
                 _infoRow(
+                  palette,
                   'Kualitas Audio',
                   '${song.bitrateKbps} kbps • ${song.sampleRateHz} Hz',
                 ),
                 _infoRow(
+                  palette,
                   'Tag Sampul (APIC)',
                   song.hasCover ? 'Tersedia (Embedded)' : 'Tidak ada',
                 ),
                 _infoRow(
+                  palette,
                   'Tag Lirik (USLT)',
                   song.hasSyncedLyrics
                       ? 'Synced LRC [mm:ss.xx]'
@@ -1413,9 +1483,9 @@ class _NowPlayingViewState extends State<NowPlayingView> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text(
+              child: Text(
                 'Tutup',
-                style: TextStyle(color: Color(0xFF3898EC)),
+                style: TextStyle(color: palette.accent),
               ),
             ),
           ],
@@ -1424,7 +1494,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget _infoRow(MusEveePalette palette, String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -1432,8 +1502,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF98A2B3),
+            style: TextStyle(
+              color: palette.textMuted,
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
@@ -1441,8 +1511,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
           const SizedBox(height: 1.5),
           SelectableText(
             value,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: palette.textPrimary,
               fontSize: 12.5,
               height: 1.3,
             ),
@@ -1456,9 +1526,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     BuildContext context,
     LocalMusicProvider localProvider,
   ) {
+    final palette = context.palette;
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
       ),
@@ -1477,10 +1548,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Gain Player & Pre-Amp Audio',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: palette.textPrimary,
                             fontSize: 13.5,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1488,7 +1559,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                         if (lp.volume < 1.0 || boostDb > 0.0)
                           TextButton(
                             style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF3898EC),
+                              foregroundColor: palette.accent,
                               visualDensity: VisualDensity.compact,
                             ),
                             onPressed: () {
@@ -1515,15 +1586,16 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                             lp.volume <= 0.01
                                 ? Icons.volume_off_rounded
                                 : Icons.volume_up_rounded,
-                            color: Colors.white,
+                            color: palette.textPrimary,
                           ),
                         ),
                         Expanded(
                           child: SliderTheme(
                             data: SliderTheme.of(ctx).copyWith(
-                              activeTrackColor: Colors.white,
-                              inactiveTrackColor: Colors.white24,
-                              thumbColor: Colors.white,
+                              activeTrackColor: palette.textPrimary,
+                              inactiveTrackColor:
+                                  palette.textMuted.withValues(alpha: 0.30),
+                              thumbColor: palette.textPrimary,
                             ),
                             child: Slider(
                               min: 0.0,
@@ -1538,8 +1610,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                           child: Text(
                             '$pct%',
                             textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: palette.textPrimary,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1549,20 +1621,21 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                     ),
                     Row(
                       children: [
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Icon(
                             Icons.graphic_eq_rounded,
-                            color: Color(0xFF3898EC),
+                            color: palette.accent,
                             size: 22,
                           ),
                         ),
                         Expanded(
                           child: SliderTheme(
                             data: SliderTheme.of(ctx).copyWith(
-                              activeTrackColor: const Color(0xFF3898EC),
-                              inactiveTrackColor: Colors.white24,
-                              thumbColor: const Color(0xFF3898EC),
+                              activeTrackColor: palette.accent,
+                              inactiveTrackColor:
+                                  palette.textMuted.withValues(alpha: 0.30),
+                              thumbColor: palette.accent,
                             ),
                             child: Slider(
                               min: 0.0,
@@ -1578,8 +1651,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                           child: Text(
                             '+${boostDb.toStringAsFixed(1)}dB',
                             textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              color: Color(0xFF3898EC),
+                            style: TextStyle(
+                              color: palette.accent,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1603,9 +1676,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     required DownloaderProvider downloaderProvider,
     required LocalSong song,
   }) {
+    final palette = context.palette;
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -1620,7 +1694,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white24,
+                    color: palette.textMuted.withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1637,8 +1711,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                               song.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: palette.textPrimary,
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -1648,8 +1722,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                               '${song.artist} • ${song.folderName}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF98A2B3),
+                              style: TextStyle(
+                                color: palette.textMuted,
                                 fontSize: 12,
                               ),
                             ),
@@ -1660,16 +1734,16 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
+                Divider(color: palette.hairline, height: 1),
                 ListTile(
                   dense: true,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.playlist_add_rounded,
-                    color: Color(0xFF3898EC),
+                    color: palette.accent,
                   ),
-                  title: const Text(
+                  title: Text(
                     'Tambah ke Playlist',
-                    style: TextStyle(color: Colors.white, fontSize: 13.5),
+                    style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
                   ),
                   onTap: () {
                     Navigator.of(ctx).pop();
@@ -1682,18 +1756,18 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 ),
                 ListTile(
                   dense: true,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.drive_file_move_outlined,
-                    color: Color(0xFF3898EC),
+                    color: palette.accent,
                   ),
-                  title: const Text(
+                  title: Text(
                     'Pindah Folder',
-                    style: TextStyle(color: Colors.white, fontSize: 13.5),
+                    style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
                   ),
                   subtitle: Text(
                     'Saat ini di ${song.folderName}',
-                    style: const TextStyle(
-                      color: Color(0xFF98A2B3),
+                    style: TextStyle(
+                      color: palette.textMuted,
                       fontSize: 11.5,
                     ),
                   ),
@@ -1704,13 +1778,13 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 ),
                 ListTile(
                   dense: true,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.edit_outlined,
-                    color: Colors.white70,
+                    color: palette.textMuted,
                   ),
-                  title: const Text(
+                  title: Text(
                     'Edit Tag & Embedded Lyrics',
-                    style: TextStyle(color: Colors.white, fontSize: 13.5),
+                    style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
                   ),
                   onTap: () {
                     Navigator.of(ctx).pop();
@@ -1724,13 +1798,13 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 ),
                 ListTile(
                   dense: true,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.lyrics_outlined,
-                    color: Colors.white70,
+                    color: palette.textMuted,
                   ),
-                  title: const Text(
+                  title: Text(
                     'Ganti Lirik dari LRCLIB',
-                    style: TextStyle(color: Colors.white, fontSize: 13.5),
+                    style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
                   ),
                   onTap: () {
                     Navigator.of(ctx).pop();
@@ -1739,13 +1813,13 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                 ),
                 ListTile(
                   dense: true,
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.auto_awesome_rounded,
-                    color: Color(0xFF3898EC),
+                    color: palette.accent,
                   ),
-                  title: const Text(
+                  title: Text(
                     '✨ Auto-Romaji Lirik & Judul Jepang',
-                    style: TextStyle(color: Colors.white, fontSize: 13.5),
+                    style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
                   ),
                   onTap: () async {
                     Navigator.of(ctx).pop();
@@ -1770,11 +1844,14 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                   dense: true,
                   leading: const Icon(
                     Icons.delete_outline_rounded,
-                    color: Color(0xFFF04438),
+                    color: MusEveePalette.error,
                   ),
                   title: const Text(
                     'Hapus File Lagu',
-                    style: TextStyle(color: Color(0xFFF04438), fontSize: 13.5),
+                    style: TextStyle(
+                      color: MusEveePalette.error,
+                      fontSize: 13.5,
+                    ),
                   ),
                   onTap: () {
                     Navigator.of(ctx).pop();
@@ -1794,11 +1871,12 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     LocalMusicProvider localProvider,
     LocalSong song,
   ) async {
+    final palette = context.palette;
     localProvider.loadLyricsCandidatesForSong(song);
 
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -1819,16 +1897,16 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                         width: 36,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white24,
+                          color: palette.textMuted.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
                     const SizedBox(height: 14),
-                    const Text(
+                    Text(
                       'Pilih Kandidat Lirik (LRCLIB)',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: palette.textPrimary,
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1838,29 +1916,29 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                       '${song.artist} — ${song.title}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF98A2B3),
+                      style: TextStyle(
+                        color: palette.textMuted,
                         fontSize: 12.5,
                       ),
                     ),
                     const SizedBox(height: 12),
                     if (lp.isLoadingLyricsCandidates)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 28),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 28),
                         child: Center(
                           child: CircularProgressIndicator(
                             strokeWidth: 2.2,
-                            color: Color(0xFF3898EC),
+                            color: palette.accent,
                           ),
                         ),
                       )
                     else if (cands.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
                         child: Text(
                           'Kandidat lirik tidak ditemukan di LRCLIB untuk lagu ini.',
                           style: TextStyle(
-                            color: Color(0xFF98A2B3),
+                            color: palette.textMuted,
                             fontSize: 13,
                           ),
                         ),
@@ -1910,10 +1988,10 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                               child: Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF22252D),
+                                  color: palette.surfaceSubtle,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.10),
+                                    color: palette.hairline,
                                     width: 0.8,
                                   ),
                                 ),
@@ -1924,8 +2002,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                                       children: [
                                         Text(
                                           cand.languageTag,
-                                          style: const TextStyle(
-                                            color: Color(0xFF3898EC),
+                                          style: TextStyle(
+                                            color: palette.accent,
                                             fontSize: 12,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -1933,8 +2011,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                                         const SizedBox(width: 8),
                                         Text(
                                           '${cand.hasSynced ? 'Synced LRC' : 'Plain'} • ${cand.formattedDuration}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF98A2B3),
+                                          style: TextStyle(
+                                            color: palette.textMuted,
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1946,8 +2024,8 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                                       cand.previewTwoLines,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: palette.textPrimary,
                                         fontSize: 12,
                                         height: 1.35,
                                       ),
@@ -1974,34 +2052,35 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     LocalMusicProvider localProvider,
     LocalSong song,
   ) async {
+    final palette = context.palette;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: const Color(0xFF17191E),
-          title: const Text(
+          backgroundColor: palette.surfaceCard,
+          title: Text(
             'Hapus File Lagu?',
             style: TextStyle(
-              color: Colors.white,
+              color: palette.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
           content: Text(
             'Hapus permanen "${song.title}" dari folder ${song.folderName}?',
-            style: const TextStyle(color: Color(0xFFD0D5DD), fontSize: 13),
+            style: TextStyle(color: palette.textMuted, fontSize: 13),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text(
+              child: Text(
                 'Batal',
-                style: TextStyle(color: Color(0xFF98A2B3)),
+                style: TextStyle(color: palette.textMuted),
               ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF04438),
+                backgroundColor: MusEveePalette.error,
                 foregroundColor: Colors.white,
               ),
               onPressed: () => Navigator.of(ctx).pop(true),

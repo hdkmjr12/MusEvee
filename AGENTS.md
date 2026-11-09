@@ -10,13 +10,13 @@
 ## 1. Status Terkini Proyek
 
 - **Nama Resmi & Permanen Aplikasi:** **`MusEvee`** (bukan *MusicEvee* / *SpotMeta Downloader*; `applicationId = "com.zte.as.music"` untuk dukungan native Live Island ZTE/nubia)
-- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.7`** (`pubspec.yaml` version `4.7.0+12`, badge UI `v4.7`)
-- **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`, `MusEvee-v4.7-arm64.apk`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), keystore permanen `android/app/musevee-release.jks`, wrapper Gradle (`gradle-wrapper.jar` + `gradle-9.3.1-bin.zip`) yang di-track langsung di Git bersama Google Cloud Maven Central mirror & HTTP retry hardening, serta publikasi otomatis ke **GitHub Releases (`v4.7.0`)** via `softprops/action-gh-release@v2`.
-- **Update Terakhir (`v4.7` — Tab Ke-6 `Settings`, Pilihan Kualitas Unduhan MP3 `320`/`192`/`128 kbps` via `SettingsProvider`, & Integrasi Pencarian Lokal di Dalam `All songs`):**
-  - **`SettingsProvider` & Persistensi JSON (`lib/providers/settings_provider.dart`, `lib/main.dart`):** Menambahkan `SettingsProvider` (`ChangeNotifier`) yang dimiliki oleh `_MusEveeAppState` dan menyimpan preferensi ke `musevee_settings_v1.json` di direktori dokumen aplikasi tanpa dependensi baru, lengkap dengan enum `DownloadQuality` (`best = 320`, `balanced = 192`, `efficient = 128`, default `best = 320 kbps`) dan fallback aman terhadap file hilang/korup.
-  - **Tab Ke-6 Menjadi `Settings` (`lib/widgets/musicolet_bottom_strip.dart`, `lib/widgets/settings_view.dart`, `lib/screens/home_screen.dart`):** Mengganti tab indeks `5` dari `Search Lokal` menjadi `Settings` (`Icons.settings_outlined` / aktif `Icons.settings_rounded`, tooltip `AppStrings.tabSettingsTooltip` `'Pengaturan'` / `'Settings'`). Halaman `SettingsView` dirancang minimalis bergaya Musicolet Dark (`#0E1014`, `#17191E`, hairline border `0.8px`) yang menampilkan bagian **"Unduhan" / "Downloads"** dengan 3 pilihan kualitas ukuran file (`Terbaik — 320 kbps`, `Seimbang — 192 kbps`, `Hemat — 128 kbps`), catatan penjelas bahwa pengaturan ini hanya memengaruhi ukuran file hasil unduhan di penyimpanan HP (bukan kuota saat mengunduh), serta footer `"MusEvee v4.7"`.
-  - **Integrasi Pencarian Lokal ke Dalam `All songs` + Shortcut Cepat (`lib/widgets/local_library_views.dart`, `lib/screens/home_screen.dart`):** Memindahkan bar pencarian lokal permanen beserta `FilterChip` Favorit (`♥`) ke bagian atas drill-down `All songs` (`SmartPlaylistId.allSongs`) di `LocalPlaylistsView` (otomatis membersihkan kueri `setLocalSearchQuery('')` saat pengguna menekan tombol Kembali), serta menambahkan tombol shortcut pencarian cepat (`Icons.search_rounded`) di header tab `Folders` dan `Playlists` yang langsung berpindah ke tab `Playlists`, membuka `All songs`, dan memfokuskan kolom pencarian (`FocusNode.requestFocus()`).
-  - **Plumbing Kualitas Unduhan FFmpeg (`lib/services/tagging_service.dart`, `lib/providers/downloader_provider.dart`):** Memperbarui `TaggingService.convertAndTagAudio()` agar menerima parameter opsional `int bitrateKbps = 320` (dengan normalisasi fallback ke `320` jika di luar `{128, 192, 320}`) pada argumen FFmpeg `'-b:a', '${resolvedBitrate}k'` dan pesan log/progress, serta meneruskan `settingsProvider.downloadQuality.bitrateKbps` dari `DownloaderProvider` pada proses unduh tunggal maupun antrean tanpa mengubah `retagExistingMp3` (`-c:a copy`).
+- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.8`** (`pubspec.yaml` version `4.8.0+13`, badge UI `v4.8`)
+- **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`, `MusEvee-v4.8-arm64.apk`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), keystore permanen `android/app/musevee-release.jks`, wrapper Gradle (`gradle-wrapper.jar` + `gradle-9.3.1-bin.zip`) yang di-track langsung di Git bersama Google Cloud Maven Central mirror & HTTP retry hardening, serta publikasi otomatis ke **GitHub Releases (`v4.8.0`)** via `softprops/action-gh-release@v2`.
+- **Update Terakhir (`v4.8` — Sentralisasi Token Warna `MusEveePalette` (`ThemeExtension`), Tema Gelap & Terang (`Dark` / `Light Mode`), serta Toggle Tema Persisten di Tab `Settings`):**
+  - **Sentralisasi Palet Warna (`lib/theme/musevee_palette.dart`):** Menambahkan `MusEveePalette extends ThemeExtension<MusEveePalette>` (lengkap dengan `copyWith`, `lerp`, serta ekstensi `context.palette` & `context.isDarkMode`) yang menyatukan seluruh token warna permukaan, teks, aksen, dan garis batas (`bgCanvas`, `bottomBar`, `surfaceCard`, `surfaceSubtle`, `accent`, `textPrimary`, `textMuted`, `hairline`, `appBar`) ke dalam dua konstanta (`MusEveePalette.dark` dan `MusEveePalette.light`), sekaligus menghapus konstanta warna lokal yang tersebar di seluruh `lib/`.
+  - **Toggle Tema Gelap / Terang Persisten (`lib/providers/settings_provider.dart`, `lib/main.dart`, `lib/widgets/settings_view.dart`):** Menyimpan pilihan tema (`"themeMode": "dark" | "light"`, default `ThemeMode.dark`, backward-compatible dengan file `musevee_settings_v1.json` dari `v4.7`) di `SettingsProvider`, menghubungkannya ke `MaterialApp.themeMode` (`_buildDarkTheme()` & `_buildLightTheme()`) dan `SystemChrome.setSystemUIOverlayStyle` secara *live* tanpa restart, serta menambahkan seksi **"Tampilan" / "Appearance"** (pilihan **Gelap / Dark** & **Terang / Light**) di bagian paling atas `SettingsView` dengan footer `"MusEvee v4.8"`.
+  - **Adaptasi `NowPlayingView` & Embedded Lyrics untuk Light Mode (`lib/widgets/now_playing_view.dart`):** Menjaga tampilan mode gelap 100% identik seperti sebelumnya, sementara pada mode terang *Dynamic Ambient Background* mencampur warna dominan sampul 82% ke arah putih (`Color.lerp(raw, Colors.white, 0.82)!`) lalu bergradasi halus ke `bgCanvas` terang (`#F6F7F9`), pita lirik aktif (*Active Lyric Ribbon*) menggunakan `Colors.white.withValues(alpha: 0.65)` dengan teks tebal gelap (`#181A1F`), dan elemen di atas gambar sampul (`Cover Art` / badge aksen solid) tetap mempertahankan kontras putih.
+  - **Fitur Sebelumnya (`v4.7`):** Tab Ke-6 `Settings`, Pilihan Kualitas Unduhan MP3 (`320` / `192` / `128 kbps`) via `SettingsProvider` (`musevee_settings_v1.json`), & Integrasi Pencarian Lokal ke Dalam `All songs` + Shortcut Cepat di Header `Folders` dan `Playlists`.
   - **Fitur Sebelumnya (`v4.6`):** Pembatasan Mix HANYA untuk `Your playlists`, 3 Horizontal Carousels Bersampul Kecil di Downloader (`For You`, `Global Trending`, `Indonesia Trending`), Deteksi Offline Akurat (`NetworkOfflineException`) & Error Banner yang Bisa Ditutup `✕`, Lokalisasi Otomatis Sistem `id`/`en` (`AppStrings`), serta Optimasi Data Pengguna `< 5 MB` + On-Demand USLT Lyrics.
   - **Fitur Sebelumnya (`v4.5`):** Context-Aware & Rotated Queue (`index 0` / `#1`), 6 Musicolet Smart Playlists + `Your playlists`, Fix Duplikasi Aplikasi di Recent Apps (`singleTask`), & Interactive Folder Explorer pada Downloader.
   - **Fitur Sebelumnya (`v4.4`):** Navigasi Bawah 6 Tab + Sliding Pill Indicator + Modal Bottom Sheet Antrean Unduhan `88%`, Mograph Motion & Liquid Shape Morphing (`_MorphingMergeActionBar`, `MographPlayPauseIcon`, Dynamic Artwork Scale), Multi-Folder & Multi-Playlist Queue Merger, Hi-Fi Unattenuated Audio Engine (`1.0` Volume) + Pre-Amp `LoudnessEnhancer`, serta sistem Draft + tombol **Terapkan** di Kelola Folder.
@@ -24,20 +24,30 @@
 
 ---
 
-## 2. Identitas & Prinsip Desain (`MusEvee` — Musicolet Dark UI)
+## 2. Identitas & Prinsip Desain (`MusEvee` — Dual Palette: Musicolet Dark & Clean Light UI)
 
 - **Nama Resmi & Permanen Aplikasi:** `MusEvee` (tanpa huruf *"ic"*).
-- **Gaya Visual:** *1:1 Musicolet Dark UI/UX* dipadukan dengan kerapian *Architectural Hairline Borders*:
-  - **Dynamic Ambient Background (Now Playing):** Gradasi gelap vertikal yang otomatis menyesuaikan warna dominan Cover Art lagu yang sedang diputar (misal ungu tua lembut untuk *YOASOBI - Idol*, abu-abu olive gelap untuk *ASCA - Resister*).
-  - **Palet Warna Gelap (`Musicolet Dark Surface`):**
-    - Canvas Background: `#0E1014` (Bottom Strip `#0A0C10`)
-    - Surface Card / Sheet: `#17191E`
-    - Surface Subtle / Input: `#22252D`
-    - Primary Accent Blue: `#3898EC`
-    - Text Primary Light: `#F2F4F7` / `#FFFFFF`
-    - Text Muted: `#98A2B3`
-    - Active Lyric Ribbon: `Colors.black.withValues(alpha: 0.45)` dengan teks putih **Bold**.
-  - **Garis Batas (`Hairline Border`) & Radius:** Border tipis `0.7px–0.8px` (`Colors.white.withValues(alpha: 0.08–0.10)`) dan radius tegas `4px–10px` (modal bottom sheet top radius `16px`).
+- **Gaya Visual:** *1:1 Musicolet UI/UX* dipadukan dengan kerapian *Architectural Hairline Borders* dan sistem token warna terpusat `MusEveePalette` (`lib/theme/musevee_palette.dart`, diakses via `context.palette`):
+  - **Dynamic Ambient Background (Now Playing):**
+    - **Mode Gelap (`Dark`):** Gradasi gelap vertikal yang otomatis menyesuaikan warna dominan Cover Art lagu yang sedang diputar (misal ungu tua lembut untuk *YOASOBI - Idol*, abu-abu olive gelap untuk *ASCA - Resister*).
+    - **Mode Terang (`Light`):** Warna dominan Cover Art dicampur `82%` ke arah putih (`Color.lerp(raw, Colors.white, 0.82)!` untuk bagian atas dan `0.90` untuk bagian tengah) lalu bergradasi mulus ke `bgCanvas` terang (`#F6F7F9`), dengan teks dan ikon kontrol di atas ambient menggunakan `textPrimary` (`#181A1F`) / `textMuted` (`#667085`).
+  - **Palet Warna Terpusat (`MusEveePalette.dark` & `MusEveePalette.light`):**
+    | Token (`MusEveePalette`) | Mode Gelap (`dark` — Default) | Mode Terang (`light`) |
+    | :--- | :--- | :--- |
+    | `bgCanvas` | `#0E1014` | `#F6F7F9` |
+    | `bottomBar` | `#0A0C10` | `#FFFFFF` |
+    | `surfaceCard` | `#17191E` | `#FFFFFF` |
+    | `surfaceSubtle` | `#22252D` | `#ECEEF1` |
+    | `accent` | `#3898EC` | `#1D74C6` |
+    | `textPrimary` | `#F2F4F7` | `#181A1F` |
+    | `textMuted` | `#98A2B3` | `#667085` |
+    | `hairline` | `Colors.white` alpha `0.09` (`#17FFFFFF`) | `Colors.black` alpha `0.09` (`#17000000`) |
+    | `appBar` | `#12151C` | `#FFFFFF` |
+  - **Warna Semantik & Pengecualian Konstan Antar Mode:**
+    - Semantik: `emerald` (`#10B981`), `amber` (`#F59E0B`), `error` (`#F04438`), `snackBarBg` (`#1F242F` dengan teks putih di kedua mode).
+    - Elemen di atas gambar sampul (`Cover Art`) / scrim gelap / tombol berlatar aksen penuh (`accent`, `emerald`, `error`) tetap menggunakan warna putih (`Colors.white`) di kedua mode.
+    - Active Lyric Ribbon (`NowPlayingView`): Mode Gelap `Colors.black.withValues(alpha: 0.45)` + teks putih **Bold**; Mode Terang `Colors.white.withValues(alpha: 0.65)` + teks `#181A1F` **Bold**.
+  - **Garis Batas (`Hairline Border`) & Radius:** Border tipis `0.7px–0.8px` (`context.palette.hairline`) dan radius tegas `4px–10px` (modal bottom sheet top radius `16px`).
 - **Logo & Ikon:**
   - Widget `MusEveeLogo` (`lib/widgets/musevee_logo.dart`) memuat aset `assets/musevee_logo.png` berlatar **100% transparan** yang identik dengan `mipmap-*/ic_launcher.png`.
 
@@ -49,11 +59,11 @@
 ```text
 MusEvee/
 ├── AGENTS.md                                 # Cetak biru arsitektur MusEvee & SOP wajib AI Agent
-├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.7)
+├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.8)
 ├── .github/
 │   ├── copilot-instructions.md               # Instruksi otomatis GitHub Copilot / Remote Agent
 │   └── workflows/
-│       └── build_apk.yml                     # CI/CD otomatis build APK ARM64 (~20 MB) & GitHub Release (MusEvee-v4.7-arm64.apk)
+│       └── build_apk.yml                     # CI/CD otomatis build APK ARM64 (~20 MB) & GitHub Release (MusEvee-v4.8-arm64.apk)
 ├── .idx/
 │   └── airules.md                            # Instruksi otomatis Project IDX / Gemini Agent
 ├── android/
@@ -68,7 +78,7 @@ MusEvee/
 ├── assets/
 │   └── musevee_logo.png                      # Logo resmi MusEvee 512x512 berlatar 100% transparan
 ├── lib/
-│   ├── main.dart                             # Entry point MusEveeApp, MultiProvider (LocalMusicProvider + SettingsProvider + DownloaderProvider), & Dark Musicolet Theme
+│   ├── main.dart                             # Entry point MusEveeApp, MultiProvider (LocalMusicProvider + SettingsProvider + DownloaderProvider), & Dark/Light Musicolet Theme
 │   ├── models/
 │   │   ├── download_item.dart                # Model item antrean & riwayat unduhan FFmpeg (+ targetPlaylistId)
 │   │   ├── local_playlist.dart               # Model playlist lokal (`musicevee_playlists_v1.json`)
@@ -77,7 +87,7 @@ MusEvee/
 │   ├── providers/
 │   │   ├── downloader_provider.dart          # State management Downloader (pencarian katalog, lirik, Romaji, antrean unduh, kualitas bitrate, Smart Deduplication, playlist sync)
 │   │   ├── local_music_provider.dart         # State management Pemutar Lokal Musicolet (library scan, hidden folders, permission status, queue, Multi-Folder/Playlist Queue Merger, playlists CRUD, play mode 1→, sync lirik, retag/pindah/hapus lokal)
-│   │   └── settings_provider.dart            # State management Pengaturan (`musevee_settings_v1.json`, `DownloadQuality`: 320 / 192 / 128 kbps)
+│   │   └── settings_provider.dart            # State management Pengaturan (`musevee_settings_v1.json`, `ThemeMode`: dark/light & `DownloadQuality`: 320 / 192 / 128 kbps)
 │   ├── screens/
 │   │   └── home_screen.dart                  # Shell utama 6-Tab Musicolet + Permission Onboarding Banner + Info/Live Island Dialog + Smart Omnibox Downloader + Modal Sheet Antrean Unduhan (88%)
 │   ├── services/
@@ -87,6 +97,8 @@ MusEvee/
 │   │   ├── metadata_service.dart             # Ekstraktor link Spotify + Mesin Pencari Lintas-Aksara (Google IME Romaji->Kanji + iTunes JP/Global + Deezer)
 │   │   ├── romaji_service.dart               # Konversi Kanji/Kana ke Romaji baris-demi-baris + Anti Double-Romaji & Furigana Deduplication
 │   │   └── tagging_service.dart              # Konversi FFmpeg MP3 dengan bitrate dapat diatur (320/192/128kbps), injeksi biner ID3v2.4.0 (APIC + USLT \r\n), & retag instan (-c:a copy)
+│   ├── theme/
+│   │   └── musevee_palette.dart              # ThemeExtension MusEveePalette (dark & light tokens, semantic colors, context.palette & context.isDarkMode)
 │   ├── utils/
 │   │   └── app_strings.dart                  # Lokalisasi otomatis sesuai bahasa sistem perangkat (Bahasa Indonesia `id`/`in` vs English `en`)
 │   └── widgets/
@@ -99,13 +111,13 @@ MusEvee/
 │       ├── pressable_scale.dart              # Micro-animations: PressableScale (0.95 scale 100ms), AnimatedIndexedStack (Slide+Fade 200ms), & AnimatedEqualizerIcon (4 batang hidup)
 │       ├── queue_history_view.dart           # View Antrean & Riwayat Unduhan beserta tombol Putar (▶), Pindah Folder, & Edit Tag Ulang
 │       ├── search_result_tile.dart           # Tile hasil pencarian katalog lagu dengan indikator duplikat folder
-│       ├── settings_view.dart                # Tab Pengaturan (Settings): pilihan kualitas ukuran file unduhan MP3 (320 / 192 / 128 kbps) & info versi
+│       ├── settings_view.dart                # Tab Pengaturan (Settings): pemilih tema Gelap/Terang, pilihan kualitas ukuran file unduhan MP3 (320 / 192 / 128 kbps) & info versi
 │       ├── tag_editor_sheet.dart             # Modal editor tag ID3 & lirik (pra-unduh, riwayat unduhan, maupun lagu lokal yang sedang diputar!)
 │       └── track_preview_sheet.dart          # Modal detail unduhan: preview 30s, pilih sumber YouTube, Ganti Lirik LRCLIB, Auto-Romaji, & pilih folder
 └── test/
     ├── romaji_service_test.dart              # Unit test Romaji, deduplikasi bilingual, prioritas bahasa LyricsService, pencarian lintas-aksara, & parser USLT LocalSong
-    ├── settings_provider_test.dart           # Unit & widget test SettingsProvider (`musevee_settings_v1.json`), kualitas bitrate DownloaderProvider, & SettingsView
-    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, Multi-Folder Queue Merger, All songs Search, & navigasi 6-tab MusEvee
+    ├── settings_provider_test.dart           # Unit & widget test SettingsProvider (`musevee_settings_v1.json`), ThemeMode Dark/Light, kualitas bitrate DownloaderProvider, & SettingsView
+    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, Multi-Folder Queue Merger, All songs Search, & navigasi 6-tab MusEvee (Dark & Light Mode)
 ```
 
 ### Integrasi Native Android (`MainActivity.kt`)

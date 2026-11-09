@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../theme/musevee_palette.dart';
+
 /// Lightweight GPU-accelerated tactile scale wrapper (`0.95` scale over `100ms`)
 /// for transport buttons, playlist cards, and primary interactive controls.
 class PressableScale extends StatefulWidget {
@@ -161,13 +163,13 @@ class _AnimatedIndexedStackState extends State<AnimatedIndexedStack>
 /// - When [isPlaying] is `false`, bars settle into a low flat resting state.
 class AnimatedEqualizerIcon extends StatefulWidget {
   final bool isPlaying;
-  final Color color;
+  final Color? color;
   final double size;
 
   const AnimatedEqualizerIcon({
     super.key,
     required this.isPlaying,
-    this.color = const Color(0xFF3898EC),
+    this.color,
     this.size = 17.0,
   });
 
@@ -211,6 +213,7 @@ class _AnimatedEqualizerIconState extends State<AnimatedEqualizerIcon>
 
   @override
   Widget build(BuildContext context) {
+    final resolvedColor = widget.color ?? context.palette.accent;
     return RepaintBoundary(
       child: SizedBox(
         width: widget.size,
@@ -222,7 +225,7 @@ class _AnimatedEqualizerIconState extends State<AnimatedEqualizerIcon>
               painter: _EqualizerBarsPainter(
                 progress: _controller.value,
                 isPlaying: widget.isPlaying,
-                color: widget.color,
+                color: resolvedColor,
               ),
             );
           },
@@ -297,14 +300,14 @@ class _EqualizerBarsPainter extends CustomPainter {
 class MographPlayPauseIcon extends StatefulWidget {
   final bool isPlaying;
   final double size;
-  final Color color;
+  final Color? color;
   final bool enableBounceAndRotation;
 
   const MographPlayPauseIcon({
     super.key,
     required this.isPlaying,
     required this.size,
-    this.color = Colors.white,
+    this.color,
     this.enableBounceAndRotation = true,
   });
 
@@ -352,6 +355,7 @@ class _MographPlayPauseIconState extends State<MographPlayPauseIcon>
 
   @override
   Widget build(BuildContext context) {
+    final resolvedColor = widget.color ?? context.palette.textPrimary;
     return RepaintBoundary(
       child: AnimatedBuilder(
         animation: _controller,
@@ -377,7 +381,7 @@ class _MographPlayPauseIconState extends State<MographPlayPauseIcon>
           icon: AnimatedIcons.play_pause,
           progress: _morphProgress,
           size: widget.size,
-          color: widget.color,
+          color: resolvedColor,
         ),
       ),
     );

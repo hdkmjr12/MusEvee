@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/download_item.dart';
 import '../providers/downloader_provider.dart';
+import '../theme/musevee_palette.dart';
 import 'tag_editor_sheet.dart';
 
 class QueueHistoryView extends StatelessWidget {
@@ -17,18 +18,9 @@ class QueueHistoryView extends StatelessWidget {
     this.onPlaySavedFile,
   });
 
-  static const Color _bgCanvas = Color(0xFF0E1014);
-  static const Color _surfaceCard = Color(0xFF17191E);
-  static const Color _surfaceSubtle = Color(0xFF22252D);
-  static const Color _primaryAccent = Color(0xFF3898EC);
-  static const Color _textPrimary = Color(0xFFF2F4F7);
-  static const Color _textMuted = Color(0xFF98A2B3);
-  static const Color _emeraldDot = Color(0xFF10B981);
-  static const Color _amberDot = Color(0xFFF59E0B);
-  static const Color _redDot = Color(0xFFF04438);
-
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final activeQueueItems = provider.queueItems
         .where(
           (item) =>
@@ -51,7 +43,7 @@ class QueueHistoryView extends StatelessWidget {
         provider.state == DownloaderState.taggingAudio;
 
     return Container(
-      color: _bgCanvas,
+      color: palette.bgCanvas,
       child: CustomScrollView(
         slivers: [
           // SEKSI ATAS: ANTREAN AKTIF
@@ -62,6 +54,7 @@ class QueueHistoryView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionHeader(
+                    palette: palette,
                     icon: Icons.downloading_rounded,
                     title: 'Antrean Unduhan Aktif',
                     count: activeQueueItems.length +
@@ -69,18 +62,18 @@ class QueueHistoryView extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   if (!isDirectDownloadActive && activeQueueItems.isEmpty)
-                    _buildEmptyActiveCard()
+                    _buildEmptyActiveCard(palette)
                   else ...[
                     if (isDirectDownloadActive &&
                         provider.trackMetadata != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildDirectActiveCard(provider),
+                        child: _buildDirectActiveCard(provider, palette),
                       ),
                     ...activeQueueItems.map(
                       (item) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildActiveQueueCard(item),
+                        child: _buildActiveQueueCard(item, palette),
                       ),
                     ),
                   ],
@@ -97,6 +90,7 @@ class QueueHistoryView extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _buildSectionHeader(
+                      palette: palette,
                       icon: Icons.history_rounded,
                       title: 'Riwayat Unduhan Selesai',
                       count: completedItems.length,
@@ -105,7 +99,7 @@ class QueueHistoryView extends StatelessWidget {
                   if (completedItems.isNotEmpty)
                     TextButton(
                       style: TextButton.styleFrom(
-                        foregroundColor: _textMuted,
+                        foregroundColor: palette.textMuted,
                         visualDensity: VisualDensity.compact,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
@@ -129,7 +123,7 @@ class QueueHistoryView extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 4, 14, 24),
-                child: _buildEmptyHistoryCard(provider),
+                child: _buildEmptyHistoryCard(provider, palette),
               ),
             )
           else
@@ -140,7 +134,7 @@ class QueueHistoryView extends StatelessWidget {
                 separatorBuilder: (context, index) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final item = completedItems[index];
-                  return _buildCompletedItemCard(context, item);
+                  return _buildCompletedItemCard(context, item, palette);
                 },
               ),
             ),
@@ -150,19 +144,20 @@ class QueueHistoryView extends StatelessWidget {
   }
 
   Widget _buildSectionHeader({
+    required MusEveePalette palette,
     required IconData icon,
     required String title,
     required int count,
   }) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = palette.hairline;
     return Row(
       children: [
-        Icon(icon, size: 18, color: _primaryAccent),
+        Icon(icon, size: 18, color: palette.accent),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
-            color: _textPrimary,
+          style: TextStyle(
+            color: palette.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w700,
             letterSpacing: -0.2,
@@ -172,14 +167,14 @@ class QueueHistoryView extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
           decoration: BoxDecoration(
-            color: _surfaceSubtle,
+            color: palette.surfaceSubtle,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: hairline, width: 0.8),
           ),
           child: Text(
             '$count',
-            style: const TextStyle(
-              color: _textPrimary,
+            style: TextStyle(
+              color: palette.textPrimary,
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
             ),
@@ -189,28 +184,28 @@ class QueueHistoryView extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyActiveCard() {
-    final hairline = Colors.white.withValues(alpha: 0.08);
+  Widget _buildEmptyActiveCard(MusEveePalette palette) {
+    final hairline = palette.hairline;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Icon(
             Icons.check_circle_outline_rounded,
             size: 18,
-            color: _textMuted,
+            color: palette.textMuted,
           ),
-          SizedBox(width: 10),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Tidak ada unduhan FFmpeg yang sedang berjalan.',
-              style: TextStyle(color: _textMuted, fontSize: 12.5),
+              style: TextStyle(color: palette.textMuted, fontSize: 12.5),
             ),
           ),
         ],
@@ -218,18 +213,21 @@ class QueueHistoryView extends StatelessWidget {
     );
   }
 
-  Widget _buildDirectActiveCard(DownloaderProvider provider) {
+  Widget _buildDirectActiveCard(
+    DownloaderProvider provider,
+    MusEveePalette palette,
+  ) {
     final track = provider.trackMetadata!;
     final pct = (provider.progress * 100).round();
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = palette.hairline;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: _primaryAccent.withValues(alpha: 0.45),
+          color: palette.accent.withValues(alpha: 0.45),
           width: 0.8,
         ),
       ),
@@ -242,7 +240,7 @@ class QueueHistoryView extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: _surfaceSubtle,
+                  color: palette.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: hairline, width: 0.8),
                 ),
@@ -254,9 +252,9 @@ class QueueHistoryView extends StatelessWidget {
                         height: 46,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
-                            _buildPlaceholder(46),
+                            _buildPlaceholder(46, palette),
                       )
-                    : _buildPlaceholder(46),
+                    : _buildPlaceholder(46, palette),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -267,8 +265,8 @@ class QueueHistoryView extends StatelessWidget {
                       track.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textPrimary,
+                      style: TextStyle(
+                        color: palette.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -278,8 +276,8 @@ class QueueHistoryView extends StatelessWidget {
                       '${track.artist} • ${provider.selectedFolder}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textMuted,
+                      style: TextStyle(
+                        color: palette.textMuted,
                         fontSize: 12,
                       ),
                     ),
@@ -289,8 +287,8 @@ class QueueHistoryView extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 '$pct%',
-                style: const TextStyle(
-                  color: _primaryAccent,
+                style: TextStyle(
+                  color: palette.accent,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                 ),
@@ -302,30 +300,30 @@ class QueueHistoryView extends StatelessWidget {
             value: provider.progress.clamp(0.0, 1.0),
             minHeight: 3.5,
             borderRadius: BorderRadius.circular(2),
-            backgroundColor: _surfaceSubtle,
-            valueColor: const AlwaysStoppedAnimation<Color>(_primaryAccent),
+            backgroundColor: palette.surfaceSubtle,
+            valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
           ),
           const SizedBox(height: 7),
           Text(
             provider.statusMessage,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _textMuted, fontSize: 11.5),
+            style: TextStyle(color: palette.textMuted, fontSize: 11.5),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActiveQueueCard(DownloadItem item) {
+  Widget _buildActiveQueueCard(DownloadItem item, MusEveePalette palette) {
     final isQueued = item.status == DownloadItemStatus.queued;
     final pct = (item.progress * 100).round();
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = palette.hairline;
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
@@ -338,7 +336,7 @@ class QueueHistoryView extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: _surfaceSubtle,
+                  color: palette.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: hairline, width: 0.8),
                 ),
@@ -350,9 +348,9 @@ class QueueHistoryView extends StatelessWidget {
                         height: 46,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
-                            _buildPlaceholder(46),
+                            _buildPlaceholder(46, palette),
                       )
-                    : _buildPlaceholder(46),
+                    : _buildPlaceholder(46, palette),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -363,8 +361,8 @@ class QueueHistoryView extends StatelessWidget {
                       item.metadata.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textPrimary,
+                      style: TextStyle(
+                        color: palette.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
@@ -374,8 +372,8 @@ class QueueHistoryView extends StatelessWidget {
                       '${item.metadata.artist} • ${item.targetFolderName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textMuted,
+                      style: TextStyle(
+                        color: palette.textMuted,
                         fontSize: 12,
                       ),
                     ),
@@ -390,7 +388,7 @@ class QueueHistoryView extends StatelessWidget {
                     width: 6,
                     height: 6,
                     decoration: BoxDecoration(
-                      color: isQueued ? _amberDot : _primaryAccent,
+                      color: isQueued ? MusEveePalette.amber : palette.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -398,7 +396,7 @@ class QueueHistoryView extends StatelessWidget {
                   Text(
                     isQueued ? 'Menunggu' : '$pct%',
                     style: TextStyle(
-                      color: isQueued ? _amberDot : _primaryAccent,
+                      color: isQueued ? MusEveePalette.amber : palette.accent,
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -413,8 +411,8 @@ class QueueHistoryView extends StatelessWidget {
               value: item.progress.clamp(0.0, 1.0),
               minHeight: 3.5,
               borderRadius: BorderRadius.circular(2),
-              backgroundColor: _surfaceSubtle,
-              valueColor: const AlwaysStoppedAnimation<Color>(_primaryAccent),
+              backgroundColor: palette.surfaceSubtle,
+              valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
             ),
           ],
           const SizedBox(height: 7),
@@ -422,24 +420,28 @@ class QueueHistoryView extends StatelessWidget {
             item.statusDetail,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: _textMuted, fontSize: 11.5),
+            style: TextStyle(color: palette.textMuted, fontSize: 11.5),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCompletedItemCard(BuildContext context, DownloadItem item) {
+  Widget _buildCompletedItemCard(
+    BuildContext context,
+    DownloadItem item,
+    MusEveePalette palette,
+  ) {
     final isFailed = item.status == DownloadItemStatus.failed;
     final hasLyrics = (item.metadata.cleanPlainLyrics != null &&
             item.metadata.cleanPlainLyrics!.trim().isNotEmpty) ||
         item.metadata.hasSyncedLyrics;
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = palette.hairline;
 
     return Container(
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
@@ -460,7 +462,7 @@ class QueueHistoryView extends StatelessWidget {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: _surfaceSubtle,
+                    color: palette.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: hairline, width: 0.8),
                   ),
@@ -472,9 +474,9 @@ class QueueHistoryView extends StatelessWidget {
                           height: 50,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
-                              _buildPlaceholder(50),
+                              _buildPlaceholder(50, palette),
                         )
-                      : _buildPlaceholder(50),
+                      : _buildPlaceholder(50, palette),
                 ),
               ),
               const SizedBox(width: 11),
@@ -486,8 +488,8 @@ class QueueHistoryView extends StatelessWidget {
                       item.metadata.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textPrimary,
+                      style: TextStyle(
+                        color: palette.textPrimary,
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -497,8 +499,8 @@ class QueueHistoryView extends StatelessWidget {
                       '${item.metadata.artist} • ${item.metadata.album}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textMuted,
+                      style: TextStyle(
+                        color: palette.textMuted,
                         fontSize: 11.5,
                       ),
                     ),
@@ -515,7 +517,9 @@ class QueueHistoryView extends StatelessWidget {
                               width: 5.5,
                               height: 5.5,
                               decoration: BoxDecoration(
-                                color: isFailed ? _redDot : _primaryAccent,
+                                color: isFailed
+                                    ? MusEveePalette.error
+                                    : palette.accent,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -523,7 +527,9 @@ class QueueHistoryView extends StatelessWidget {
                             Text(
                               isFailed ? 'Gagal' : item.targetFolderName,
                               style: TextStyle(
-                                color: isFailed ? _redDot : _textPrimary,
+                                color: isFailed
+                                    ? MusEveePalette.error
+                                    : palette.textPrimary,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -538,7 +544,7 @@ class QueueHistoryView extends StatelessWidget {
                                 width: 5.5,
                                 height: 5.5,
                                 decoration: const BoxDecoration(
-                                  color: _emeraldDot,
+                                  color: MusEveePalette.emerald,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -546,7 +552,7 @@ class QueueHistoryView extends StatelessWidget {
                               const Text(
                                 'USLT Lyrics',
                                 style: TextStyle(
-                                  color: _emeraldDot,
+                                  color: MusEveePalette.emerald,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -567,7 +573,8 @@ class QueueHistoryView extends StatelessWidget {
                       IconButton(
                         tooltip: 'Putar di Now Playing',
                         style: IconButton.styleFrom(
-                          backgroundColor: _primaryAccent.withValues(alpha: 0.16),
+                          backgroundColor:
+                              palette.accent.withValues(alpha: 0.16),
                           minimumSize: const Size(32, 32),
                           padding: const EdgeInsets.all(5),
                           shape: RoundedRectangleBorder(
@@ -575,10 +582,10 @@ class QueueHistoryView extends StatelessWidget {
                           ),
                         ),
                         onPressed: () => onPlaySavedFile!(item.savedFilePath!),
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.play_arrow_rounded,
                           size: 18,
-                          color: _primaryAccent,
+                          color: palette.accent,
                         ),
                       ),
                       const SizedBox(width: 5),
@@ -586,7 +593,7 @@ class QueueHistoryView extends StatelessWidget {
                     IconButton(
                       tooltip: 'Edit Tag Ulang',
                       style: IconButton.styleFrom(
-                        backgroundColor: _surfaceSubtle,
+                        backgroundColor: palette.surfaceSubtle,
                         minimumSize: const Size(32, 32),
                         padding: const EdgeInsets.all(6),
                         shape: RoundedRectangleBorder(
@@ -599,17 +606,17 @@ class QueueHistoryView extends StatelessWidget {
                         provider: provider,
                         item: item,
                       ),
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.edit_outlined,
                         size: 15,
-                        color: _textPrimary,
+                        color: palette.textPrimary,
                       ),
                     ),
                     const SizedBox(width: 5),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        backgroundColor: _surfaceSubtle,
-                        foregroundColor: _textPrimary,
+                        backgroundColor: palette.surfaceSubtle,
+                        foregroundColor: palette.textPrimary,
                         minimumSize: const Size(0, 32),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -621,10 +628,10 @@ class QueueHistoryView extends StatelessWidget {
                         ),
                       ),
                       onPressed: () => onMoveFolder(provider, item),
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.drive_file_move_outlined,
                         size: 14,
-                        color: _primaryAccent,
+                        color: palette.accent,
                       ),
                       label: const Text(
                         'Pindah',
@@ -640,8 +647,8 @@ class QueueHistoryView extends StatelessWidget {
                 const SizedBox(width: 6),
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: _textPrimary,
-                    backgroundColor: _surfaceSubtle,
+                    foregroundColor: palette.textPrimary,
+                    backgroundColor: palette.surfaceSubtle,
                     minimumSize: const Size(0, 32),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -669,7 +676,7 @@ class QueueHistoryView extends StatelessWidget {
             Text(
               item.errorMessage!,
               style: const TextStyle(
-                color: _redDot,
+                color: MusEveePalette.error,
                 fontSize: 11.5,
               ),
             ),
@@ -679,28 +686,31 @@ class QueueHistoryView extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyHistoryCard(DownloaderProvider provider) {
+  Widget _buildEmptyHistoryCard(
+    DownloaderProvider provider,
+    MusEveePalette palette,
+  ) {
     final counts = provider.folderSongCounts;
-    final hairline = Colors.white.withValues(alpha: 0.08);
+    final hairline = palette.hairline;
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: _surfaceCard,
+        color: palette.surfaceCard,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.history_rounded, size: 18, color: _textMuted),
-              SizedBox(width: 8),
+              Icon(Icons.history_rounded, size: 18, color: palette.textMuted),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Belum ada riwayat unduhan pada sesi ini.',
                   style: TextStyle(
-                    color: _textPrimary,
+                    color: palette.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
@@ -712,10 +722,10 @@ class QueueHistoryView extends StatelessWidget {
             const SizedBox(height: 12),
             Divider(height: 1, color: hairline),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Ringkasan Koleksi Folder Lokal:',
               style: TextStyle(
-                color: _textMuted,
+                color: palette.textMuted,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -732,14 +742,14 @@ class QueueHistoryView extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: _surfaceSubtle,
+                    color: palette.surfaceSubtle,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: hairline, width: 0.8),
                   ),
                   child: Text(
                     '$folder: $count Lagu',
-                    style: const TextStyle(
-                      color: _textPrimary,
+                    style: TextStyle(
+                      color: palette.textPrimary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -753,15 +763,15 @@ class QueueHistoryView extends StatelessWidget {
     );
   }
 
-  Widget _buildPlaceholder(double size) {
+  Widget _buildPlaceholder(double size, MusEveePalette palette) {
     return Container(
       width: size,
       height: size,
-      color: _surfaceSubtle,
+      color: palette.surfaceSubtle,
       alignment: Alignment.center,
       child: Icon(
         Icons.music_note_rounded,
-        color: _textMuted,
+        color: palette.textMuted,
         size: size * 0.38,
       ),
     );

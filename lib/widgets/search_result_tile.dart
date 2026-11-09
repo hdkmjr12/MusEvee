@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/track_metadata.dart';
+import '../theme/musevee_palette.dart';
 
 class SearchResultTile extends StatelessWidget {
   final TrackMetadata track;
@@ -16,24 +17,17 @@ class SearchResultTile extends StatelessWidget {
     this.onQuickQueue,
   });
 
-  static const Color _surfaceCard = Color(0xFF17191E);
-  static const Color _surfaceSubtle = Color(0xFF22252D);
-  static const Color _primaryAccent = Color(0xFF3898EC);
-  static const Color _textPrimary = Color(0xFFF2F4F7);
-  static const Color _textMuted = Color(0xFF98A2B3);
-  static const Color _amberDot = Color(0xFFF59E0B);
-
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final hasDuplicate =
         duplicateFolder != null && duplicateFolder!.trim().isNotEmpty;
-    final hairline = Colors.white.withValues(alpha: 0.08);
 
     return Material(
-      color: _surfaceCard,
+      color: palette.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: hairline, width: 0.8),
+        side: BorderSide(color: palette.hairline, width: 0.8),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -48,9 +42,9 @@ class SearchResultTile extends StatelessWidget {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: _surfaceSubtle,
+                  color: palette.surfaceSubtle,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: hairline, width: 0.8),
+                  border: Border.all(color: palette.hairline, width: 0.8),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: track.coverUrl.isNotEmpty
@@ -60,9 +54,9 @@ class SearchResultTile extends StatelessWidget {
                         height: 50,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
-                            _buildCoverPlaceholder(),
+                            _buildCoverPlaceholder(palette),
                       )
-                    : _buildCoverPlaceholder(),
+                    : _buildCoverPlaceholder(palette),
               ),
               const SizedBox(width: 12),
 
@@ -76,8 +70,8 @@ class SearchResultTile extends StatelessWidget {
                       track.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textPrimary,
+                      style: TextStyle(
+                        color: palette.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.2,
@@ -89,8 +83,8 @@ class SearchResultTile extends StatelessWidget {
                       '${track.artist} • ${track.album}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _textMuted,
+                      style: TextStyle(
+                        color: palette.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
                         height: 1.25,
@@ -105,7 +99,7 @@ class SearchResultTile extends StatelessWidget {
                             width: 6,
                             height: 6,
                             decoration: const BoxDecoration(
-                              color: _amberDot,
+                              color: MusEveePalette.amber,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -116,7 +110,7 @@ class SearchResultTile extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: _amberDot,
+                                color: MusEveePalette.amber,
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: -0.1,
@@ -138,17 +132,17 @@ class SearchResultTile extends StatelessWidget {
                 children: [
                   Text(
                     track.formattedDuration,
-                    style: const TextStyle(
-                      color: _textMuted,
+                    style: TextStyle(
+                      color: palette.textMuted,
                       fontSize: 11.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
                     size: 18,
-                    color: _primaryAccent,
+                    color: palette.accent,
                   ),
                 ],
               ),
@@ -159,15 +153,15 @@ class SearchResultTile extends StatelessWidget {
     );
   }
 
-  Widget _buildCoverPlaceholder() {
+  Widget _buildCoverPlaceholder(MusEveePalette palette) {
     return Container(
       width: 50,
       height: 50,
-      color: _surfaceSubtle,
+      color: palette.surfaceSubtle,
       alignment: Alignment.center,
-      child: const Icon(
+      child: Icon(
         Icons.music_note_rounded,
-        color: _textMuted,
+        color: palette.textMuted,
         size: 19,
       ),
     );

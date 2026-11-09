@@ -7,6 +7,7 @@ import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../services/lyrics_service.dart';
 import '../services/romaji_service.dart';
+import '../theme/musevee_palette.dart';
 
 class TagEditorSheet extends StatefulWidget {
   final DownloaderProvider provider;
@@ -29,10 +30,11 @@ class TagEditorSheet extends StatefulWidget {
     required DownloaderProvider provider,
     required TrackMetadata track,
   }) {
+    final palette = context.palette;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -45,10 +47,11 @@ class TagEditorSheet extends StatefulWidget {
     required DownloaderProvider provider,
     required DownloadItem item,
   }) {
+    final palette = context.palette;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -68,10 +71,11 @@ class TagEditorSheet extends StatefulWidget {
   }) async {
     final hydratedSong = await localProvider.ensureSongLyricsLoaded(song);
     if (!context.mounted) return;
+    final palette = context.palette;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF17191E),
+      backgroundColor: palette.surfaceCard,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -89,12 +93,6 @@ class TagEditorSheet extends StatefulWidget {
 }
 
 class _TagEditorSheetState extends State<TagEditorSheet> {
-  static const Color _surfaceSheet = Color(0xFF17191E);
-  static const Color _surfaceSubtle = Color(0xFF22252D);
-  static const Color _primaryAccent = Color(0xFF3898EC);
-  static const Color _textPrimary = Color(0xFFF2F4F7);
-  static const Color _textMuted = Color(0xFF98A2B3);
-
   late final TextEditingController _titleController;
   late final TextEditingController _artistController;
   late final TextEditingController _albumController;
@@ -355,10 +353,11 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final isLocalOrHistory =
         widget.localSong != null || widget.historyItem != null;
-    final hairline = Colors.white.withValues(alpha: 0.10);
+    final hairline = palette.hairline;
 
     return SafeArea(
       child: Padding(
@@ -374,7 +373,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
+                    color: palette.textMuted.withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -387,13 +386,13 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: _surfaceSubtle,
+                      color: palette.surfaceSubtle,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: hairline, width: 0.8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.edit_outlined,
-                      color: _primaryAccent,
+                      color: palette.accent,
                       size: 18,
                     ),
                   ),
@@ -406,8 +405,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                           isLocalOrHistory
                               ? 'Edit Tag & Embedded Lyrics'
                               : 'Edit Info & Lirik',
-                          style: const TextStyle(
-                            color: _textPrimary,
+                          style: TextStyle(
+                            color: palette.textPrimary,
                             fontSize: 15.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.3,
@@ -418,8 +417,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                           isLocalOrHistory
                               ? 'Menulis ulang tag ID3v2.4 & USLT langsung ke file MP3'
                               : 'Sesuaikan judul, artis, dan lirik lagu sebelum unduh',
-                          style: const TextStyle(
-                            color: _textMuted,
+                          style: TextStyle(
+                            color: palette.textMuted,
                             fontSize: 11.5,
                           ),
                         ),
@@ -429,7 +428,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   if (_hasJapaneseInFields)
                     ActionChip(
                       visualDensity: VisualDensity.compact,
-                      backgroundColor: _surfaceSubtle,
+                      backgroundColor: palette.surfaceSubtle,
                       side: BorderSide(color: hairline, width: 0.8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
@@ -438,8 +437,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                           _isConvertingRomaji ? null : _convertFieldsToRomaji,
                       label: Text(
                         _isConvertingRomaji ? 'Proses...' : '✨ Auto-Romaji',
-                        style: const TextStyle(
-                          color: _primaryAccent,
+                        style: TextStyle(
+                          color: palette.accent,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                         ),
@@ -453,14 +452,14 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                 controller: _titleController,
                 label: 'Judul Lagu',
                 icon: Icons.music_note_rounded,
-                hairline: hairline,
+                palette: palette,
               ),
               const SizedBox(height: 10),
               _buildField(
                 controller: _artistController,
                 label: 'Artis',
                 icon: Icons.person_outline_rounded,
-                hairline: hairline,
+                palette: palette,
               ),
               const SizedBox(height: 10),
               Row(
@@ -471,7 +470,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                       controller: _albumController,
                       label: 'Album',
                       icon: Icons.album_outlined,
-                      hairline: hairline,
+                      palette: palette,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -480,7 +479,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                       controller: _yearController,
                       label: 'Tahun',
                       icon: Icons.calendar_today_outlined,
-                      hairline: hairline,
+                      palette: palette,
                     ),
                   ),
                 ],
@@ -490,10 +489,10 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               // Lyrics Header with Ganti Lirik & Auto-Romaji buttons
               Row(
                 children: [
-                  const Text(
+                  Text(
                     'Embedded Lyrics (USLT):',
                     style: TextStyle(
-                      color: _textPrimary,
+                      color: palette.textPrimary,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.2,
@@ -510,8 +509,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                       ),
                       child: Text(
                         _showLyricsCandidates ? 'Tutup Pilihan' : 'Ganti Lirik',
-                        style: const TextStyle(
-                          color: _primaryAccent,
+                        style: TextStyle(
+                          color: palette.accent,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -533,8 +532,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                           _isConvertingRomaji
                               ? 'Mengonversi...'
                               : '✨ Auto-Romaji',
-                          style: const TextStyle(
-                            color: _primaryAccent,
+                          style: TextStyle(
+                            color: palette.accent,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -549,29 +548,29 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: _surfaceSubtle,
+                    color: palette.surfaceSubtle,
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: hairline, width: 0.8),
                   ),
                   child: widget.provider.isSearchingLyricsCandidates
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                           child: Center(
                             child: SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: _primaryAccent,
+                                color: palette.accent,
                               ),
                             ),
                           ),
                         )
                       : widget.provider.lyricsCandidates.isEmpty
-                          ? const Text(
+                          ? Text(
                               'Versi lirik lain tidak ditemukan di LRCLIB.',
                               style: TextStyle(
-                                color: _textMuted,
+                                color: palette.textMuted,
                                 fontSize: 11.5,
                               ),
                             )
@@ -599,14 +598,14 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: isChosen
-                                            ? _primaryAccent.withValues(
+                                            ? palette.accent.withValues(
                                                 alpha: 0.14,
                                               )
-                                            : _surfaceSheet,
+                                            : palette.surfaceCard,
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(
                                           color: isChosen
-                                              ? _primaryAccent
+                                              ? palette.accent
                                               : hairline,
                                           width: 0.8,
                                         ),
@@ -624,8 +623,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                                   : Icons.radio_button_off,
                                               size: 15,
                                               color: isChosen
-                                                  ? _primaryAccent
-                                                  : _textMuted,
+                                                  ? palette.accent
+                                                  : palette.textMuted,
                                             ),
                                           ),
                                           const SizedBox(width: 8),
@@ -638,8 +637,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                                   children: [
                                                     Text(
                                                       cand.languageTag,
-                                                      style: const TextStyle(
-                                                        color: _primaryAccent,
+                                                      style: TextStyle(
+                                                        color: palette.accent,
                                                         fontSize: 11.5,
                                                         fontWeight:
                                                             FontWeight.w700,
@@ -648,8 +647,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                                     const SizedBox(width: 6),
                                                     Text(
                                                       '${cand.hasSynced ? 'LRC' : 'Biasa'} • ${cand.formattedDuration}',
-                                                      style: const TextStyle(
-                                                        color: _textMuted,
+                                                      style: TextStyle(
+                                                        color: palette.textMuted,
                                                         fontSize: 11,
                                                         fontWeight:
                                                             FontWeight.w600,
@@ -663,8 +662,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                                   maxLines: 2,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: _textPrimary,
+                                                  style: TextStyle(
+                                                    color: palette.textPrimary,
                                                     fontSize: 11.5,
                                                     height: 1.35,
                                                   ),
@@ -686,17 +685,17 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                 controller: _lyricsController,
                 maxLines: 7,
                 onChanged: (_) => setState(() {}),
-                style: const TextStyle(
-                  color: _textPrimary,
+                style: TextStyle(
+                  color: palette.textPrimary,
                   fontSize: 12.5,
                   height: 1.45,
                 ),
                 decoration: InputDecoration(
                   hintText:
                       'Tulis atau tempel lirik lagu ([mm:ss.xx] atau polos)...',
-                  hintStyle: const TextStyle(color: _textMuted, fontSize: 12.5),
+                  hintStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
                   filled: true,
-                  fillColor: _surfaceSubtle,
+                  fillColor: palette.surfaceSubtle,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide(color: hairline, width: 0.8),
@@ -707,8 +706,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide:
-                        const BorderSide(color: _primaryAccent, width: 1.2),
+                    borderSide: BorderSide(color: palette.accent, width: 1.2),
                   ),
                 ),
               ),
@@ -719,8 +717,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   Expanded(
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: _textPrimary,
-                        backgroundColor: _surfaceSubtle,
+                        foregroundColor: palette.textPrimary,
+                        backgroundColor: palette.surfaceSubtle,
                         side: BorderSide(color: hairline, width: 0.8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -737,7 +735,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                     flex: 2,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryAccent,
+                        backgroundColor: palette.accent,
                         foregroundColor: Colors.white,
                         minimumSize: const Size(0, 44),
                         shape: RoundedRectangleBorder(
@@ -771,18 +769,19 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
     required TextEditingController controller,
     required String label,
     required IconData icon,
-    required Color hairline,
+    required MusEveePalette palette,
   }) {
+    final hairline = palette.hairline;
     return TextField(
       controller: controller,
       onChanged: (_) => setState(() {}),
-      style: const TextStyle(color: _textPrimary, fontSize: 13.5),
+      style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: _textMuted, fontSize: 12.5),
-        prefixIcon: Icon(icon, size: 18, color: _textMuted),
+        labelStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
+        prefixIcon: Icon(icon, size: 18, color: palette.textMuted),
         filled: true,
-        fillColor: _surfaceSubtle,
+        fillColor: palette.surfaceSubtle,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
@@ -797,7 +796,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: _primaryAccent, width: 1.2),
+          borderSide: BorderSide(color: palette.accent, width: 1.2),
         ),
       ),
     );

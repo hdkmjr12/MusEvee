@@ -107,10 +107,47 @@ void main() {
     await tester.tap(find.byTooltip('Pengaturan'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Tampilan'), findsOneWidget);
+    expect(find.text('Gelap'), findsOneWidget);
+    expect(find.text('Terang'), findsOneWidget);
     expect(find.text('Terbaik — 320 kbps'), findsOneWidget);
     expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
     expect(find.text('Hemat — 128 kbps'), findsOneWidget);
-    expect(find.text('MusEvee v4.7'), findsOneWidget);
+    expect(find.text('MusEvee v4.8'), findsOneWidget);
+
+    // Switch to Light Mode (`theme_mode_light`) and verify all 6 tabs render cleanly without error
+    await tester.tap(find.byKey(const ValueKey('theme_mode_light')));
+    await tester.pumpAndSettle();
+
+    final appWidget = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(appWidget.themeMode, ThemeMode.light);
+
+    // Visit Tab 0 (Queue), Tab 1 (Now Playing), Tab 2 (Folders), Tab 3 (Playlists), Tab 4 (Downloader) in Light Mode
+    await tester.tap(find.byTooltip(AppStrings.tabQueueTooltip));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Queue'), findsWidgets);
+
+    await tester.tap(find.byTooltip(AppStrings.tabFoldersTooltip));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Folders'), findsWidgets);
+
+    await tester.tap(find.byTooltip(AppStrings.tabPlaylistsTooltip));
+    await tester.pumpAndSettle();
+    expect(find.text('Playlist kamu'), findsOneWidget);
+
+    // Open New Playlist dialog in Light Mode and close it
+    await tester.ensureVisible(find.text('Playlist Baru'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Playlist Baru'));
+    await tester.pumpAndSettle();
+    expect(find.text('Batal'), findsOneWidget);
+    await tester.tap(find.text('Batal'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(AppStrings.tabNowPlayingTooltip));
+    await tester.pumpAndSettle();
+    expect(find.text('MusEvee Player'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   test(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/musevee_palette.dart';
+
 /// Logo resmi MusEvee berlatar 100% transparan (`assets/musevee_logo.png`),
 /// identik dengan ikon launcher Android di `mipmap-*/ic_launcher.png`.
 class MusEveeLogo extends StatelessWidget {
@@ -12,6 +14,7 @@ class MusEveeLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final targetCache = (size * 3.5).round().clamp(64, 512);
     return SizedBox(
       width: size,
@@ -28,7 +31,7 @@ class MusEveeLogo extends StatelessWidget {
           return Icon(
             Icons.music_note_rounded,
             size: size * 0.85,
-            color: const Color(0xFF3898EC),
+            color: palette.accent,
           );
         },
       ),

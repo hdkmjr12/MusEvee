@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/musevee_palette.dart';
 import '../utils/app_strings.dart';
 
 /// Musicolet's signature dense bottom icon strip with a smooth sliding white
@@ -60,10 +61,11 @@ class MusicoletBottomStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = context.palette;
     final safeIndex = selectedIndex.clamp(0, _tabs.length - 1);
 
     return Material(
-      color: const Color(0xFF0A0C10),
+      color: palette.bottomBar,
       child: SafeArea(
         top: false,
         child: Container(
@@ -71,7 +73,7 @@ class MusicoletBottomStrip extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(
               top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.10),
+                color: palette.hairline,
                 width: 0.7,
               ),
             ),
@@ -125,15 +127,15 @@ class MusicoletBottomStrip extends StatelessWidget {
                             isSelected ? tab.activeIcon : tab.icon,
                             size: 21,
                             color: isSelected
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.48),
+                                ? palette.textPrimary
+                                : palette.textMuted,
                           ),
                         ),
                       );
 
                       if (showBadge) {
                         iconWidget = Badge(
-                          backgroundColor: const Color(0xFF3898EC),
+                          backgroundColor: palette.accent,
                           textColor: Colors.white,
                           label: Text(
                             '$activeDownloadBadgeCount',
@@ -158,7 +160,7 @@ class MusicoletBottomStrip extends StatelessWidget {
                     }),
                   ),
 
-                  // Musicolet signature sliding white bottom pill indicator
+                  // Musicolet signature sliding bottom pill indicator
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 240),
                     curve: Curves.easeOutCubic,
@@ -169,13 +171,13 @@ class MusicoletBottomStrip extends StatelessWidget {
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: palette.textPrimary,
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(2.5),
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.white.withValues(alpha: 0.28),
+                              color: palette.textPrimary.withValues(alpha: 0.28),
                               blurRadius: 6,
                               offset: const Offset(0, -1),
                             ),

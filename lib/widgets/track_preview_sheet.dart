@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/downloader_provider.dart';
 import '../services/romaji_service.dart';
+import '../theme/musevee_palette.dart';
 import 'tag_editor_sheet.dart';
 
 class TrackPreviewSheet extends StatefulWidget {
@@ -19,11 +20,12 @@ class TrackPreviewSheet extends StatefulWidget {
         onCreateNewFolder,
   }) async {
     final provider = context.read<DownloaderProvider>();
+    final palette = context.palette;
     try {
       await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
-        backgroundColor: const Color(0xFF17191E),
+        backgroundColor: palette.surfaceCard,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
@@ -39,14 +41,6 @@ class TrackPreviewSheet extends StatefulWidget {
 }
 
 class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
-  static const Color _surfaceCard = Color(0xFF17191E);
-  static const Color _surfaceSubtle = Color(0xFF22252D);
-  static const Color _primaryBlue = Color(0xFF3898EC);
-  static const Color _textDark = Color(0xFFF2F4F7);
-  static const Color _textMuted = Color(0xFF98A2B3);
-  static const Color _amberDot = Color(0xFFF59E0B);
-  static const Color _emeraldDot = Color(0xFF10B981);
-
   bool _showYoutubeCandidates = false;
   bool _showLyricsCandidates = false;
 
@@ -74,7 +68,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.09);
+    final palette = context.palette;
+    final hairline = palette.hairline;
 
     return Consumer<DownloaderProvider>(
       builder: (context, provider, _) {
@@ -86,20 +81,20 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.2,
-                      color: _primaryBlue,
+                      color: palette.accent,
                     ),
                   ),
                   const SizedBox(height: 14),
                   Text(
                     provider.statusMessage,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: _textMuted,
+                    style: TextStyle(
+                      color: palette.textMuted,
                       fontSize: 13,
                     ),
                   ),
@@ -147,7 +142,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.22),
+                        color: palette.textMuted.withValues(alpha: 0.35),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -164,7 +159,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                             width: 88,
                             height: 88,
                             decoration: BoxDecoration(
-                              color: _surfaceSubtle,
+                              color: palette.surfaceSubtle,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: hairline, width: 0.8),
                             ),
@@ -177,9 +172,9 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     fit: BoxFit.cover,
                                     errorBuilder:
                                         (context, error, stackTrace) =>
-                                            _buildPlaceholder(88),
+                                            _buildPlaceholder(88, palette),
                                   )
-                                : _buildPlaceholder(88),
+                                : _buildPlaceholder(88, palette),
                           ),
                           if (hasPreviewAudio)
                             Positioned(
@@ -187,8 +182,10 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                               bottom: 4,
                               child: Material(
                                 color: isPlayingThisPreview
-                                    ? _primaryBlue
-                                    : _surfaceCard.withValues(alpha: 0.94),
+                                    ? palette.accent
+                                    : palette.surfaceCard.withValues(
+                                        alpha: 0.94,
+                                      ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(6),
                                   side: BorderSide(
@@ -209,7 +206,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                       size: 19,
                                       color: isPlayingThisPreview
                                           ? Colors.white
-                                          : _primaryBlue,
+                                          : palette.accent,
                                     ),
                                   ),
                                 ),
@@ -226,8 +223,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                               track.title,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _textDark,
+                              style: TextStyle(
+                                color: palette.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -0.3,
@@ -239,8 +236,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                               track.artist,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _primaryBlue,
+                              style: TextStyle(
+                                color: palette.accent,
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -250,8 +247,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                               '${track.album} • ${track.releaseYear} • ${track.formattedDuration}',
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _textMuted,
+                              style: TextStyle(
+                                color: palette.textMuted,
                                 fontSize: 12,
                               ),
                             ),
@@ -271,16 +268,16 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                         Container(
                                           width: 6,
                                           height: 6,
-                                          decoration: const BoxDecoration(
-                                            color: _primaryBlue,
+                                          decoration: BoxDecoration(
+                                            color: palette.accent,
                                             shape: BoxShape.circle,
                                           ),
                                         ),
                                         const SizedBox(width: 6),
-                                        const Text(
+                                        Text(
                                           'Memutar Cuplikan...',
                                           style: TextStyle(
-                                            color: _primaryBlue,
+                                            color: palette.accent,
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -295,7 +292,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                           width: 6,
                                           height: 6,
                                           decoration: const BoxDecoration(
-                                            color: _amberDot,
+                                            color: MusEveePalette.amber,
                                             shape: BoxShape.circle,
                                           ),
                                         ),
@@ -306,7 +303,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(
-                                              color: _amberDot,
+                                              color: MusEveePalette.amber,
                                               fontSize: 11.5,
                                               fontWeight: FontWeight.w600,
                                             ),
@@ -339,7 +336,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                           vertical: 3.5,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: _surfaceSubtle,
+                                          color: palette.surfaceSubtle,
                                           borderRadius:
                                               BorderRadius.circular(6),
                                           border: Border.all(
@@ -351,8 +348,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                           provider.isRomanizing
                                               ? 'Mengonversi...'
                                               : '✨ Auto-Romaji',
-                                          style: const TextStyle(
-                                            color: _primaryBlue,
+                                          style: TextStyle(
+                                            color: palette.accent,
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w700,
                                           ),
@@ -377,7 +374,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                       vertical: 9,
                     ),
                     decoration: BoxDecoration(
-                      color: _surfaceSubtle,
+                      color: palette.surfaceSubtle,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: hairline, width: 0.8),
                     ),
@@ -386,10 +383,10 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                       children: [
                         Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.ondemand_video_rounded,
                               size: 16,
-                              color: _textMuted,
+                              color: palette.textMuted,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -399,8 +396,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     : 'Sumber: ${selectedCandidate.title} (${selectedCandidate.formattedDuration})',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: _textDark,
+                                style: TextStyle(
+                                  color: palette.textPrimary,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -419,8 +416,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                   _showYoutubeCandidates
                                       ? 'Tutup'
                                       : 'Ganti Sumber',
-                                  style: const TextStyle(
-                                    color: _primaryBlue,
+                                  style: TextStyle(
+                                    color: palette.accent,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -434,26 +431,26 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                           Divider(height: 1, color: hairline),
                           const SizedBox(height: 8),
                           if (provider.isSearchingYoutubeCandidates)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                               child: Center(
                                 child: SizedBox(
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: _primaryBlue,
+                                    color: palette.accent,
                                   ),
                                 ),
                               ),
                             )
                           else if (provider.youtubeCandidates.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
                               child: Text(
                                 'Sumber lain tidak ditemukan, menggunakan pilihan otomatis.',
                                 style: TextStyle(
-                                  color: _textMuted,
+                                  color: palette.textMuted,
                                   fontSize: 11.5,
                                 ),
                               ),
@@ -487,14 +484,14 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: isChosen
-                                            ? _primaryBlue.withValues(
+                                            ? palette.accent.withValues(
                                                 alpha: 0.08,
                                               )
-                                            : _surfaceCard,
+                                            : palette.surfaceCard,
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(
                                           color: isChosen
-                                              ? _primaryBlue
+                                              ? palette.accent
                                               : hairline,
                                           width: 0.8,
                                         ),
@@ -507,8 +504,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                 : Icons.radio_button_off,
                                             size: 15,
                                             color: isChosen
-                                                ? _primaryBlue
-                                                : _textMuted,
+                                                ? palette.accent
+                                                : palette.textMuted,
                                           ),
                                           const SizedBox(width: 8),
                                           Expanded(
@@ -521,8 +518,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: _textDark,
+                                                  style: TextStyle(
+                                                    color: palette.textPrimary,
                                                     fontSize: 12,
                                                     fontWeight: FontWeight.w600,
                                                     letterSpacing: -0.2,
@@ -533,8 +530,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: _textMuted,
+                                                  style: TextStyle(
+                                                    color: palette.textMuted,
                                                     fontSize: 11,
                                                   ),
                                                 ),
@@ -559,7 +556,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: _surfaceSubtle,
+                      color: palette.surfaceSubtle,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: hairline, width: 0.8),
                     ),
@@ -569,7 +566,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                         Row(
                           children: [
                             if (isFetchingLyrics)
-                              const Row(
+                              Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   SizedBox(
@@ -577,14 +574,14 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     height: 11,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 1.8,
-                                      color: _primaryBlue,
+                                      color: palette.accent,
                                     ),
                                   ),
-                                  SizedBox(width: 6),
+                                  const SizedBox(width: 6),
                                   Text(
                                     'Mengambil lirik...',
                                     style: TextStyle(
-                                      color: _textMuted,
+                                      color: palette.textMuted,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -599,7 +596,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     width: 6,
                                     height: 6,
                                     decoration: const BoxDecoration(
-                                      color: _emeraldDot,
+                                      color: MusEveePalette.emerald,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
@@ -607,7 +604,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                   const Text(
                                     'Lirik Tersedia',
                                     style: TextStyle(
-                                      color: _emeraldDot,
+                                      color: MusEveePalette.emerald,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -618,8 +615,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     Text(
                                       provider
                                           .selectedLyricsCandidate!.languageTag,
-                                      style: const TextStyle(
-                                        color: _primaryBlue,
+                                      style: TextStyle(
+                                        color: palette.accent,
                                         fontSize: 11,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -628,10 +625,10 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                 ],
                               )
                             else
-                              const Text(
+                              Text(
                                 'Lirik Lagu',
                                 style: TextStyle(
-                                  color: _textDark,
+                                  color: palette.textPrimary,
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -650,8 +647,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     _showLyricsCandidates
                                         ? 'Tutup'
                                         : 'Ganti Lirik',
-                                    style: const TextStyle(
-                                      color: _primaryBlue,
+                                    style: TextStyle(
+                                      color: palette.accent,
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -661,7 +658,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                             const SizedBox(width: 4),
                             OutlinedButton.icon(
                               style: OutlinedButton.styleFrom(
-                                backgroundColor: _surfaceCard,
+                                backgroundColor: palette.surfaceCard,
                                 minimumSize: const Size(0, 32),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
@@ -679,15 +676,15 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                         provider: provider,
                                         track: track,
                                       ),
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.edit_outlined,
                                 size: 14,
-                                color: _textDark,
+                                color: palette.textPrimary,
                               ),
-                              label: const Text(
+                              label: Text(
                                 'Edit Info & Lirik',
                                 style: TextStyle(
-                                  color: _textDark,
+                                  color: palette.textPrimary,
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -702,26 +699,26 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                           Divider(height: 1, color: hairline),
                           const SizedBox(height: 8),
                           if (provider.isSearchingLyricsCandidates)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                               child: Center(
                                 child: SizedBox(
                                   width: 20,
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: _primaryBlue,
+                                    color: palette.accent,
                                   ),
                                 ),
                               ),
                             )
                           else if (provider.lyricsCandidates.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
                               child: Text(
                                 'Versi lirik lain tidak ditemukan di LRCLIB.',
                                 style: TextStyle(
-                                  color: _textMuted,
+                                  color: palette.textMuted,
                                   fontSize: 11.5,
                                 ),
                               ),
@@ -757,14 +754,14 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: isChosen
-                                            ? _primaryBlue.withValues(
+                                            ? palette.accent.withValues(
                                                 alpha: 0.08,
                                               )
-                                            : _surfaceCard,
+                                            : palette.surfaceCard,
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(
                                           color: isChosen
-                                              ? _primaryBlue
+                                              ? palette.accent
                                               : hairline,
                                           width: 0.8,
                                         ),
@@ -782,8 +779,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                   : Icons.radio_button_off,
                                               size: 15,
                                               color: isChosen
-                                                  ? _primaryBlue
-                                                  : _textMuted,
+                                                  ? palette.accent
+                                                  : palette.textMuted,
                                             ),
                                           ),
                                           const SizedBox(width: 8),
@@ -796,8 +793,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                   children: [
                                                     Text(
                                                       cand.languageTag,
-                                                      style: const TextStyle(
-                                                        color: _primaryBlue,
+                                                      style: TextStyle(
+                                                        color: palette.accent,
                                                         fontSize: 11.5,
                                                         fontWeight:
                                                             FontWeight.w700,
@@ -806,8 +803,9 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                     const SizedBox(width: 6),
                                                     Text(
                                                       '${cand.hasSynced ? 'LRC' : 'Biasa'} • ${cand.formattedDuration}',
-                                                      style: const TextStyle(
-                                                        color: _textMuted,
+                                                      style: TextStyle(
+                                                        color:
+                                                            palette.textMuted,
                                                         fontSize: 11,
                                                         fontWeight:
                                                             FontWeight.w600,
@@ -821,8 +819,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                                   maxLines: 2,
                                                   overflow:
                                                       TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: _textDark,
+                                                  style: TextStyle(
+                                                    color: palette.textPrimary,
                                                     fontSize: 11.5,
                                                     height: 1.35,
                                                   ),
@@ -847,7 +845,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                               Container(
                                 padding: const EdgeInsets.all(2),
                                 decoration: BoxDecoration(
-                                  color: _surfaceCard,
+                                  color: palette.surfaceCard,
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: hairline,
@@ -858,6 +856,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     _buildLyricsModeSegment(
+                                      palette: palette,
                                       label: 'Lirik Berjalan',
                                       selected: useSynced,
                                       enabled: hasSynced,
@@ -869,6 +868,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                           : null,
                                     ),
                                     _buildLyricsModeSegment(
+                                      palette: palette,
                                       label: 'Lirik Biasa',
                                       selected: !useSynced,
                                       enabled: true,
@@ -906,7 +906,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                       vertical: 5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: _surfaceCard,
+                                      color: palette.surfaceCard,
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
                                         color: hairline,
@@ -917,8 +917,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                       provider.isRomanizing
                                           ? 'Mengonversi...'
                                           : '✨ Auto-Romaji',
-                                      style: const TextStyle(
-                                        color: _primaryBlue,
+                                      style: TextStyle(
+                                        color: palette.accent,
                                         fontSize: 11.5,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -939,7 +939,9 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                           maxLines: 8,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: hasAnyLyrics ? _textDark : _textMuted,
+                            color: hasAnyLyrics
+                                ? palette.textPrimary
+                                : palette.textMuted,
                             fontSize: 12,
                             height: 1.45,
                             fontStyle: hasAnyLyrics
@@ -954,10 +956,10 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                   const SizedBox(height: 14),
 
                   // 3. PEMILIH FOLDER TUJUAN (ChoiceChip Micro-Radius 6px)
-                  const Text(
+                  Text(
                     'Folder Tujuan:',
                     style: TextStyle(
-                      color: _textDark,
+                      color: palette.textPrimary,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.2,
@@ -973,10 +975,10 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                         return ChoiceChip(
                           selected: isSelected,
                           showCheckmark: false,
-                          backgroundColor: _surfaceSubtle,
-                          selectedColor: _primaryBlue,
+                          backgroundColor: palette.surfaceSubtle,
+                          selectedColor: palette.accent,
                           side: BorderSide(
-                            color: isSelected ? _primaryBlue : hairline,
+                            color: isSelected ? palette.accent : hairline,
                             width: 0.8,
                           ),
                           shape: RoundedRectangleBorder(
@@ -994,13 +996,17 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                                     ? Icons.folder_rounded
                                     : Icons.folder_outlined,
                                 size: 15,
-                                color: isSelected ? Colors.white : _textMuted,
+                                color: isSelected
+                                    ? Colors.white
+                                    : palette.textMuted,
                               ),
                               const SizedBox(width: 6),
                               Text(
                                 folder,
                                 style: TextStyle(
-                                  color: isSelected ? Colors.white : _textDark,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : palette.textPrimary,
                                   fontSize: 12.5,
                                   fontWeight: isSelected
                                       ? FontWeight.w700
@@ -1013,7 +1019,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                         );
                       }),
                       ActionChip(
-                        backgroundColor: _surfaceCard,
+                        backgroundColor: palette.surfaceCard,
                         side: BorderSide(color: hairline, width: 0.8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(6),
@@ -1022,15 +1028,15 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                           horizontal: 10,
                           vertical: 8,
                         ),
-                        avatar: const Icon(
+                        avatar: Icon(
                           Icons.add_rounded,
                           size: 15,
-                          color: _primaryBlue,
+                          color: palette.accent,
                         ),
-                        label: const Text(
+                        label: Text(
                           'Baru',
                           style: TextStyle(
-                            color: _primaryBlue,
+                            color: palette.accent,
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1048,7 +1054,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                     height: 48,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryBlue,
+                        backgroundColor: palette.accent,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -1104,7 +1110,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
                       height: 38,
                       child: TextButton.icon(
                         style: TextButton.styleFrom(
-                          foregroundColor: _textMuted,
+                          foregroundColor: palette.textMuted,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
                           ),
@@ -1148,6 +1154,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
   }
 
   Widget _buildLyricsModeSegment({
+    required MusEveePalette palette,
     required String label,
     required bool selected,
     required bool enabled,
@@ -1159,7 +1166,7 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? _primaryBlue : Colors.transparent,
+          color: selected ? palette.accent : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
@@ -1168,8 +1175,8 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
             color: selected
                 ? Colors.white
                 : enabled
-                    ? _textDark
-                    : _textMuted,
+                    ? palette.textPrimary
+                    : palette.textMuted,
             fontSize: 11.5,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
           ),
@@ -1178,15 +1185,15 @@ class _TrackPreviewSheetState extends State<TrackPreviewSheet> {
     );
   }
 
-  Widget _buildPlaceholder(double size) {
+  Widget _buildPlaceholder(double size, MusEveePalette palette) {
     return Container(
       width: size,
       height: size,
-      color: _surfaceSubtle,
+      color: palette.surfaceSubtle,
       alignment: Alignment.center,
       child: Icon(
         Icons.music_note_rounded,
-        color: _textMuted,
+        color: palette.textMuted,
         size: size * 0.38,
       ),
     );

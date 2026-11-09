@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Audio bitrate presets for newly downloaded MP3 files.
@@ -47,7 +47,9 @@ class SettingsProvider extends ChangeNotifier {
   final File? _settingsFileOverride;
 
   DownloadQuality _downloadQuality = DownloadQuality.best;
-  bool _hasUserModified = false;
+  ThemeMode _themeMode = ThemeMode.dark;
+  bool _hasUserModifiedQuality = false;
+  bool _hasUserModifiedTheme = false;
   bool _isDisposed = false;
   late final Future<void> _initFuture;
 
@@ -55,14 +57,25 @@ class SettingsProvider extends ChangeNotifier {
     Directory? storageDirectory,
     Future<Directory> Function()? directoryResolver,
     File? settingsFile,
+    ThemeMode initialThemeMode = ThemeMode.dark,
   })  : _storageDirectory = storageDirectory,
         _directoryResolver = directoryResolver,
-        _settingsFileOverride = settingsFile {
+        _settingsFileOverride = settingsFile,
+        _themeMode =
+            initialThemeMode == ThemeMode.light
+                ? ThemeMode.light
+                : ThemeMode.dark {
     _initFuture = _loadFromDisk();
   }
 
   /// Active download quality setting (defaults to [DownloadQuality.best] = 320 kbps).
   DownloadQuality get downloadQuality => _downloadQuality;
+
+  /// Active theme mode (`ThemeMode.dark` or `ThemeMode.light`, defaults to `ThemeMode.dark`).
+  ThemeMode get themeMode => _themeMode;
+
+  /// Whether the active theme is Dark Mode.
+  bool get isDarkMode => _themeMode == ThemeMode.dark;
 
   /// Convenience getter for the active MP3 encoding bitrate in kbps (`320`, `192`, or `128`).
   int get downloadBitrateKbps => _downloadQuality.bitrateKbps;
@@ -74,12 +87,37 @@ class SettingsProvider extends ChangeNotifier {
     unawaited(setDownloadQuality(quality));
   }
 
+  set themeMode(ThemeMode mode) {
+    unawaited(setThemeMode(mode));
+  }
+
+  static ThemeMode parseThemeMode(Object? raw) {
+    if (raw is String && raw.trim().toLowerCase() == 'light') {
+      return ThemeMode.light;
+    }
+    return ThemeMode.dark;
+  }
+
   /// Updates [downloadQuality], notifies listeners immediately, and persists
   /// the choice to `musevee_settings_v1.json`.
   Future<void> setDownloadQuality(DownloadQuality quality) async {
-    _hasUserModified = true;
+    _hasUserModifiedQuality = true;
     final changed = _downloadQuality != quality;
     _downloadQuality = quality;
+    if (changed) {
+      _safeNotifyListeners();
+    }
+    await _saveToDisk();
+  }
+
+  /// Updates [themeMode] (`ThemeMode.dark` or `ThemeMode.light`), notifies
+  /// listeners immediately, and persists the choice to `musevee_settings_v1.json`.
+  Future<void> setThemeMode(ThemeMode mode) async {
+    final resolved =
+        mode == ThemeMode.light ? ThemeMode.light : ThemeMode.dark;
+    _hasUserModifiedTheme = true;
+    final changed = _themeMode != resolved;
+    _themeMode = resolved;
     if (changed) {
       _safeNotifyListeners();
     }
@@ -115,19 +153,29 @@ class SettingsProvider extends ChangeNotifier {
 
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
-        final parsed = DownloadQuality.fromJsonValue(
-          decoded['downloadQuality'] ?? decoded['bitrateKbps'],
-        );
-        if (!_hasUserModified) {
-          final changed = _downloadQuality != parsed;
-          _downloadQuality = parsed;
-          if (changed) {
-            _safeNotifyListeners();
+        var changed = false;
+        if (!_hasUserModifiedQuality) {
+          final parsed = DownloadQuality.fromJsonValue(
+            decoded['downloadQuality'] ?? decoded['bitrateKbps'],
+          );
+          if (_downloadQuality != parsed) {
+            _downloadQuality = parsed;
+            changed = true;
           }
+        }
+        if (!_hasUserModifiedTheme) {
+          final parsedTheme = parseThemeMode(decoded['themeMode']);
+          if (_themeMode != parsedTheme) {
+            _themeMode = parsedTheme;
+            changed = true;
+          }
+        }
+        if (changed) {
+          _safeNotifyListeners();
         }
       }
     } catch (_) {
-      // Corrupted or inaccessible file -> safely retain default (DownloadQuality.best)
+      // Corrupted or inaccessible file -> safely retain default (DownloadQuality.best, ThemeMode.dark)
     }
   }
 
@@ -141,6 +189,7 @@ class SettingsProvider extends ChangeNotifier {
         'version': 1,
         'downloadQuality': _downloadQuality.name,
         'bitrateKbps': _downloadQuality.bitrateKbps,
+        'themeMode': _themeMode == ThemeMode.light ? 'light' : 'dark',
       };
       await file.writeAsString(jsonEncode(payload), flush: true);
     } catch (_) {}
