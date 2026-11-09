@@ -1428,46 +1428,126 @@ class _NowPlayingViewState extends State<NowPlayingView> {
         return Consumer<LocalMusicProvider>(
           builder: (ctx, lp, _) {
             final pct = (lp.volume * 100).round();
+            final boostDb = lp.preAmpGainDb;
             return SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      onPressed: () => lp.setVolume(lp.volume > 0 ? 0.0 : 0.75),
-                      icon: Icon(
-                        lp.volume <= 0.01
-                            ? Icons.volume_off_rounded
-                            : Icons.volume_up_rounded,
-                        color: Colors.white,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Gain Player & Pre-Amp Audio',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (lp.volume < 1.0 || boostDb > 0.0)
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF3898EC),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: () {
+                              lp.setVolume(1.0);
+                              lp.setPreAmpGainDb(0.0);
+                            },
+                            child: const Text(
+                              'Reset 100% (0 dB)',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(ctx).copyWith(
-                          activeTrackColor: Colors.white,
-                          inactiveTrackColor: Colors.white24,
-                          thumbColor: Colors.white,
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () =>
+                              lp.setVolume(lp.volume > 0 ? 0.0 : 1.0),
+                          icon: Icon(
+                            lp.volume <= 0.01
+                                ? Icons.volume_off_rounded
+                                : Icons.volume_up_rounded,
+                            color: Colors.white,
+                          ),
                         ),
-                        child: Slider(
-                          min: 0.0,
-                          max: 1.0,
-                          value: lp.volume,
-                          onChanged: lp.setVolume,
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(ctx).copyWith(
+                              activeTrackColor: Colors.white,
+                              inactiveTrackColor: Colors.white24,
+                              thumbColor: Colors.white,
+                            ),
+                            child: Slider(
+                              min: 0.0,
+                              max: 1.0,
+                              value: lp.volume,
+                              onChanged: lp.setVolume,
+                            ),
+                          ),
                         ),
-                      ),
+                        SizedBox(
+                          width: 48,
+                          child: Text(
+                            '$pct%',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(
-                      width: 42,
-                      child: Text(
-                        '$pct%',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Icon(
+                            Icons.graphic_eq_rounded,
+                            color: Color(0xFF3898EC),
+                            size: 22,
+                          ),
                         ),
-                      ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(ctx).copyWith(
+                              activeTrackColor: const Color(0xFF3898EC),
+                              inactiveTrackColor: Colors.white24,
+                              thumbColor: const Color(0xFF3898EC),
+                            ),
+                            child: Slider(
+                              min: 0.0,
+                              max: 6.0,
+                              divisions: 12,
+                              value: boostDb,
+                              onChanged: lp.setPreAmpGainDb,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 48,
+                          child: Text(
+                            '+${boostDb.toStringAsFixed(1)}dB',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: Color(0xFF3898EC),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

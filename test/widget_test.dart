@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:spotmeta_downloader/main.dart';
 import 'package:spotmeta_downloader/models/local_song.dart';
+import 'package:spotmeta_downloader/providers/downloader_provider.dart';
 import 'package:spotmeta_downloader/providers/local_music_provider.dart';
+import 'package:spotmeta_downloader/widgets/local_library_views.dart';
 
 LocalSong _mockSong(
   int id, {
@@ -140,7 +144,8 @@ void main() {
   test(
       'Multi-Folder & Multi-Playlist Queue Merger merges songs with filePath deduplication and append support',
       () async {
-    final provider = LocalMusicProvider();
+    final provider = LocalMusicProvider()
+      ..debugEnableNativeChannelInTests = true;
     addTearDown(provider.dispose);
 
     final barat1 = _mockSong(1, folderName: 'Music Barat');
@@ -175,5 +180,221 @@ void main() {
     );
     expect(appendedCount, 1);
     expect(provider.queueEntries.length, 5);
+  });
+
+  test(
+      'LocalMusicProvider enforces full 1.0 volume and Hi-Fi Android AudioAttributes on initialization and every track load',
+      () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('com.spotmeta.downloader/system');
+    final recordedCalls = <MethodCall>[];
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+      recordedCalls.add(call);
+      if (call.method == 'localPlayFile' ||
+          call.method == 'setVolume' ||
+          call.method == 'setPreAmpGainDb' ||
+          call.method == 'localStop') {
+        return true;
+      }
+      return null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final provider = LocalMusicProvider()
+      ..debugEnableNativeChannelInTests = true;
+    addTearDown(provider.dispose);
+
+    // Default volume MUST be 1.0 (100% unattenuated) with 0.0 dB pre-amp and Hi-Fi attributes
+    expect(provider.volume, 1.0);
+    expect(provider.preAmpGainDb, 0.0);
+    expect(provider.audioContentType, 'music');
+    expect(provider.audioUsage, 'media');
+
+    // Simulate temporary volume reduction, then load/play a new song:
+    // _startCurrentQueueTrack MUST explicitly restore volume to 1.0!
+    await provider.setVolume(0.4);
+    expect(provider.volume, 0.4);
+    recordedCalls.clear();
+
+    final song = _mockSong(1, folderName: 'Music Japan');
+    await provider.playSong(song, queueContext: [song]);
+
+    expect(provider.volume, 1.0);
+    expect(
+      recordedCalls.any(
+        (c) =>
+            c.method == 'setVolume' &&
+            (c.arguments as Map)['volume'] == 1.0,
+      ),
+      isTrue,
+    );
+    final playCall = recordedCalls.firstWhere(
+      (c) => c.method == 'localPlayFile',
+    );
+    final playArgs = playCall.arguments as Map;
+    expect(playArgs['path'], song.filePath);
+    expect(playArgs['volume'], 1.0);
+    expect(playArgs['contentType'], 'music');
+    expect(playArgs['usage'], 'media');
+  });
+
+  test(
+      'applyFolderVisibilityChanges synchronizes Queue and reloads or stops AudioPlayer when active folder is hidden',
+      () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('com.spotmeta.downloader/system');
+    final recordedCalls = <MethodCall>[];
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+      recordedCalls.add(call);
+      if (call.method == 'localPlayFile' ||
+          call.method == 'setVolume' ||
+          call.method == 'localStop') {
+        return true;
+      }
+      return null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final provider = LocalMusicProvider()
+      ..debugEnableNativeChannelInTests = true;
+    addTearDown(provider.dispose);
+
+    final barat1 = _mockSong(1, folderName: 'Music Barat');
+    final japan1 = _mockSong(2, folderName: 'Music Japan');
+    final podcast1 = _mockSong(3, folderName: 'Podcasts');
+
+    provider.seedSongsForTesting([barat1, japan1, podcast1]);
+    await provider.playSong(
+      barat1,
+      queueContext: [barat1, japan1, podcast1],
+    );
+
+    expect(provider.currentSong?.filePath, barat1.filePath);
+    expect(provider.isPlaying, isTrue);
+    recordedCalls.clear();
+
+    // 1. Hide 'Music Barat' while barat1 is playing -> must stop barat1 and immediately play japan1!
+    await provider.applyFolderVisibilityChanges(
+      folderVisibilityByPath: {
+        '/storage/emulated/0/Music/Music Barat': false,
+      },
+    );
+
+    expect(provider.currentSong?.filePath, japan1.filePath);
+    expect(provider.currentIndex, 0);
+    expect(provider.isPlaying, isTrue);
+    expect(provider.queue.map((s) => s.filePath).toList(), [
+      japan1.filePath,
+      podcast1.filePath,
+    ]);
+    expect(recordedCalls.any((c) => c.method == 'localStop'), isTrue);
+    final reloadPlayCall = recordedCalls.lastWhere(
+      (c) => c.method == 'localPlayFile',
+    );
+    expect((reloadPlayCall.arguments as Map)['path'], japan1.filePath);
+
+    // 2. Enable 'onlyMusicFolders' filter -> 'Podcasts' is hidden while 'Music Japan' keeps playing
+    recordedCalls.clear();
+    await provider.applyFolderVisibilityChanges(onlyMusicFolders: true);
+    expect(provider.onlyMusicFolders, isTrue);
+    expect(provider.queue.map((s) => s.filePath).toList(), [japan1.filePath]);
+    expect(provider.currentSong?.filePath, japan1.filePath);
+    expect(provider.isPlaying, isTrue);
+    expect(recordedCalls.any((c) => c.method == 'localStop'), isFalse);
+
+    // 3. Hide 'Music Japan' as well -> Queue becomes empty, audio stops completely, currentSong = null
+    recordedCalls.clear();
+    await provider.applyFolderVisibilityChanges(
+      folderVisibilityByPath: {
+        '/storage/emulated/0/Music/Music Japan': false,
+      },
+    );
+    expect(provider.queue, isEmpty);
+    expect(provider.currentIndex, -1);
+    expect(provider.currentSong, isNull);
+    expect(provider.isPlaying, isFalse);
+    expect(recordedCalls.any((c) => c.method == 'localStop'), isTrue);
+  });
+
+  testWidgets(
+      'Kelola Folder modal buffers toggles in draft state and only applies when Terapkan button is tapped',
+      (WidgetTester tester) async {
+    final localProvider = LocalMusicProvider();
+    final downloaderProvider = DownloaderProvider();
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final barat1 = _mockSong(1, folderName: 'Music Barat');
+    final japan1 = _mockSong(2, folderName: 'Music Japan');
+    localProvider.seedSongsForTesting([barat1, japan1]);
+    await localProvider.playSong(barat1, queueContext: [barat1, japan1]);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: LocalFoldersView(
+              onOpenNowPlaying: () {},
+              onCreateNewFolder: (_) async {},
+              onMoveLocalSongFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Open Kelola Folder sheet
+    await tester.tap(find.text('Kelola Folder'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kelola / Sembunyikan Folder'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('manage_folders_apply_button')),
+      findsOneWidget,
+    );
+
+    // Toggle 'Music Barat' OFF in draft -> should NOT hide folder or stop barat1 yet!
+    await tester.tap(
+      find.byKey(const ValueKey('folder_visibility_switch_Music Barat')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      localProvider.isFolderHidden('/storage/emulated/0/Music/Music Barat'),
+      isFalse,
+    );
+    expect(localProvider.currentSong?.filePath, barat1.filePath);
+    expect(find.text('Terapkan (1)'), findsOneWidget);
+
+    // Now tap 'Terapkan (1)' -> applies batch changes & switches active song to japan1!
+    await tester.tap(
+      find.byKey(const ValueKey('manage_folders_apply_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      localProvider.isFolderHidden('/storage/emulated/0/Music/Music Barat'),
+      isTrue,
+    );
+    expect(localProvider.currentSong?.filePath, japan1.filePath);
   });
 }

@@ -16,6 +16,7 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.MediaScannerConnection
 import android.media.audiofx.AudioEffect
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -49,7 +50,9 @@ class MainActivity : FlutterActivity() {
     private var currentLocalPath: String? = null
     private var currentLocalSessionId: Int = 0
     private var isLocalPrepared: Boolean = false
-    private var currentNormalizedVolume: Float = 0.85f
+    private var currentNormalizedVolume: Float = 1.0f
+    private var currentPreAmpGainMb: Int = 0
+    private var loudnessEnhancer: LoudnessEnhancer? = null
     private var localFocusRequest: AudioFocusRequest? = null
     private var resumeLocalOnFocusGain: Boolean = false
     private var resumeLocalAfterPreview: Boolean = false
@@ -306,6 +309,14 @@ class MainActivity : FlutterActivity() {
                     val album = call.argument<String>("album")?.trim()
                     val coverPath = call.argument<String>("coverPath")?.trim()
                     val durationMs = (call.argument<Number>("durationMs")?.toLong()) ?: 0L
+                    val requestedVolume = (call.argument<Number>("volume")?.toFloat()) ?: 1.0f
+                    val requestedPreAmpDb = call.argument<Number>("preAmpDb")?.toDouble()
+                    currentNormalizedVolume = requestedVolume.coerceIn(0f, 1f)
+                    if (requestedPreAmpDb != null) {
+                        currentPreAmpGainMb = Math.round(
+                            requestedPreAmpDb.coerceIn(0.0, 12.0) * 100.0
+                        ).toInt()
+                    }
                     if (path.isNullOrEmpty()) {
                         result.success(false)
                     } else {
@@ -367,35 +378,23 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "getVolume" -> {
-                    val audioManager =
-                        applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                    if (audioManager != null) {
-                        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        val norm = (current.toDouble() / max.toDouble()).coerceIn(0.0, 1.0)
-                        currentNormalizedVolume = norm.toFloat()
-                        result.success(norm)
-                    } else {
-                        result.success(currentNormalizedVolume.toDouble())
-                    }
+                    result.success(currentNormalizedVolume.coerceIn(0f, 1f).toDouble())
                 }
                 "setVolume" -> {
-                    val normalized = (call.argument<Double>("volume") ?: 0.8).coerceIn(0.0, 1.0)
+                    val normalized = (call.argument<Double>("volume") ?: 1.0).coerceIn(0.0, 1.0)
                     currentNormalizedVolume = normalized.toFloat()
-                    val audioManager =
-                        applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                    if (audioManager != null) {
-                        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        val target = Math.round(normalized * max).toInt().coerceIn(0, max)
-                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-                    }
                     try {
                         val gain = currentNormalizedVolume.coerceIn(0f, 1f)
                         localPlayer?.setVolume(gain, gain)
                     } catch (_: Exception) {
                     }
+                    result.success(true)
+                }
+                "setPreAmpGainDb" -> {
+                    val gainDb = (call.argument<Number>("gainDb")?.toDouble() ?: 0.0)
+                        .coerceIn(0.0, 12.0)
+                    currentPreAmpGainMb = Math.round(gainDb * 100.0).toInt()
+                    localPlayer?.let { applyLoudnessEnhancerToPlayer(it) }
                     result.success(true)
                 }
                 "openEqualizer" -> {
@@ -560,10 +559,12 @@ class MainActivity : FlutterActivity() {
             previewPlayer = player
 
             player.setAudioAttributes(playbackAudioAttributes)
+            player.setVolume(1.0f, 1.0f)
             player.setDataSource(url)
             player.setOnPreparedListener { mp ->
                 if (mp !== previewPlayer) return@setOnPreparedListener
                 try {
+                    mp.setVolume(1.0f, 1.0f)
                     mp.start()
                     methodChannel?.invokeMethod(
                         "onPreviewStateChanged",
@@ -685,6 +686,9 @@ class MainActivity : FlutterActivity() {
                 }
                 isLocalPrepared = true
                 try {
+                    val preparedGain = currentNormalizedVolume.coerceIn(0f, 1f)
+                    mp.setVolume(preparedGain, preparedGain)
+                    applyLoudnessEnhancerToPlayer(mp)
                     if (startPositionMs > 0 && startPositionMs < mp.duration) {
                         mp.seekTo(startPositionMs)
                     }
@@ -775,6 +779,7 @@ class MainActivity : FlutterActivity() {
             requestLocalAudioFocus()
             val gain = currentNormalizedVolume.coerceIn(0f, 1f)
             mp.setVolume(gain, gain)
+            applyLoudnessEnhancerToPlayer(mp)
             if (!mp.isPlaying) {
                 mp.start()
             }
@@ -822,6 +827,7 @@ class MainActivity : FlutterActivity() {
         val prevPath = currentLocalPath
         val prevSession = currentLocalSessionId
         currentLocalPath = null
+        releaseLoudnessEnhancer()
         if (mp != null) {
             try {
                 if (mp.isPlaying) {
@@ -920,6 +926,39 @@ class MainActivity : FlutterActivity() {
             "stop" -> {
                 stopLocalAudio(notifyFlutter = true, abandonFocus = true)
             }
+        }
+    }
+
+    private fun releaseLoudnessEnhancer() {
+        val enhancer = loudnessEnhancer
+        loudnessEnhancer = null
+        if (enhancer != null) {
+            try {
+                enhancer.enabled = false
+            } catch (_: Exception) {
+            }
+            try {
+                enhancer.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun applyLoudnessEnhancerToPlayer(mp: MediaPlayer) {
+        if (currentPreAmpGainMb <= 0) {
+            // Keep default 0.0 dB playback 100% bit-pure and unattenuated (no DSP limiter)
+            releaseLoudnessEnhancer()
+            return
+        }
+        try {
+            val sessionId = mp.audioSessionId
+            if (sessionId <= 0) return
+            releaseLoudnessEnhancer()
+            val enhancer = LoudnessEnhancer(sessionId)
+            enhancer.setTargetGain(currentPreAmpGainMb)
+            enhancer.enabled = true
+            loudnessEnhancer = enhancer
+        } catch (_: Exception) {
         }
     }
 

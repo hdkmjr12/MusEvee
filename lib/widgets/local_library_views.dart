@@ -356,6 +356,12 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
     LocalMusicProvider localProvider,
   ) async {
     final hairline = Colors.white.withValues(alpha: 0.09);
+    final initialDetected = localProvider.detectedFoldersInfo;
+    final Set<String> draftHiddenPaths = <String>{
+      for (final info in initialDetected)
+        if (info.isHidden) info.folderPath,
+    };
+    bool draftOnlyMusic = localProvider.onlyMusicFolders;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -366,219 +372,495 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
         side: BorderSide(color: hairline, width: 0.8),
       ),
       builder: (sheetCtx) {
-        return Consumer<LocalMusicProvider>(
-          builder: (ctx, provider, _) {
-            final detected = provider.detectedFoldersInfo;
-            final hiddenCount = provider.hiddenFoldersCount;
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Consumer<LocalMusicProvider>(
+              builder: (ctx, provider, _) {
+                final detected = provider.detectedFoldersInfo;
+                final draftHiddenCount = detected
+                    .where((f) => draftHiddenPaths.contains(f.folderPath))
+                    .length;
 
-            return SafeArea(
-              top: false,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(ctx).size.height * 0.78,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        margin: const EdgeInsets.only(top: 10, bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
+                int changedFoldersCount = 0;
+                for (final info in detected) {
+                  final isDraftHidden = draftHiddenPaths.contains(
+                    info.folderPath,
+                  );
+                  if (isDraftHidden != info.isHidden) {
+                    changedFoldersCount++;
+                  }
+                }
+                final bool hasDraftChanges = changedFoldersCount > 0 ||
+                    draftOnlyMusic != provider.onlyMusicFolders;
+
+                return SafeArea(
+                  top: false,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.82,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 34,
-                            height: 34,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 36,
+                            height: 4,
+                            margin: const EdgeInsets.only(top: 10, bottom: 8),
                             decoration: BoxDecoration(
-                              color: _kSubtle,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.tune_rounded,
-                              color: _kAccent,
-                              size: 18,
+                              color: Colors.white24,
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Kelola / Sembunyikan Folder',
-                                  style: TextStyle(
-                                    color: _kText,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: _kSubtle,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: const Icon(
+                                  Icons.tune_rounded,
+                                  color: _kAccent,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Kelola / Sembunyikan Folder',
+                                      style: TextStyle(
+                                        color: _kText,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Pilih folder lalu ketuk Terapkan untuk memperbarui pustaka & antrean.',
+                                      style: TextStyle(
+                                        color: _kMuted,
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (draftHiddenCount > 0 || draftOnlyMusic)
+                                TextButton(
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: _kAccent,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () {
+                                    setModalState(() {
+                                      draftHiddenPaths.clear();
+                                      draftOnlyMusic = false;
+                                    });
+                                  },
+                                  child: Text(
+                                    'Tampilkan Semua ($draftHiddenCount)',
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Sembunyikan folder dari pustaka tanpa menghapus file fisik.',
-                                  style: TextStyle(
-                                    color: _kMuted,
-                                    fontSize: 11.5,
+                            ],
+                          ),
+                        ),
+                        Divider(height: 1, thickness: 0.8, color: hairline),
+                        // Draft Quick-Filter: Only folders containing "Music"
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: draftOnlyMusic
+                                  ? _kAccent.withValues(alpha: 0.14)
+                                  : _kSubtle.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: draftOnlyMusic
+                                    ? _kAccent.withValues(alpha: 0.45)
+                                    : hairline,
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.filter_alt_outlined,
+                                  color: draftOnlyMusic ? _kAccent : _kMuted,
+                                  size: 19,
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Filter kata "Music"',
+                                        style: TextStyle(
+                                          color: _kText,
+                                          fontSize: 12.8,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      SizedBox(height: 1),
+                                      Text(
+                                        'Sembunyikan otomatis folder tanpa kata "Music"',
+                                        style: TextStyle(
+                                          color: _kMuted,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ),
+                                Switch.adaptive(
+                                  key: const ValueKey(
+                                    'manage_folders_only_music_switch',
+                                  ),
+                                  value: draftOnlyMusic,
+                                  activeThumbColor: _kAccent,
+                                  activeTrackColor:
+                                      _kAccent.withValues(alpha: 0.35),
+                                  onChanged: (onlyMusic) {
+                                    setModalState(() {
+                                      draftOnlyMusic = onlyMusic;
+                                      if (onlyMusic) {
+                                        for (final info in detected) {
+                                          if (!info.folderName
+                                              .toLowerCase()
+                                              .contains('music')) {
+                                            draftHiddenPaths.add(
+                                              info.folderPath,
+                                            );
+                                          }
+                                        }
+                                      } else {
+                                        for (final info in detected) {
+                                          if (!info.folderName
+                                              .toLowerCase()
+                                              .contains('music')) {
+                                            draftHiddenPaths.remove(
+                                              info.folderPath,
+                                            );
+                                          }
+                                        }
+                                      }
+                                    });
+                                  },
                                 ),
                               ],
                             ),
                           ),
-                          if (hiddenCount > 0)
-                            TextButton(
-                              style: TextButton.styleFrom(
-                                foregroundColor: _kAccent,
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: () => provider.showAllHiddenFolders(),
+                        ),
+                        if (detected.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 32,
+                            ),
+                            child: Center(
                               child: Text(
-                                'Tampilkan Semua ($hiddenCount)',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                'Belum ada folder audio yang terdeteksi di penyimpanan.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: _kMuted, fontSize: 12.5),
                               ),
                             ),
-                        ],
-                      ),
-                    ),
-                    Divider(height: 1, thickness: 0.8, color: hairline),
-                    if (detected.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 32,
-                        ),
-                        child: Center(
-                          child: Text(
-                            'Belum ada folder audio yang terdeteksi di penyimpanan.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: _kMuted, fontSize: 12.5),
-                          ),
-                        ),
-                      )
-                    else
-                      Flexible(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
-                          itemCount: detected.length,
-                          separatorBuilder: (context, index) =>
-                              const SizedBox(height: 6),
-                          itemBuilder: (itemCtx, idx) {
-                            final info = detected[idx];
-                            final isVisible = !info.isHidden;
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _kSubtle.withValues(
-                                  alpha: isVisible ? 0.65 : 0.3,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: hairline, width: 0.8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    isVisible
-                                        ? Icons.folder_rounded
-                                        : Icons.folder_off_outlined,
-                                    color: isVisible ? _kAccent : _kMuted,
-                                    size: 21,
+                          )
+                        else
+                          Flexible(
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              padding:
+                                  const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                              itemCount: detected.length,
+                              separatorBuilder: (context, index) =>
+                                  const SizedBox(height: 6),
+                              itemBuilder: (itemCtx, idx) {
+                                final info = detected[idx];
+                                final isVisible = !draftHiddenPaths.contains(
+                                  info.folderPath,
+                                );
+                                final isModifiedInDraft =
+                                    (!isVisible) != info.isHidden;
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
+                                  decoration: BoxDecoration(
+                                    color: _kSubtle.withValues(
+                                      alpha: isVisible ? 0.65 : 0.3,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isModifiedInDraft
+                                          ? _kAccent.withValues(alpha: 0.55)
+                                          : hairline,
+                                      width: isModifiedInDraft ? 1.0 : 0.8,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        isVisible
+                                            ? Icons.folder_rounded
+                                            : Icons.folder_off_outlined,
+                                        color: isVisible ? _kAccent : _kMuted,
+                                        size: 21,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            Flexible(
-                                              child: Text(
-                                                info.folderName,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: isVisible
-                                                      ? _kText
-                                                      : _kMuted,
-                                                  fontSize: 13.5,
-                                                  fontWeight: FontWeight.w700,
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    info.folderName,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: isVisible
+                                                          ? _kText
+                                                          : _kMuted,
+                                                      fontSize: 13.5,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 1.5,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black26,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      4,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    '${info.songCount} lagu',
+                                                    style: const TextStyle(
+                                                      color: _kMuted,
+                                                      fontSize: 10.5,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 6,
-                                                vertical: 1.5,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black26,
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                '${info.songCount} lagu',
-                                                style: const TextStyle(
-                                                  color: _kMuted,
-                                                  fontSize: 10.5,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              info.folderPath,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: _kMuted,
+                                                fontSize: 11,
                                               ),
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          info.folderPath,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            color: _kMuted,
-                                            fontSize: 11,
-                                          ),
+                                      ),
+                                      Switch.adaptive(
+                                        key: ValueKey(
+                                          'folder_visibility_switch_${info.folderName}',
                                         ),
-                                      ],
+                                        value: isVisible,
+                                        activeThumbColor: _kAccent,
+                                        activeTrackColor:
+                                            _kAccent.withValues(alpha: 0.35),
+                                        onChanged: (showFolder) {
+                                          setModalState(() {
+                                            if (showFolder) {
+                                              draftHiddenPaths.remove(
+                                                info.folderPath,
+                                              );
+                                            } else {
+                                              draftHiddenPaths.add(
+                                                info.folderPath,
+                                              );
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        Divider(height: 1, thickness: 0.8, color: hairline),
+                        // Bottom Action Bar: Batal + Mograph Spring "Terapkan" Button
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: PressableScale(
+                                  child: OutlinedButton(
+                                    key: const ValueKey(
+                                      'manage_folders_cancel_button',
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: _kText,
+                                      side: BorderSide(
+                                        color: hairline,
+                                        width: 0.9,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 11,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    onPressed: () =>
+                                        Navigator.of(sheetCtx).pop(),
+                                    child: const Text(
+                                      'Batal',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                  Switch.adaptive(
-                                    value: isVisible,
-                                    activeThumbColor: _kAccent,
-                                    activeTrackColor:
-                                        _kAccent.withValues(alpha: 0.35),
-                                    onChanged: (showFolder) {
-                                      provider.setFolderHidden(
-                                        info.folderPath,
-                                        folderName: info.folderName,
-                                        hidden: !showFolder,
-                                      );
-                                    },
-                                  ),
-                                ],
+                                ),
                               ),
-                            );
-                          },
+                              const SizedBox(width: 10),
+                              Expanded(
+                                flex: 2,
+                                child: TweenAnimationBuilder<double>(
+                                  tween: Tween<double>(
+                                    begin: 0.0,
+                                    end: hasDraftChanges ? 1.0 : 0.0,
+                                  ),
+                                  duration: const Duration(milliseconds: 340),
+                                  curve: Curves.easeOutBack,
+                                  builder: (context, animVal, child) {
+                                    final bounce = hasDraftChanges
+                                        ? (1.0 + (animVal - 1.0) * 0.35)
+                                            .clamp(0.92, 1.08)
+                                        : 1.0;
+                                    return Transform.scale(
+                                      scale: bounce,
+                                      child: child,
+                                    );
+                                  },
+                                  child: PressableScale(
+                                    child: ElevatedButton.icon(
+                                      key: const ValueKey(
+                                        'manage_folders_apply_button',
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: hasDraftChanges
+                                            ? _kAccent
+                                            : _kSubtle,
+                                        foregroundColor: hasDraftChanges
+                                            ? Colors.white
+                                            : _kText,
+                                        elevation: hasDraftChanges ? 4 : 0,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 11,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          side: BorderSide(
+                                            color: hasDraftChanges
+                                                ? _kAccent
+                                                : hairline,
+                                            width: 0.9,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: () async {
+                                        final visibilityMap = <String, bool>{
+                                          for (final info in detected)
+                                            info.folderPath: !draftHiddenPaths
+                                                .contains(info.folderPath),
+                                        };
+                                        await provider
+                                            .applyFolderVisibilityChanges(
+                                          folderVisibilityByPath: visibilityMap,
+                                          onlyMusicFolders: draftOnlyMusic,
+                                        );
+                                        if (mounted) {
+                                          final currentFolders =
+                                              provider.folderSongsMap;
+                                          setState(() {
+                                            if (_openedFolder != null &&
+                                                !currentFolders.containsKey(
+                                                  _openedFolder,
+                                                )) {
+                                              _openedFolder = null;
+                                            }
+                                            _selectedFolders.removeWhere(
+                                              (f) => !currentFolders
+                                                  .containsKey(f),
+                                            );
+                                            if (_selectedFolders.isEmpty) {
+                                              _isSelectionMode = false;
+                                            }
+                                          });
+                                        }
+                                        if (sheetCtx.mounted) {
+                                          Navigator.of(sheetCtx).pop();
+                                        }
+                                      },
+                                      icon: const Icon(
+                                        Icons.check_circle_outline_rounded,
+                                        size: 17,
+                                      ),
+                                      label: Text(
+                                        changedFoldersCount > 0
+                                            ? 'Terapkan ($changedFoldersCount)'
+                                            : 'Terapkan',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                  ],
-                ),
-              ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
