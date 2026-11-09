@@ -236,6 +236,10 @@ class LocalSong {
       hasSyncedLyricsFlag ||
       (usltLyrics != null && _lrcLineTimeRegex.hasMatch(usltLyrics!));
 
+  /// True when the actual `USLT` text payload is currently hydrated in RAM.
+  bool get isLyricsLoadedInMemory =>
+      usltLyrics != null && usltLyrics!.trim().isNotEmpty;
+
   /// Resolves the physical parent directory path containing this audio file.
   String get folderPath {
     final normalized = filePath.replaceAll('\\', '/');
@@ -268,11 +272,14 @@ class LocalSong {
 
   /// Parses embedded LRC timestamps `[mm:ss.xx]` into sorted [SyncedLyricEntry] items.
   List<SyncedLyricEntry> get parsedSyncedLyrics {
-    if (!hasSyncedLyrics) return const [];
+    final rawText = usltLyrics;
+    if (!hasSyncedLyrics || rawText == null || rawText.trim().isEmpty) {
+      return const [];
+    }
     final cached = _syncedLyricsMemo[this];
     if (cached != null) return cached;
 
-    final raw = usltLyrics!
+    final raw = rawText
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n');
     final lines = raw.split('\n');
@@ -321,11 +328,14 @@ class LocalSong {
 
   /// Returns clean plain lyrics lines (without timestamps or LRC headers).
   List<String> get plainLyricLines {
-    if (!hasLyrics) return const [];
+    final rawText = usltLyrics;
+    if (!hasLyrics || rawText == null || rawText.trim().isEmpty) {
+      return const [];
+    }
     final cached = _plainLinesMemo[this];
     if (cached != null) return cached;
 
-    final raw = usltLyrics!
+    final raw = rawText
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n');
     final out = <String>[];

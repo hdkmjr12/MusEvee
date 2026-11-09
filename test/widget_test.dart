@@ -638,7 +638,7 @@ void main() {
 
   test(
       'LocalSong.toJson omits raw usltLyrics text and stores compact boolean flags (< 5 MB User Data optimization)',
-      () {
+      () async {
     final syncedSong = _mockSong(
       10,
       lyrics: '[00:01.00] Line 1\n[00:05.00] Line 2',
@@ -654,5 +654,63 @@ void main() {
     expect(restored.usltLyrics, isNull);
     expect(restored.hasLyrics, isTrue);
     expect(restored.hasSyncedLyrics, isTrue);
+    expect(restored.isLyricsLoadedInMemory, isFalse);
+
+    // Accessing parsedSyncedLyrics and plainLyricLines before on-demand load must NEVER throw a null check error
+    expect(restored.parsedSyncedLyrics, isEmpty);
+    expect(restored.plainLyricLines, isEmpty);
+
+    final hydrated = restored.copyWith(
+      usltLyrics: '[00:01.00] Line 1\n[00:05.00] Line 2',
+    );
+    expect(hydrated.isLyricsLoadedInMemory, isTrue);
+    expect(hydrated.parsedSyncedLyrics.length, 2);
+    expect(hydrated.plainLyricLines.length, 2);
+
+    // Playing, switching tracks, toggling play/pause, and applying folder visibility changes
+    // on songs with unloaded on-demand USLT lyrics must work cleanly without crashing
+    final localProvider = LocalMusicProvider();
+    addTearDown(localProvider.dispose);
+
+    final compactSong1 = LocalSong.fromJson(
+      _mockSong(
+        1,
+        folderName: 'Music Barat',
+        lyrics: '[00:01.00] Hello\n[00:03.00] World',
+      ).toJson(),
+    );
+    final compactSong2 = LocalSong.fromJson(
+      _mockSong(
+        2,
+        folderName: 'Music Japan',
+        lyrics: '[00:02.00] Konnichiwa',
+      ).toJson(),
+    );
+
+    localProvider.seedSongsForTesting([compactSong1, compactSong2]);
+    expect(localProvider.currentSong?.usltLyrics, isNull);
+    expect(localProvider.activeSyncedLyricIndex, -1);
+
+    await localProvider.togglePlayPause();
+    expect(localProvider.isPlaying, isTrue);
+
+    await localProvider.playQueueIndex(1);
+    expect(localProvider.currentSong?.filePath, compactSong2.filePath);
+    expect(localProvider.isPlaying, isTrue);
+
+    await localProvider.playSong(
+      compactSong1,
+      queueContext: [compactSong1, compactSong2],
+    );
+    expect(localProvider.currentSong?.filePath, compactSong1.filePath);
+
+    await localProvider.applyFolderVisibilityChanges(
+      hiddenFolderPaths: {'/storage/emulated/0/Music/Music Barat'},
+    );
+    expect(
+      localProvider.isFolderHidden('/storage/emulated/0/Music/Music Barat'),
+      isTrue,
+    );
+    expect(localProvider.currentSong?.filePath, compactSong2.filePath);
   });
 }

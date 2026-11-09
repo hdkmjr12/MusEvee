@@ -65,7 +65,9 @@ class TagEditorSheet extends StatefulWidget {
     required DownloaderProvider downloaderProvider,
     required LocalMusicProvider localProvider,
     required LocalSong song,
-  }) {
+  }) async {
+    final hydratedSong = await localProvider.ensureSongLyricsLoaded(song);
+    if (!context.mounted) return;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -76,8 +78,8 @@ class TagEditorSheet extends StatefulWidget {
       builder: (_) => TagEditorSheet(
         provider: downloaderProvider,
         localProvider: localProvider,
-        localSong: song,
-        track: song.toTrackMetadata(),
+        localSong: hydratedSong,
+        track: hydratedSong.toTrackMetadata(),
       ),
     );
   }
@@ -129,6 +131,25 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
             widget.track.normalizedSyncedLyrics ??
             '');
     _lyricsController = TextEditingController(text: initialLyrics);
+
+    if (widget.localSong != null &&
+        widget.localProvider != null &&
+        widget.localSong!.hasLyrics &&
+        !widget.localSong!.isLyricsLoadedInMemory) {
+      widget.localProvider!.ensureSongLyricsLoaded(widget.localSong!).then((
+        hydrated,
+      ) {
+        if (!mounted) return;
+        if (_lyricsController.text.trim().isEmpty &&
+            hydrated.usltLyrics != null &&
+            hydrated.usltLyrics!.trim().isNotEmpty) {
+          setState(() {
+            _preferSyncedLyrics = hydrated.hasSyncedLyrics;
+            _lyricsController.text = hydrated.usltLyrics!;
+          });
+        }
+      });
+    }
   }
 
   @override

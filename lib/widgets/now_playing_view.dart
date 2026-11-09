@@ -30,6 +30,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
   final ScrollController _syncedScrollController = ScrollController();
   int _lastAutoScrolledIndex = -1;
   String? _lastSongPath;
+  String? _requestedOnDemandLyricsPath;
   double? _dragSeekMs;
 
   static const double _lyricItemExtent = 44.0;
@@ -649,6 +650,27 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     required double viewportHeight,
   }) {
     final fontSize = localProvider.lyricsFontSize;
+
+    if (song.hasLyrics && !song.isLyricsLoadedInMemory) {
+      if (_requestedOnDemandLyricsPath != song.filePath) {
+        _requestedOnDemandLyricsPath = song.filePath;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            localProvider.ensureSongLyricsLoaded(song);
+          }
+        });
+      }
+      return const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.white54,
+          ),
+        ),
+      );
+    }
 
     // 1. Synced LRC Mode with Musicolet Dark Ribbon Highlight & Tap-to-Seek
     if (localProvider.lyricsDisplayMode == EmbeddedLyricsDisplayMode.synced &&

@@ -206,7 +206,11 @@ class LocalMusicProvider extends ChangeNotifier {
       positionMs: _positionMs,
       durationMs: durationMs,
     );
-    activeLyricIndexNotifier.value = activeSyncedLyricIndex;
+    try {
+      activeLyricIndexNotifier.value = activeSyncedLyricIndex;
+    } catch (_) {
+      activeLyricIndexNotifier.value = -1;
+    }
   }
 
   @override
@@ -599,6 +603,12 @@ class LocalMusicProvider extends ChangeNotifier {
         _positionMs = 0;
         _durationMs = nextSong?.durationMs ?? 0;
         _hasPreparedNative = false;
+        if (nextSong != null) {
+          _loadCurrentSongDetailsAndCoverOnDemand(
+            nextSong,
+            _playbackSessionId,
+          );
+        }
         if (nextSong != null && _shouldInvokeNativeChannel) {
           try {
             await _systemChannel.invokeMethod<bool>(
@@ -763,6 +773,12 @@ class LocalMusicProvider extends ChangeNotifier {
       _syncProgressNotifiers();
       notifyListeners();
       _notifyExternalSync();
+      if (currentSong != null) {
+        _loadCurrentSongDetailsAndCoverOnDemand(
+          currentSong!,
+          _playbackSessionId,
+        );
+      }
     } else {
       notifyListeners();
     }
@@ -944,13 +960,18 @@ class LocalMusicProvider extends ChangeNotifier {
           final merged = <LocalSong>[];
           for (final path in presentSet) {
             final updated = updatedByPath[path];
+            final existing = existingByPath[path];
             if (updated != null) {
-              merged.add(updated);
-            } else {
-              final existing = existingByPath[path];
-              if (existing != null) {
-                merged.add(existing);
+              if (existing != null &&
+                  updated.usltLyrics == null &&
+                  existing.usltLyrics != null &&
+                  updated.lastModifiedMs == existing.lastModifiedMs) {
+                merged.add(updated.copyWith(usltLyrics: existing.usltLyrics));
+              } else {
+                merged.add(updated);
               }
+            } else if (existing != null) {
+              merged.add(existing);
             }
           }
           merged.sort((a, b) {
@@ -1069,6 +1090,14 @@ class LocalMusicProvider extends ChangeNotifier {
       }
 
       _syncProgressNotifiers();
+      if (currentSong != null &&
+          ((currentSong!.hasLyrics && !currentSong!.isLyricsLoadedInMemory) ||
+              _currentFullCoverSongPath != currentSong!.filePath)) {
+        _loadCurrentSongDetailsAndCoverOnDemand(
+          currentSong!,
+          _playbackSessionId,
+        );
+      }
       if (libraryMutated || foldersMutated) {
         await _saveLibraryCache();
         await _savePlayerSession();
@@ -1898,6 +1927,12 @@ class LocalMusicProvider extends ChangeNotifier {
         _positionMs = 0;
         _durationMs = currentSong?.durationMs ?? 0;
         _hasPreparedNative = false;
+        if (currentSong != null) {
+          _loadCurrentSongDetailsAndCoverOnDemand(
+            currentSong!,
+            _playbackSessionId,
+          );
+        }
       }
     } else if (index < _currentIndex) {
       _currentIndex--;
@@ -2503,6 +2538,12 @@ class LocalMusicProvider extends ChangeNotifier {
           _positionMs = 0;
           _durationMs = currentSong?.durationMs ?? 0;
           _hasPreparedNative = false;
+          if (currentSong != null) {
+            _loadCurrentSongDetailsAndCoverOnDemand(
+              currentSong!,
+              _playbackSessionId,
+            );
+          }
         }
       }
     }
