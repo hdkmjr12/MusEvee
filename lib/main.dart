@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import 'providers/downloader_provider.dart';
 import 'providers/local_music_provider.dart';
+import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -39,14 +40,18 @@ class MusEveeApp extends StatefulWidget {
 }
 
 class _MusEveeAppState extends State<MusEveeApp> {
+  late final SettingsProvider _settingsProvider;
   late final LocalMusicProvider _localMusicProvider;
   late final DownloaderProvider _downloaderProvider;
 
   @override
   void initState() {
     super.initState();
+    _settingsProvider = SettingsProvider();
     _localMusicProvider = LocalMusicProvider();
-    _downloaderProvider = DownloaderProvider();
+    _downloaderProvider = DownloaderProvider(
+      settingsProvider: _settingsProvider,
+    );
 
     // Wire 2-way instant synchronization without ChangeNotifierProxyProvider rebuild overhead
     _localMusicProvider.onLocalLibraryMutated = _downloaderProvider.syncWithLocalLibrary;
@@ -91,6 +96,7 @@ class _MusEveeAppState extends State<MusEveeApp> {
   void dispose() {
     _localMusicProvider.dispose();
     _downloaderProvider.dispose();
+    _settingsProvider.dispose();
     super.dispose();
   }
 
@@ -98,6 +104,9 @@ class _MusEveeAppState extends State<MusEveeApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider<SettingsProvider>.value(
+          value: _settingsProvider,
+        ),
         ChangeNotifierProvider<LocalMusicProvider>.value(
           value: _localMusicProvider,
         ),

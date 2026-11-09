@@ -13,6 +13,7 @@ import '../services/metadata_service.dart';
 import '../services/romaji_service.dart';
 import '../services/tagging_service.dart';
 import '../utils/app_strings.dart';
+import 'settings_provider.dart';
 
 enum DownloaderState {
   idle,
@@ -38,6 +39,7 @@ class DownloaderProvider extends ChangeNotifier {
   final TaggingService _taggingService;
   final FolderService _folderService;
   final RomajiService _romajiService;
+  final SettingsProvider? _settingsProvider;
 
   DownloaderProvider({
     MetadataService? metadataService,
@@ -46,14 +48,19 @@ class DownloaderProvider extends ChangeNotifier {
     TaggingService? taggingService,
     FolderService? folderService,
     RomajiService? romajiService,
+    SettingsProvider? settingsProvider,
   })  : _metadataService = metadataService ?? MetadataService(),
         _lyricsService = lyricsService ?? LyricsService(),
         _audioService = audioService ?? AudioService(),
         _taggingService = taggingService ?? TaggingService(),
         _folderService = folderService ?? FolderService(),
-        _romajiService = romajiService ?? RomajiService() {
+        _romajiService = romajiService ?? RomajiService(),
+        _settingsProvider = settingsProvider {
     _initFolders();
   }
+
+  int get activeDownloadBitrateKbps =>
+      _settingsProvider?.downloadQuality.bitrateKbps ?? 320;
 
   DownloaderState _state = DownloaderState.idle;
   TrackMetadata? _trackMetadata;
@@ -1344,6 +1351,7 @@ class DownloaderProvider extends ChangeNotifier {
         metadata: workingMeta,
         targetFolderName: targetFolder,
         preferSyncedLyrics: useSynced,
+        bitrateKbps: activeDownloadBitrateKbps,
         onProgress: (subProgress, _) {
           final overall = 0.80 + (subProgress.clamp(0.0, 1.0) * 0.19);
           _setState(
@@ -1468,6 +1476,7 @@ class DownloaderProvider extends ChangeNotifier {
             metadata: meta,
             targetFolderName: currentItem.targetFolderName,
             preferSyncedLyrics: currentItem.preferSyncedLyrics,
+            bitrateKbps: activeDownloadBitrateKbps,
             onProgress: (sub, _) {
               _updateQueueItem(
                 currentItem.id,

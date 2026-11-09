@@ -58,6 +58,51 @@ class AppStrings {
       isIndonesian ? 'Cari & Unduh Lagu (Downloader)' : 'Search & Download';
   static String get tabSearchLocalTooltip =>
       isIndonesian ? 'Cari Lagu Lokal' : 'Search Local Songs';
+  static String get tabSettingsTooltip =>
+      isIndonesian ? 'Pengaturan' : 'Settings';
+
+  // ===========================================================================
+  // LOCAL SEARCH (INSIDE ALL SONGS) & SHORTCUTS
+  // ===========================================================================
+  static String get localSearchShortcutTooltip =>
+      isIndonesian ? 'Cari Lagu Lokal' : 'Search Local Songs';
+  static String get localSearchHint => isIndonesian
+      ? 'Cari lagu, artis, album, atau folder di HP...'
+      : 'Search songs, artists, albums, or folders on device...';
+  static String get filterFavoritesTooltip =>
+      isIndonesian ? 'Filter Favorit' : 'Filter Favorites';
+  static String get localSearchEmptyLibrary => isIndonesian
+      ? 'Belum ada lagu lokal yang tersimpan di perangkat.'
+      : 'No local songs saved on this device yet.';
+  static String get localSearchNoMatch => isIndonesian
+      ? 'Tidak ada lagu lokal yang cocok dengan pencarian.'
+      : 'No local songs match your search.';
+
+  // ===========================================================================
+  // SETTINGS TAB (`SettingsView`)
+  // ===========================================================================
+  static String get settingsHeaderTitle =>
+      isIndonesian ? 'Pengaturan' : 'Settings';
+  static String get settingsDownloadsSection =>
+      isIndonesian ? 'Unduhan' : 'Downloads';
+  static String get settingsDownloadQualityTitle =>
+      isIndonesian ? 'Kualitas Audio Unduhan' : 'Download Audio Quality';
+  static String get qualityBestTitle =>
+      isIndonesian ? 'Terbaik — 320 kbps' : 'Best — 320 kbps';
+  static String get qualityBestSubtitle =>
+      isIndonesian ? '~9-10 MB per lagu 4 menit' : '~9-10 MB per 4-min song';
+  static String get qualityBalancedTitle =>
+      isIndonesian ? 'Seimbang — 192 kbps' : 'Balanced — 192 kbps';
+  static String get qualityBalancedSubtitle =>
+      isIndonesian ? '~5-6 MB per lagu 4 menit' : '~5-6 MB per 4-min song';
+  static String get qualityEfficientTitle =>
+      isIndonesian ? 'Hemat — 128 kbps' : 'Efficient — 128 kbps';
+  static String get qualityEfficientSubtitle =>
+      isIndonesian ? '~3-4 MB per lagu 4 menit' : '~3-4 MB per 4-min song';
+  static String get settingsDownloadQualityNote => isIndonesian
+      ? 'Pengaturan ini hanya memengaruhi ukuran file hasil unduhan, bukan penggunaan data saat mengunduh.'
+      : 'This setting only affects the downloaded output file size, not data usage during download.';
+  static String get appVersionFooter => 'MusEvee v4.7';
 
   // ===========================================================================
   // SMART PLAYLISTS & PLAYLISTS TAB

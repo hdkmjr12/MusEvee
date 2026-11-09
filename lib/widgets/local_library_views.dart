@@ -299,12 +299,14 @@ class LocalFoldersView extends StatefulWidget {
   final VoidCallback onOpenNowPlaying;
   final Future<void> Function(DownloaderProvider provider) onCreateNewFolder;
   final Future<void> Function(LocalSong song) onMoveLocalSongFolder;
+  final VoidCallback? onOpenAllSongsSearch;
 
   const LocalFoldersView({
     super.key,
     required this.onOpenNowPlaying,
     required this.onCreateNewFolder,
     required this.onMoveLocalSongFolder,
+    this.onOpenAllSongsSearch,
   });
 
   @override
@@ -1021,6 +1023,20 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             ),
                           ),
                         ),
+                        if (!_isSelectionMode)
+                          IconButton(
+                            key: const ValueKey(
+                              'folders_search_shortcut_button',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: AppStrings.localSearchShortcutTooltip,
+                            onPressed: widget.onOpenAllSongsSearch,
+                            icon: const Icon(
+                              Icons.search_rounded,
+                              size: 19,
+                              color: _kText,
+                            ),
+                          ),
                         if (_isSelectionMode)
                           IconButton(
                             visualDensity: VisualDensity.compact,
@@ -1411,11 +1427,15 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
 class LocalPlaylistsView extends StatefulWidget {
   final VoidCallback onOpenNowPlaying;
   final Future<void> Function(LocalSong song) onMoveLocalSongFolder;
+  final VoidCallback? onOpenAllSongsSearch;
+  final int openAllSongsSearchRequestId;
 
   const LocalPlaylistsView({
     super.key,
     required this.onOpenNowPlaying,
     required this.onMoveLocalSongFolder,
+    this.onOpenAllSongsSearch,
+    this.openAllSongsSearchRequestId = 0,
   });
 
   @override
@@ -1426,6 +1446,164 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
   String? _openedPlaylistId;
   bool _isSelectionMode = false;
   final Set<String> _selectedPlaylistIds = <String>{};
+  final TextEditingController _allSongsSearchController =
+      TextEditingController();
+  final FocusNode _allSongsSearchFocusNode = FocusNode();
+  bool _shouldAutoFocusAllSongsSearch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openAllSongsSearchRequestId > 0) {
+      _openedPlaylistId = SmartPlaylistId.allSongs;
+      _shouldAutoFocusAllSongsSearch = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _allSongsSearchFocusNode.requestFocus();
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant LocalPlaylistsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.openAllSongsSearchRequestId !=
+            oldWidget.openAllSongsSearchRequestId &&
+        widget.openAllSongsSearchRequestId > 0) {
+      _openAllSongsAndFocusSearch();
+    }
+  }
+
+  @override
+  void dispose() {
+    _allSongsSearchController.dispose();
+    _allSongsSearchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _openAllSongsAndFocusSearch() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedPlaylistIds.clear();
+      _shouldAutoFocusAllSongsSearch = true;
+      _openedPlaylistId = SmartPlaylistId.allSongs;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _allSongsSearchFocusNode.requestFocus();
+      }
+    });
+  }
+
+  Widget _buildAllSongsSearchBar(
+    LocalMusicProvider localProvider,
+    Color hairline,
+  ) {
+    if (localProvider.localSearchQuery.isEmpty &&
+        _allSongsSearchController.text.isNotEmpty) {
+      _allSongsSearchController.clear();
+    } else if (localProvider.localSearchQuery.isNotEmpty &&
+        _allSongsSearchController.text != localProvider.localSearchQuery) {
+      _allSongsSearchController.value = TextEditingValue(
+        text: localProvider.localSearchQuery,
+        selection: TextSelection.collapsed(
+          offset: localProvider.localSearchQuery.length,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: _kCard,
+        border: Border(
+          bottom: BorderSide(color: hairline, width: 0.8),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              key: const ValueKey('all_songs_search_field'),
+              controller: _allSongsSearchController,
+              focusNode: _allSongsSearchFocusNode,
+              autofocus: _shouldAutoFocusAllSongsSearch,
+              style: const TextStyle(color: _kText, fontSize: 13.5),
+              onChanged: localProvider.setLocalSearchQuery,
+              decoration: InputDecoration(
+                hintText: AppStrings.localSearchHint,
+                hintStyle: const TextStyle(color: _kMuted, fontSize: 13),
+                filled: true,
+                fillColor: _kSubtle,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: _kMuted,
+                  size: 19,
+                ),
+                suffixIcon: localProvider.localSearchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 17,
+                          color: _kMuted,
+                        ),
+                        onPressed: () {
+                          _allSongsSearchController.clear();
+                          localProvider.setLocalSearchQuery('');
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: hairline, width: 0.8),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: hairline, width: 0.8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: _kAccent,
+                    width: 1.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilterChip(
+            selected: localProvider.filterFavoritesOnly,
+            showCheckmark: false,
+            tooltip: AppStrings.filterFavoritesTooltip,
+            backgroundColor: _kSubtle,
+            selectedColor: const Color(0xFFFF5A6E).withValues(alpha: 0.20),
+            side: BorderSide(
+              color: localProvider.filterFavoritesOnly
+                  ? const Color(0xFFFF5A6E)
+                  : hairline,
+              width: 0.8,
+            ),
+            label: Icon(
+              localProvider.filterFavoritesOnly
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              size: 16,
+              color: localProvider.filterFavoritesOnly
+                  ? const Color(0xFFFF5A6E)
+                  : _kMuted,
+            ),
+            onSelected: (_) => localProvider.toggleFilterFavoritesOnly(),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _togglePlaylistSelection(String playlistId) {
     // Only user-created playlists (`Your playlists`) may be selected in Merge Mode!
@@ -1571,8 +1749,11 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
 
         Widget body;
         if (isOpenedSmart) {
+          final isAllSongsSmart = openedId == SmartPlaylistId.allSongs;
           final smartTitle = SmartPlaylistId.titleFor(openedId);
-          final songs = localProvider.songsForSmartPlaylist(openedId);
+          final songs = isAllSongsSmart
+              ? localProvider.filteredLocalSongs
+              : localProvider.songsForSmartPlaylist(openedId);
           body = KeyedSubtree(
             key: ValueKey('smart_pl_detail_$openedId'),
             child: _buildSongDrillDownView(
@@ -1582,14 +1763,48 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               songs: songs,
               localProvider: localProvider,
               downloaderProvider: downloaderProvider,
-              onBack: () => setState(() => _openedPlaylistId = null),
+              topSearchHeader: isAllSongsSmart
+                  ? _buildAllSongsSearchBar(localProvider, hairline)
+                  : null,
+              onBack: () {
+                if (isAllSongsSmart) {
+                  _shouldAutoFocusAllSongsSearch = false;
+                  _allSongsSearchController.clear();
+                  localProvider.setLocalSearchQuery('');
+                  if (localProvider.filterFavoritesOnly) {
+                    localProvider.toggleFilterFavoritesOnly();
+                  }
+                }
+                setState(() => _openedPlaylistId = null);
+              },
               onPlayAll: () {
-                localProvider.playPlaylist(openedId);
-                widget.onOpenNowPlaying();
+                if (isAllSongsSmart &&
+                    (localProvider.localSearchQuery.trim().isNotEmpty ||
+                        localProvider.filterFavoritesOnly)) {
+                  if (songs.isNotEmpty) {
+                    localProvider.playSong(songs.first, queueContext: songs);
+                    widget.onOpenNowPlaying();
+                  }
+                } else {
+                  localProvider.playPlaylist(openedId);
+                  widget.onOpenNowPlaying();
+                }
               },
               onShuffleAll: () {
-                localProvider.playPlaylist(openedId, shuffle: true);
-                widget.onOpenNowPlaying();
+                if (isAllSongsSmart &&
+                    (localProvider.localSearchQuery.trim().isNotEmpty ||
+                        localProvider.filterFavoritesOnly)) {
+                  if (songs.isNotEmpty) {
+                    localProvider.playSong(songs.first, queueContext: songs);
+                    if (!localProvider.isShuffle) {
+                      localProvider.toggleShuffle();
+                    }
+                    widget.onOpenNowPlaying();
+                  }
+                } else {
+                  localProvider.playPlaylist(openedId, shuffle: true);
+                  widget.onOpenNowPlaying();
+                }
               },
               onAddAllToQueue: () async {
                 final added = await localProvider.playCombinedPlaylists(
@@ -1610,7 +1825,11 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               },
               onMoveLocalSongFolder: widget.onMoveLocalSongFolder,
               onOpenNowPlaying: widget.onOpenNowPlaying,
-              emptyMessage: _smartPlaylistEmptyHint(openedId),
+              emptyMessage: isAllSongsSmart
+                  ? (localProvider.allSongs.isEmpty
+                      ? AppStrings.localSearchEmptyLibrary
+                      : AppStrings.localSearchNoMatch)
+                  : _smartPlaylistEmptyHint(openedId),
             ),
           );
         } else if (openedUserPlaylist != null) {
@@ -1673,35 +1892,39 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
               children: [
                 Column(
                   children: [
-                    if (_isSelectionMode)
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
-                        decoration: BoxDecoration(
-                          color: _kCard,
-                          border: Border(
-                            bottom: BorderSide(color: hairline, width: 0.8),
-                          ),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 10, 8),
+                      decoration: BoxDecoration(
+                        color: _kCard,
+                        border: Border(
+                          bottom: BorderSide(color: hairline, width: 0.8),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.library_add_check_rounded,
-                              color: _kAccent,
-                              size: 19,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '${selectedIds.length} Playlist Dipilih ($selectedSongCount lagu)',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: _kText,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _isSelectionMode
+                                ? Icons.library_add_check_rounded
+                                : Icons.library_music_rounded,
+                            color: _isSelectionMode ? _kAccent : Colors.white,
+                            size: 19,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _isSelectionMode
+                                  ? '${selectedIds.length} Playlist Dipilih ($selectedSongCount lagu)'
+                                  : AppStrings.tabPlaylistsTooltip,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _kText,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
+                          ),
+                          if (_isSelectionMode) ...[
                             TextButton(
                               style: TextButton.styleFrom(
                                 foregroundColor: _kAccent,
@@ -1739,9 +1962,29 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 color: _kMuted,
                               ),
                             ),
-                          ],
-                        ),
+                          ] else
+                            IconButton(
+                              key: const ValueKey(
+                                'playlists_search_shortcut_button',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              tooltip: AppStrings.localSearchShortcutTooltip,
+                              onPressed: () {
+                                if (widget.onOpenAllSongsSearch != null) {
+                                  widget.onOpenAllSongsSearch!();
+                                } else {
+                                  _openAllSongsAndFocusSearch();
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.search_rounded,
+                                size: 19,
+                                color: _kText,
+                              ),
+                            ),
+                        ],
                       ),
+                    ),
                     Expanded(
                       child: ListView(
                         padding: EdgeInsets.fromLTRB(
@@ -1786,10 +2029,11 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                             clipBehavior: Clip.antiAlias,
                                             child: InkWell(
                                               onTap: () {
-                                                setState(
-                                                  () => _openedPlaylistId =
-                                                      smartId,
-                                                );
+                                                setState(() {
+                                                  _shouldAutoFocusAllSongsSearch =
+                                                      false;
+                                                  _openedPlaylistId = smartId;
+                                                });
                                               },
                                               child: Padding(
                                                 padding:
@@ -2504,167 +2748,6 @@ Future<void> showAddToPlaylistSheet(
 }
 
 // =============================================================================
-// TAB 7: SEARCH LOKAL (`🔍`)
-// =============================================================================
-class LocalSearchView extends StatefulWidget {
-  final VoidCallback onOpenNowPlaying;
-  final Future<void> Function(LocalSong song) onMoveLocalSongFolder;
-
-  const LocalSearchView({
-    super.key,
-    required this.onOpenNowPlaying,
-    required this.onMoveLocalSongFolder,
-  });
-
-  @override
-  State<LocalSearchView> createState() => _LocalSearchViewState();
-}
-
-class _LocalSearchViewState extends State<LocalSearchView> {
-  final TextEditingController _searchController = TextEditingController();
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
-
-    return Consumer2<LocalMusicProvider, DownloaderProvider>(
-      builder: (context, localProvider, downloaderProvider, _) {
-        final filtered = localProvider.filteredLocalSongs;
-
-        return Container(
-          color: _kBg,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                decoration: BoxDecoration(
-                  color: _kCard,
-                  border: Border(
-                    bottom: BorderSide(color: hairline, width: 0.8),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        style: const TextStyle(color: _kText, fontSize: 13.5),
-                        onChanged: localProvider.setLocalSearchQuery,
-                        decoration: InputDecoration(
-                          hintText:
-                              'Cari lagu, artis, album, atau folder di HP...',
-                          hintStyle:
-                              const TextStyle(color: _kMuted, fontSize: 13),
-                          filled: true,
-                          fillColor: _kSubtle,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.search_rounded,
-                            color: _kMuted,
-                            size: 19,
-                          ),
-                          suffixIcon:
-                              localProvider.localSearchQuery.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(
-                                        Icons.close_rounded,
-                                        size: 17,
-                                        color: _kMuted,
-                                      ),
-                                      onPressed: () {
-                                        _searchController.clear();
-                                        localProvider.setLocalSearchQuery('');
-                                      },
-                                    )
-                                  : null,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: hairline, width: 0.8),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: hairline, width: 0.8),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(
-                              color: _kAccent,
-                              width: 1.2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilterChip(
-                      selected: localProvider.filterFavoritesOnly,
-                      showCheckmark: false,
-                      backgroundColor: _kSubtle,
-                      selectedColor: const Color(0xFFFF5A6E).withValues(alpha: 0.20),
-                      side: BorderSide(
-                        color: localProvider.filterFavoritesOnly
-                            ? const Color(0xFFFF5A6E)
-                            : hairline,
-                        width: 0.8,
-                      ),
-                      label: Icon(
-                        localProvider.filterFavoritesOnly
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        size: 16,
-                        color: localProvider.filterFavoritesOnly
-                            ? const Color(0xFFFF5A6E)
-                            : _kMuted,
-                      ),
-                      onSelected: (_) =>
-                          localProvider.toggleFilterFavoritesOnly(),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: filtered.isEmpty
-                    ? _EmptyLocalHint(
-                        icon: Icons.search_off_rounded,
-                        message: localProvider.allSongs.isEmpty
-                            ? 'Belum ada lagu lokal yang tersimpan di perangkat.'
-                            : 'Tidak ada lagu lokal yang cocok dengan pencarian.',
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-                        itemCount: filtered.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 6),
-                        itemBuilder: (context, idx) {
-                          final song = filtered[idx];
-                          return _LocalSongTile(
-                            song: song,
-                            queueContext: localProvider.allSongs,
-                            localProvider: localProvider,
-                            downloaderProvider: downloaderProvider,
-                            onMoveLocalSongFolder: widget.onMoveLocalSongFolder,
-                            onOpenNowPlaying: widget.onOpenNowPlaying,
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-// =============================================================================
 // SHARED DRILL-DOWN SONG LIST & TILE WIDGETS
 // =============================================================================
 Widget _buildSongDrillDownView({
@@ -2680,6 +2763,7 @@ Widget _buildSongDrillDownView({
   required Future<void> Function(LocalSong song) onMoveLocalSongFolder,
   required VoidCallback onOpenNowPlaying,
   VoidCallback? onAddAllToQueue,
+  Widget? topSearchHeader,
   String emptyMessage = 'Folder ini belum berisi file MP3.',
   Future<void> Function(LocalSong song)? onRemoveFromPlaylist,
 }) {
@@ -2766,10 +2850,13 @@ Widget _buildSongDrillDownView({
             ],
           ),
         ),
+        if (topSearchHeader != null) topSearchHeader,
         Expanded(
           child: songs.isEmpty
               ? _EmptyLocalHint(
-                  icon: Icons.music_off_rounded,
+                  icon: topSearchHeader != null
+                      ? Icons.search_off_rounded
+                      : Icons.music_off_rounded,
                   message: emptyMessage,
                 )
               : ListView.separated(

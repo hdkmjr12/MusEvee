@@ -19,6 +19,7 @@ import '../widgets/now_playing_view.dart';
 import '../widgets/pressable_scale.dart';
 import '../widgets/queue_history_view.dart';
 import '../widgets/search_result_tile.dart';
+import '../widgets/settings_view.dart';
 import '../widgets/track_preview_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -36,7 +37,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Musicolet 6-Tab Indices
   static const int _tabNowPlaying = 1;
   static const int _tabFolders = 2;
+  static const int _tabPlaylists = 3;
   static const int _tabDownloader = 4;
+  // ignore: unused_field
+  static const int _tabSettings = 5;
 
   // Dark Musicolet Surface Palette
   static const Color _bgCanvas = Color(0xFF0E1014);
@@ -180,6 +184,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final FocusNode _searchFocusNode = FocusNode();
 
   int _selectedTabIndex = _tabNowPlaying;
+  int _allSongsSearchRequestId = 0;
+
+  void _openAllSongsSearch() {
+    setState(() {
+      _selectedTabIndex = _tabPlaylists;
+      _allSongsSearchRequestId++;
+    });
+  }
 
   void _triggerDiscoveryLoadIfNeeded({bool forceRefresh = false}) {
     if (!Platform.isAndroid && !forceRefresh) return;
@@ -1208,12 +1220,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                         onCreateNewFolder: _showCreateFolderDialog,
                         onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
+                        onOpenAllSongsSearch: _openAllSongsSearch,
                       ),
 
                       // 3: Playlists (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger)
                       LocalPlaylistsView(
                         onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                         onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
+                        onOpenAllSongsSearch: _openAllSongsSearch,
+                        openAllSongsSearchRequestId: _allSongsSearchRequestId,
                       ),
 
                       // 4: Downloader (`⬇` Cloud Download — Smart Omnibox + 3 Discovery Carousels + Queue/History Sheet Trigger)
@@ -1223,11 +1238,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         totalActiveCount,
                       ),
 
-                      // 5: Search Lokal (`🔍`)
-                      LocalSearchView(
-                        onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
-                        onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
-                      ),
+                      // 5: Settings (`⚙`)
+                      const SettingsView(),
                     ],
                   ),
                 ),

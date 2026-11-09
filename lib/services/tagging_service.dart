@@ -43,7 +43,16 @@ class TaggingService {
     }
   }
 
-  /// Downloads high-res cover art, converts [rawAudioFile] to 320kbps MP3 via FFmpeg,
+  /// Validates [bitrateKbps] so values outside `{128, 192, 320}` fall back to `320`.
+  static int normalizeBitrateKbps(int bitrateKbps) {
+    if (bitrateKbps == 128 || bitrateKbps == 192 || bitrateKbps == 320) {
+      return bitrateKbps;
+    }
+    return 320;
+  }
+
+  /// Downloads high-res cover art, converts [rawAudioFile] to MP3 at [bitrateKbps]
+  /// (`320`, `192`, or `128` kbps; defaults to `320`) via FFmpeg,
   /// and writes a complete, standards-compliant ID3v2.4.0 tag header containing:
   /// - `APIC` (high-res JPEG front cover)
   /// - `TALB`, `TDRC`, `TIT2`, `TPE1`, `TPE2` (UTF-8 text frames)
@@ -54,8 +63,10 @@ class TaggingService {
     required TrackMetadata metadata,
     String targetFolderName = 'Music Barat',
     bool preferSyncedLyrics = true,
+    int bitrateKbps = 320,
     void Function(double progress, String detail)? onProgress,
   }) async {
+    final resolvedBitrate = normalizeBitrateKbps(bitrateKbps);
     debugPrint(
       '[AUTO_E2E] TAHAP_5: Memulai konversi & tagging untuk input: ${rawAudioFile.path} (${await rawAudioFile.length()} bytes)',
     );
@@ -93,10 +104,10 @@ class TaggingService {
         }
       }
 
-      // 2. Convert audio stream to 320kbps MP3 using FFmpeg
+      // 2. Convert audio stream to MP3 using FFmpeg at the configured bitrate
       onProgress?.call(
         0.45,
-        'Mengonversi audio ke MP3 320kbps...',
+        'Mengonversi audio ke MP3 ${resolvedBitrate}kbps...',
       );
 
       final ffmpegArgs = <String>[
@@ -109,13 +120,15 @@ class TaggingService {
         '-c:a',
         'libmp3lame',
         '-b:a',
-        '320k',
+        '${resolvedBitrate}k',
         '-write_id3v1',
         '0',
         tempOutputMp3.path,
       ];
 
-      debugPrint('[AUTO_E2E] TAHAP_5: Menjalankan FFmpeg konversi MP3 320kbps...');
+      debugPrint(
+        '[AUTO_E2E] TAHAP_5: Menjalankan FFmpeg konversi MP3 ${resolvedBitrate}kbps...',
+      );
       final session = await FFmpegKit.executeWithArguments(ffmpegArgs);
       final returnCode = await session.getReturnCode();
       final outputLog = (await session.getOutput()) ?? '';
@@ -126,7 +139,7 @@ class TaggingService {
           await tempOutputMp3.length() <= 10000) {
         debugPrint('[AUTO_E2E] TAHAP_5: FFmpeg gagal. Log:\n$outputLog');
         throw TaggingException(
-          'FFmpeg gagal mengonversi audio ke MP3 320kbps. Log: $outputLog',
+          'FFmpeg gagal mengonversi audio ke MP3 ${resolvedBitrate}kbps. Log: $outputLog',
         );
       }
 

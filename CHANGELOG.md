@@ -6,6 +6,31 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.7] — 2026-11-09 (Tab Ke-6 `Settings`, Pilihan Kualitas Unduhan MP3 `320`/`192`/`128 kbps` via `SettingsProvider`, & Integrasi Pencarian Lokal di Dalam `All songs`)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **`SettingsProvider` & Penyimpanan Persisten `musevee_settings_v1.json` (`lib/providers/settings_provider.dart`, `lib/main.dart`, `test/settings_provider_test.dart`):**
+  - Menambahkan `SettingsProvider` (`extends ChangeNotifier`) yang dibuat, dimiliki, dan di-dispose oleh `_MusEveeAppState` di `lib/main.dart`, serta didaftarkan ke `MultiProvider`.
+  - Menyimpan preferensi secara persisten ke file `musevee_settings_v1.json` di direktori dokumen aplikasi (`getApplicationDocumentsDirectory()`) tanpa menambah dependensi eksternal baru, dimuat secara asinkron saat init tanpa memblokir UI, dan otomatis fallback ke nilai default (`DownloadQuality.best` = `320 kbps`) jika file belum ada atau korup.
+  - Mendefinisikan `enum DownloadQuality { best(320), balanced(192), efficient(128) }` untuk mengatur bitrate konversi MP3 unduhan baru.
+- **Tab Ke-6 (`index 5`) Menjadi `Settings` (`lib/widgets/musicolet_bottom_strip.dart`, `lib/widgets/settings_view.dart`, `lib/screens/home_screen.dart`, `lib/utils/app_strings.dart`):**
+  - Mengganti tab indeks `5` pada `MusicoletBottomStrip` dari `Search Lokal` menjadi **`Settings`** (`Icons.settings_outlined`, aktif `Icons.settings_rounded`, tooltip `AppStrings.tabSettingsTooltip` `'Pengaturan'` / `'Settings'`) dengan tetap menjaga 6 tab dan animasi *sliding pill* + *Mograph pop*.
+  - Membuat halaman `SettingsView` yang minimalis dan mengikuti palet gelap Musicolet (`#0E1014`, `#17191E`, `#22252D`, `#3898EC`, hairline border `0.8px`), berisi:
+    1. Bagian **"Unduhan" / "Downloads"** — *Kualitas / ukuran file hasil unduhan* dengan 3 opsi radio: **Terbaik — 320 kbps** (`~9-10 MB per lagu 4 menit`), **Seimbang — 192 kbps** (`~5-6 MB per lagu 4 menit`), dan **Hemat — 128 kbps** (`~3-4 MB per lagu 4 menit`).
+    2. Catatan kecil di bawah pilihan yang menjelaskan bahwa pengaturan ini hanya memengaruhi ukuran file hasil unduhan di penyimpanan HP, bukan pemakaian kuota saat mengunduh.
+    3. Footer teks polos di bagian bawah: `"MusEvee v4.7"`.
+- **Pemindahan Pencarian Lokal ke Dalam `All songs` + Tombol Shortcut Cepat (`lib/widgets/local_library_views.dart`, `lib/screens/home_screen.dart`):**
+  - Menghapus penggunaan `LocalSearchView` sebagai tab terpisah dan mengintegrasikan bar pencarian lokal permanen beserta `FilterChip` Favorit (`♥`) di bagian atas tampilan drill-down **`All songs`** (`SmartPlaylistId.allSongs`) pada `LocalPlaylistsView`.
+  - Memutar lagu dari daftar `All songs` yang sedang difilter otomatis menggunakan konteks antrean hasil filter (`queueContext: filteredLocalSongs`), dan menekan tombol Kembali (`Back`) untuk keluar dari drill-down `All songs` otomatis mereset kata kunci pencarian (`setLocalSearchQuery('')`).
+  - Menambahkan tombol shortcut pencarian cepat (`Icons.search_rounded`) di kanan header tab **`Folders`** (di samping tombol *"Kelola Folder"*) dan di kanan header tab **`Playlists`** yang ketika diketuk langsung berpindah ke tab `Playlists` (`index 3`), membuka drill-down `All songs`, dan memfokuskan kursor ke kolom pencarian (`FocusNode.requestFocus()`).
+- **Plumbing Kualitas Bitrate Unduhan FFmpeg (`lib/services/tagging_service.dart`, `lib/providers/downloader_provider.dart`):**
+  - Menambahkan parameter opsional `int bitrateKbps = 320` pada `TaggingService.convertAndTagAudio()` (nilai di luar `{128, 192, 320}` otomatis dinormalisasi ke `320`), menerapkannya ke argumen FFmpeg `'-b:a', '${resolvedBitrate}k'`, serta memperbarui seluruh teks `onProgress`, `debugPrint`, dan `TaggingException` agar menampilkan `${resolvedBitrate}kbps` secara dinamis.
+  - Menyambungkan `SettingsProvider` ke `DownloaderProvider` sehingga kedua pemanggilan `convertAndTagAudio()` (unduhan langsung maupun antrean) menggunakan `settingsProvider.downloadQuality.bitrateKbps`, sementara `retagExistingMp3` tetap instan menggunakan `-c:a copy`.
+- **Bump Versi & Pembaruan CI/CD (`pubspec.yaml`, `.github/workflows/build_apk.yml`):**
+  - Menaikkan versi aplikasi ke `4.7.0+12` dan memperbarui artefak serta GitHub Release otomatis menjadi `MusEvee-v4.7-arm64.apk` (`v4.7.0`).
+
+---
+
 ## [v4.6] — 2026-04-12 (Pembatasan Mix Playlist HANYA untuk `Your playlists`, 3 Horizontal Carousels Bersampul Kecil di Tab Downloader, Deteksi Offline Akurat & Error Banner yang Bisa Ditutup `✕`, Lokalisasi Otomatis Sistem `id`/`en`, & Optimasi Ukuran Data Pengguna `< 5 MB`)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)

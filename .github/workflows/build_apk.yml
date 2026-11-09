@@ -37,10 +37,11 @@ jobs:
           path: |
             ~/.gradle/wrapper
             ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-v4.4-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
+          key: ${{ runner.os }}-gradle-v4.7-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-v4.7-
+            ${{ runner.os }}-gradle-v4.6-
             ${{ runner.os }}-gradle-v4.4-
-            ${{ runner.os }}-gradle-v4.3-
             ${{ runner.os }}-gradle-
 
       - name: Ensure Gradle Wrapper & Network Mirrors
@@ -90,31 +91,29 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare Named APK (`MusEvee-v4.6-arm64.apk`)
+      - name: Prepare Named APK (`MusEvee-v4.7-arm64.apk`)
         run: |
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.6-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.7-arm64.apk
 
       - name: Upload MusEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusEvee-v4.6-arm64-APK
-          path: MusEvee-v4.6-arm64.apk
+          name: MusEvee-v4.7-arm64-APK
+          path: MusEvee-v4.7-arm64.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release (`v4.6.0`)
+      - name: Publish GitHub Release (`v4.7.0`)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.6.0
-          name: "MusEvee v4.6 (Your Playlists Mix + 3 Discovery Carousels + Offline & Auto-Locale + <5MB Data Footprint)"
+          tag_name: v4.7.0
+          name: "MusEvee v4.7 (Settings Tab + Configurable MP3 Bitrate 320/192/128 kbps + Integrated All Songs Search)"
           body: |
-            ### MusEvee v4.6 — Release APK (Android ARM64 ~20 MB)
-            - **Pembatasan Fitur Multi-Select / Mix Playlist HANYA untuk `Your playlists`:** Keenam baris *Smart Playlists* (`All songs`, `Favorites`, `Recently added`, `Recently played`, `Most played`, `Not played`) di bagian atas tidak dapat dicentang dan meredup (`opacity: 0.38`) saat mode Gabung aktif agar pengguna fokus memilih item di dalam `Your playlists`.
-            - **3 Horizontal Carousels Bersampul Kecil di Tab Downloader:** Mengganti *Pencarian Cepat* lama dengan 3 baris *Horizontal Carousel* bergambar sampul kompak (`~100x100 px`, *in-memory RAM cache* `0 KB` di disk): **`For You` / `Untukmu`** (disampling dari artis favorit di perpustakaan lokal yang belum dimiliki), **`Global Trending`**, dan **`Indonesia Trending`**.
-            - **Deteksi Offline Akurat & Error Banner yang Bisa Ditutup (`✕`):** Memisahkan *network/offline error* (`NetworkOfflineException`) dari *"Tidak ditemukan lagu"* dengan tampilan kartu **Offline + Tombol Segarkan / Coba Lagi**, serta menambahkan tombol tutup (`✕`) & *auto-dismiss* 5 detik pada setiap banner peringatan.
-            - **Lokalisasi Otomatis Sesuai Bahasa Sistem HP (Indonesia vs English):** Mendeteksi bahasa sistem perangkat secara otomatis (`id`/`in` -> **Bahasa Indonesia**, selain itu -> **English**).
-            - **Optimasi Drastis Ukuran Data Pengguna (`< 5 MB` ala Musicolet):** Mengompresi thumbnail sampul di `filesDir/covers` ke maksimal `256x256 px` JPEG (`quality: 78`, `~8–15 KB` per file) beserta migrasi kompresi otomatis saat startup, memuat sampul resolusi penuh & teks `USLT` secara *on-demand* di RAM tanpa menyimpannya mentah di JSON cache, dan membersihkan file sementara (`.tmp`/FFmpeg) secara otomatis.
-          files: MusEvee-v4.6-arm64.apk
+            ### MusEvee v4.7 — Release APK (Android ARM64 ~20 MB)
+            - **Tab Ke-6 Baru `Settings` (`SettingsView` & `SettingsProvider`):** Menggantikan tab `Search Lokal` lama di urutan ke-6 `MusicoletBottomStrip` dengan halaman **Pengaturan / Settings** bergaya Musicolet Dark (`#0E1014` / `#17191E`, hairline border `0.8px`) yang persisten di `musevee_settings_v1.json`.
+            - **Pilihan Kualitas Unduhan MP3 (`320` / `192` / `128 kbps`):** Mendukung 3 opsi kualitas konversi FFmpeg di `TaggingService.convertAndTagAudio()` dan `DownloaderProvider`: **Terbaik — 320 kbps** (`~9-10 MB per lagu 4 menit`, default), **Seimbang — 192 kbps** (`~5-6 MB per lagu 4 menit`), dan **Hemat — 128 kbps** (`~3-4 MB per lagu 4 menit`), lengkap dengan catatan jelas bahwa pengaturan ini hanya memengaruhi ukuran file hasil unduhan di penyimpanan HP.
+            - **Integrasi Pencarian Lokal di Dalam `All songs` + Tombol Shortcut Cepat (`LocalPlaylistsView` & `LocalFoldersView`):** Memindahkan bar pencarian lokal permanen beserta chip filter Favorit (`♥`) langsung ke bagian atas drill-down **All songs** di tab `Playlists` (otomatis mereset kata kunci saat menekan tombol Kembali), serta menambahkan tombol shortcut pencarian cepat (`Icons.search_rounded`) di header tab `Folders` dan `Playlists` yang langsung membuka `All songs` dan memfokuskan kolom pencarian.
+          files: MusEvee-v4.7-arm64.apk
           draft: false
           prerelease: false
           make_latest: "true"

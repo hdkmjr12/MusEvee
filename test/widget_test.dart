@@ -98,6 +98,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Antrean & Riwayat Unduhan'), findsOneWidget);
+
+    // Close modal sheet and switch to Tab 5: Settings (`Pengaturan`)
+    await tester.tap(find.byTooltip('Tutup'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Pengaturan'), findsOneWidget);
+    await tester.tap(find.byTooltip('Pengaturan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Terbaik — 320 kbps'), findsOneWidget);
+    expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
+    expect(find.text('Hemat — 128 kbps'), findsOneWidget);
+    expect(find.text('MusEvee v4.7'), findsOneWidget);
   });
 
   test(
@@ -586,6 +599,34 @@ void main() {
       localProvider.queue.map((s) => s.title).toList(),
       ['Song 1', 'Song 2'],
     );
+
+    // Tap the search shortcut button in the Playlists header -> opens All songs drill-down with search bar
+    await tester.tap(
+      find.byKey(const ValueKey('playlists_search_shortcut_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final searchFieldFinder = find.byKey(
+      const ValueKey('all_songs_search_field'),
+    );
+    expect(searchFieldFinder, findsOneWidget);
+
+    // Filter songs in All songs drill-down and verify playing uses filtered queueContext
+    await tester.enterText(searchFieldFinder, 'Song 2');
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(localProvider.localSearchQuery, 'Song 2');
+    expect(localProvider.filteredLocalSongs.length, 1);
+
+    await tester.tap(find.text('Song 2').last);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(localProvider.queue.map((s) => s.title).toList(), ['Song 2']);
+
+    // Pressing Back from All songs drill-down MUST clear localSearchQuery
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(localProvider.localSearchQuery, isEmpty);
   });
 
   test(

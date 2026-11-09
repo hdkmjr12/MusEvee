@@ -9,9 +9,10 @@ import '../utils/app_strings.dart';
 /// 2: Folders (`📁`)
 /// 3: Playlists (`♫` — Albums & Artists merged into user playlists)
 /// 4: Downloader (`⬇` Cloud Download + Queue/History sheet trigger)
-/// 5: Search Lokal (`🔍`)
+/// 5: Settings (`⚙`)
 class MusicoletBottomStrip extends StatelessWidget {
   static const int downloaderTabIndex = 4;
+  static const int settingsTabIndex = 5;
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
   final int activeDownloadBadgeCount;
@@ -51,9 +52,9 @@ class MusicoletBottomStrip extends StatelessWidget {
       activeIcon: Icons.cloud_download_rounded,
     ),
     (
-      tooltip: AppStrings.tabSearchLocalTooltip,
-      icon: Icons.search_rounded,
-      activeIcon: Icons.search_rounded,
+      tooltip: AppStrings.tabSettingsTooltip,
+      icon: Icons.settings_outlined,
+      activeIcon: Icons.settings_rounded,
     ),
   ];
 

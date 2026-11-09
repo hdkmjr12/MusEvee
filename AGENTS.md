@@ -10,14 +10,14 @@
 ## 1. Status Terkini Proyek
 
 - **Nama Resmi & Permanen Aplikasi:** **`MusEvee`** (bukan *MusicEvee* / *SpotMeta Downloader*; `applicationId = "com.zte.as.music"` untuk dukungan native Live Island ZTE/nubia)
-- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.6`** (`pubspec.yaml` version `4.6.0+11`, badge UI `v4.6`)
-- **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`, `MusEvee-v4.6-arm64.apk`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), keystore permanen `android/app/musevee-release.jks`, wrapper Gradle (`gradle-wrapper.jar` + `gradle-9.3.1-bin.zip`) yang di-track langsung di Git bersama Google Cloud Maven Central mirror & HTTP retry hardening, serta publikasi otomatis ke **GitHub Releases (`v4.6.0`)** via `softprops/action-gh-release@v2`.
-- **Update Terakhir (`v4.6` — Pembatasan Mix HANYA untuk `Your playlists`, 3 Horizontal Carousels Bersampul Kecil di Downloader, Deteksi Offline Akurat & Error Banner yang Bisa Ditutup `✕`, Lokalisasi Otomatis Sistem `id`/`en`, & Optimasi Data Pengguna `< 5 MB`):**
-  - **Pembatasan Multi-Select / Mix Playlist HANYA untuk `Your playlists` (`local_library_views.dart`, `local_music_provider.dart`):** Fitur **Gabung / Mix Playlist** kini hanya berlaku untuk daftar `Your playlists` (playlist buatan pengguna); keenam baris *Smart Playlists* (`All songs`, `Favorites`, `Recently added`, `Recently played`, `Most played`, `Not played`) di bagian atas tidak dapat dicentang dan meredup (`opacity: 0.38`) saat mode Gabung aktif.
-  - **3 Horizontal Carousels Bersampul Kecil di Tab Downloader (`home_screen.dart`, `downloader_provider.dart`, `metadata_service.dart`):** Mengganti *Pencarian Cepat* lama dengan 3 baris *Horizontal Carousel* bergambar sampul kompak (`~100x100 px`, `cacheWidth: 140, cacheHeight: 140`, hanya disimpan di *in-memory RAM cache* selama sesi aktif sehingga menambah `0 KB` pada *User Data*): **`For You` / `Untukmu`** (disampling dari 3–4 artis favorit di `Most played` / `Recently added` yang lagunya belum ada di folder lokal), **`Global Trending`**, dan **`Indonesia Trending`**.
-  - **Deteksi Offline Akurat & Error Banner yang Bisa Ditutup (`metadata_service.dart`, `downloader_provider.dart`, `home_screen.dart`):** Memisahkan *network/offline error* (`SocketException`, `TimeoutException`, `DioException` connection error) dari *"Tidak ditemukan lagu"* melalui `NetworkOfflineException` dengan kartu **Offline + Tombol Segarkan / Coba Lagi**, serta menambahkan tombol tutup (`✕`) & *auto-dismiss* 5 detik pada setiap banner peringatan.
-  - **Lokalisasi Otomatis Sesuai Bahasa Sistem HP (`lib/utils/app_strings.dart`):** Mendeteksi bahasa sistem perangkat secara otomatis (`PlatformDispatcher.instance.locale.languageCode` — `id`/`in` menampilkan **Bahasa Indonesia**, selain itu menampilkan **English**).
-  - **Optimasi Drastis Ukuran Data Pengguna (`< 5 MB` ala Musicolet) & Hotfix On-Demand USLT Lyrics (`MainActivity.kt`, `local_song.dart`, `local_music_provider.dart`, `now_playing_view.dart`, `tag_editor_sheet.dart`):** Mengompresi thumbnail sampul di `filesDir/covers` ke maksimal `256x256 px` JPEG (`quality: 78`, `~8–15 KB` per file) beserta migrasi otomatis saat startup untuk mengecilkan file sampul lama `> 36 KB`, memuat sampul resolusi penuh & teks `USLT` secara *on-demand* di RAM tanpa menyimpannya mentah di `musevee_library_cache_v1.json`, membersihkan file sementara (`.tmp`/FFmpeg) secara otomatis saat startup dan selesai unduh/retag, serta menjamin null-safety penuh (`parsedSyncedLyrics`, `plainLyricLines`, `_syncProgressNotifiers`, `TagEditorSheet.showForLocalSong`, dan `refreshLibrary` delta merge) ketika teks `usltLyrics` belum dimuat ke RAM.
+- **Versi Aplikasi Saat Ini:** **`MusEvee` `v4.7`** (`pubspec.yaml` version `4.7.0+12`, badge UI `v4.7`)
+- **Kondisi Build & CI/CD:** Aktif di `.github/workflows/build_apk.yml` — menghasilkan **1 file APK ringan khusus ARM64 (`~20 MB`, `MusEvee-v4.7-arm64.apk`)** menggunakan `--split-per-abi --target-platform android-arm64`, `packaging.jniLibs.excludes` (`armeabi-v7a`, `x86`, `x86_64`), keystore permanen `android/app/musevee-release.jks`, wrapper Gradle (`gradle-wrapper.jar` + `gradle-9.3.1-bin.zip`) yang di-track langsung di Git bersama Google Cloud Maven Central mirror & HTTP retry hardening, serta publikasi otomatis ke **GitHub Releases (`v4.7.0`)** via `softprops/action-gh-release@v2`.
+- **Update Terakhir (`v4.7` — Tab Ke-6 `Settings`, Pilihan Kualitas Unduhan MP3 `320`/`192`/`128 kbps` via `SettingsProvider`, & Integrasi Pencarian Lokal di Dalam `All songs`):**
+  - **`SettingsProvider` & Persistensi JSON (`lib/providers/settings_provider.dart`, `lib/main.dart`):** Menambahkan `SettingsProvider` (`ChangeNotifier`) yang dimiliki oleh `_MusEveeAppState` dan menyimpan preferensi ke `musevee_settings_v1.json` di direktori dokumen aplikasi tanpa dependensi baru, lengkap dengan enum `DownloadQuality` (`best = 320`, `balanced = 192`, `efficient = 128`, default `best = 320 kbps`) dan fallback aman terhadap file hilang/korup.
+  - **Tab Ke-6 Menjadi `Settings` (`lib/widgets/musicolet_bottom_strip.dart`, `lib/widgets/settings_view.dart`, `lib/screens/home_screen.dart`):** Mengganti tab indeks `5` dari `Search Lokal` menjadi `Settings` (`Icons.settings_outlined` / aktif `Icons.settings_rounded`, tooltip `AppStrings.tabSettingsTooltip` `'Pengaturan'` / `'Settings'`). Halaman `SettingsView` dirancang minimalis bergaya Musicolet Dark (`#0E1014`, `#17191E`, hairline border `0.8px`) yang menampilkan bagian **"Unduhan" / "Downloads"** dengan 3 pilihan kualitas ukuran file (`Terbaik — 320 kbps`, `Seimbang — 192 kbps`, `Hemat — 128 kbps`), catatan penjelas bahwa pengaturan ini hanya memengaruhi ukuran file hasil unduhan di penyimpanan HP (bukan kuota saat mengunduh), serta footer `"MusEvee v4.7"`.
+  - **Integrasi Pencarian Lokal ke Dalam `All songs` + Shortcut Cepat (`lib/widgets/local_library_views.dart`, `lib/screens/home_screen.dart`):** Memindahkan bar pencarian lokal permanen beserta `FilterChip` Favorit (`♥`) ke bagian atas drill-down `All songs` (`SmartPlaylistId.allSongs`) di `LocalPlaylistsView` (otomatis membersihkan kueri `setLocalSearchQuery('')` saat pengguna menekan tombol Kembali), serta menambahkan tombol shortcut pencarian cepat (`Icons.search_rounded`) di header tab `Folders` dan `Playlists` yang langsung berpindah ke tab `Playlists`, membuka `All songs`, dan memfokuskan kolom pencarian (`FocusNode.requestFocus()`).
+  - **Plumbing Kualitas Unduhan FFmpeg (`lib/services/tagging_service.dart`, `lib/providers/downloader_provider.dart`):** Memperbarui `TaggingService.convertAndTagAudio()` agar menerima parameter opsional `int bitrateKbps = 320` (dengan normalisasi fallback ke `320` jika di luar `{128, 192, 320}`) pada argumen FFmpeg `'-b:a', '${resolvedBitrate}k'` dan pesan log/progress, serta meneruskan `settingsProvider.downloadQuality.bitrateKbps` dari `DownloaderProvider` pada proses unduh tunggal maupun antrean tanpa mengubah `retagExistingMp3` (`-c:a copy`).
+  - **Fitur Sebelumnya (`v4.6`):** Pembatasan Mix HANYA untuk `Your playlists`, 3 Horizontal Carousels Bersampul Kecil di Downloader (`For You`, `Global Trending`, `Indonesia Trending`), Deteksi Offline Akurat (`NetworkOfflineException`) & Error Banner yang Bisa Ditutup `✕`, Lokalisasi Otomatis Sistem `id`/`en` (`AppStrings`), serta Optimasi Data Pengguna `< 5 MB` + On-Demand USLT Lyrics.
   - **Fitur Sebelumnya (`v4.5`):** Context-Aware & Rotated Queue (`index 0` / `#1`), 6 Musicolet Smart Playlists + `Your playlists`, Fix Duplikasi Aplikasi di Recent Apps (`singleTask`), & Interactive Folder Explorer pada Downloader.
   - **Fitur Sebelumnya (`v4.4`):** Navigasi Bawah 6 Tab + Sliding Pill Indicator + Modal Bottom Sheet Antrean Unduhan `88%`, Mograph Motion & Liquid Shape Morphing (`_MorphingMergeActionBar`, `MographPlayPauseIcon`, Dynamic Artwork Scale), Multi-Folder & Multi-Playlist Queue Merger, Hi-Fi Unattenuated Audio Engine (`1.0` Volume) + Pre-Amp `LoudnessEnhancer`, serta sistem Draft + tombol **Terapkan** di Kelola Folder.
   - **Fitur Sebelumnya (`v4.3` & `v4.2`):** Universal Audio Folder Scanner + Strict Anti-Junk Filter (`>= 15s` / `>= 50 KB`, blacklist folder non-musik), fitur **"Kelola / Sembunyikan Folder"** (`musevee_hidden_folders_v1.json`), Smart Default Folders, First-Run Permission Onboarding & Info Dialog Live Island, perbaikan ekstraksi Playlist Spotify Private + dukungan token `?pt=`, logo transparan `assets/musevee_logo.png`, Native `MediaSession` Notification + ZTE/nubia Live Island Support (`applicationId = "com.zte.as.music"`), Scoped Storage Android 15, & Cross-Script Romaji J-Pop Search.
@@ -49,11 +49,11 @@
 ```text
 MusEvee/
 ├── AGENTS.md                                 # Cetak biru arsitektur MusEvee & SOP wajib AI Agent
-├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.4)
+├── CHANGELOG.md                              # Rekam jejak kronologis terbalik perkembangan proyek (v1.0 -> v4.7)
 ├── .github/
 │   ├── copilot-instructions.md               # Instruksi otomatis GitHub Copilot / Remote Agent
 │   └── workflows/
-│       └── build_apk.yml                     # CI/CD otomatis build APK ARM64 (~20 MB) & GitHub Release (MusEvee-v4.4-arm64.apk)
+│       └── build_apk.yml                     # CI/CD otomatis build APK ARM64 (~20 MB) & GitHub Release (MusEvee-v4.7-arm64.apk)
 ├── .idx/
 │   └── airules.md                            # Instruksi otomatis Project IDX / Gemini Agent
 ├── android/
@@ -68,15 +68,16 @@ MusEvee/
 ├── assets/
 │   └── musevee_logo.png                      # Logo resmi MusEvee 512x512 berlatar 100% transparan
 ├── lib/
-│   ├── main.dart                             # Entry point MusEveeApp, MultiProvider (LocalMusicProvider + DownloaderProvider), & Dark Musicolet Theme
+│   ├── main.dart                             # Entry point MusEveeApp, MultiProvider (LocalMusicProvider + SettingsProvider + DownloaderProvider), & Dark Musicolet Theme
 │   ├── models/
 │   │   ├── download_item.dart                # Model item antrean & riwayat unduhan FFmpeg (+ targetPlaylistId)
 │   │   ├── local_playlist.dart               # Model playlist lokal (`musicevee_playlists_v1.json`)
 │   │   ├── local_song.dart                   # Model lagu lokal (+ folderPath) + parser LRC [mm:ss.xx] SyncedLyricEntry & jembatan ke TrackMetadata
 │   │   └── track_metadata.dart               # Model metadata unduhan, normalisasi identitas lintas-aksara, & pemilih payload USLT
 │   ├── providers/
-│   │   ├── downloader_provider.dart          # State management Downloader (pencarian katalog, lirik, Romaji, antrean unduh, Smart Deduplication, playlist sync)
-│   │   └── local_music_provider.dart         # State management Pemutar Lokal Musicolet (library scan, hidden folders, permission status, queue, Multi-Folder/Playlist Queue Merger, playlists CRUD, play mode 1→, sync lirik, retag/pindah/hapus lokal)
+│   │   ├── downloader_provider.dart          # State management Downloader (pencarian katalog, lirik, Romaji, antrean unduh, kualitas bitrate, Smart Deduplication, playlist sync)
+│   │   ├── local_music_provider.dart         # State management Pemutar Lokal Musicolet (library scan, hidden folders, permission status, queue, Multi-Folder/Playlist Queue Merger, playlists CRUD, play mode 1→, sync lirik, retag/pindah/hapus lokal)
+│   │   └── settings_provider.dart            # State management Pengaturan (`musevee_settings_v1.json`, `DownloadQuality`: 320 / 192 / 128 kbps)
 │   ├── screens/
 │   │   └── home_screen.dart                  # Shell utama 6-Tab Musicolet + Permission Onboarding Banner + Info/Live Island Dialog + Smart Omnibox Downloader + Modal Sheet Antrean Unduhan (88%)
 │   ├── services/
@@ -85,10 +86,12 @@ MusEvee/
 │   │   ├── lyrics_service.dart               # Pencarian kandidat lirik LRCLIB dengan prioritas bahasa asli Jepang/Romaji + fallback lyrics.ovh
 │   │   ├── metadata_service.dart             # Ekstraktor link Spotify + Mesin Pencari Lintas-Aksara (Google IME Romaji->Kanji + iTunes JP/Global + Deezer)
 │   │   ├── romaji_service.dart               # Konversi Kanji/Kana ke Romaji baris-demi-baris + Anti Double-Romaji & Furigana Deduplication
-│   │   └── tagging_service.dart              # Konversi FFmpeg MP3 320kbps, injeksi biner ID3v2.4.0 (APIC + USLT \r\n), & retag instan (-c:a copy)
+│   │   └── tagging_service.dart              # Konversi FFmpeg MP3 dengan bitrate dapat diatur (320/192/128kbps), injeksi biner ID3v2.4.0 (APIC + USLT \r\n), & retag instan (-c:a copy)
+│   ├── utils/
+│   │   └── app_strings.dart                  # Lokalisasi otomatis sesuai bahasa sistem perangkat (Bahasa Indonesia `id`/`in` vs English `en`)
 │   └── widgets/
 │       ├── batch_playlist_sheet.dart         # Bottom sheet pemilihan lagu massal dari Album/Playlist Spotify + auto-sync playlist lokal
-│       ├── local_library_views.dart          # Tab lokal Musicolet: PlaybackQueueView, LocalFoldersView (+ Kelola/Sembunyikan Folder & Multi-Folder Merger), LocalPlaylistsView (+ Multi-Playlist Merger), LocalSearchView
+│       ├── local_library_views.dart          # Tab lokal Musicolet: PlaybackQueueView, LocalFoldersView (+ Kelola/Sembunyikan Folder, Multi-Folder Merger & shortcut Search), LocalPlaylistsView (+ All songs Search Bar & Your playlists Merger)
 │       ├── musevee_logo.dart                 # Widget logo transparan MusEvee (`assets/musevee_logo.png`)
 │       ├── musicolet_bottom_strip.dart       # Deretan 6 ikon navigasi bawah khas Musicolet dengan Sliding Pill Indicator (`AnimatedPositioned` 240ms)
 │       ├── musicolet_mini_player.dart        # Mini Player tipis ala Musicolet di atas bottom strip
@@ -96,11 +99,13 @@ MusEvee/
 │       ├── pressable_scale.dart              # Micro-animations: PressableScale (0.95 scale 100ms), AnimatedIndexedStack (Slide+Fade 200ms), & AnimatedEqualizerIcon (4 batang hidup)
 │       ├── queue_history_view.dart           # View Antrean & Riwayat Unduhan beserta tombol Putar (▶), Pindah Folder, & Edit Tag Ulang
 │       ├── search_result_tile.dart           # Tile hasil pencarian katalog lagu dengan indikator duplikat folder
+│       ├── settings_view.dart                # Tab Pengaturan (Settings): pilihan kualitas ukuran file unduhan MP3 (320 / 192 / 128 kbps) & info versi
 │       ├── tag_editor_sheet.dart             # Modal editor tag ID3 & lirik (pra-unduh, riwayat unduhan, maupun lagu lokal yang sedang diputar!)
 │       └── track_preview_sheet.dart          # Modal detail unduhan: preview 30s, pilih sumber YouTube, Ganti Lirik LRCLIB, Auto-Romaji, & pilih folder
 └── test/
     ├── romaji_service_test.dart              # Unit test Romaji, deduplikasi bilingual, prioritas bahasa LyricsService, pencarian lintas-aksara, & parser USLT LocalSong
-    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, Multi-Folder Queue Merger, & navigasi 6-tab MusEvee
+    ├── settings_provider_test.dart           # Unit & widget test SettingsProvider (`musevee_settings_v1.json`), kualitas bitrate DownloaderProvider, & SettingsView
+    └── widget_test.dart                      # Widget test layar NowPlayingView, True Queue-Order Shuffle, Multi-Folder Queue Merger, All songs Search, & navigasi 6-tab MusEvee
 ```
 
 ### Integrasi Native Android (`MainActivity.kt`)
@@ -117,9 +122,9 @@ Menggunakan satu `MethodChannel('com.spotmeta.downloader/system')` terpadu yang 
 1. **1:1 Musicolet Now Playing & Embedded Lyrics (`NowPlayingView` & `LocalMusicProvider`):**
    - Dynamic Ambient Background, panel `Embedded lyrics ⌄` dengan pita gelap aktif & *Tap-to-Seek*, tombol `✎`, `⊙`, `TT`, `✕`, baris utilitas (`♥`, `(i)`, `=+`, `[...]`, `1→` Play Mode, `🔀` Shuffle), seekbar putih bersih, kontrol transport tanpa lingkaran background pada tombol Play/Pause, dan Equalizer sistem Android.
 2. **6-Tab Musicolet Bottom Icon Strip + Sliding Pill Indicator + Mini Player (`MusicoletBottomStrip` & `MusicoletMiniPlayer`):**
-   - Tab `Queue`, `Now Playing`, `Folders` (+ Kelola/Sembunyikan Folder & Multi-Folder Queue Merger), `Playlists` (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger), `Downloader` (+ tombol kompak Modal Sheet Antrean & Riwayat Unduhan `88%`), dan `Search Lokal`. Indikator putih `2.5px` bergeser mulus (`AnimatedPositioned`) tanpa fitur swipe horizontal pada Mini Player.
+   - Tab `Queue`, `Now Playing`, `Folders` (+ Kelola/Sembunyikan Folder, Multi-Folder Queue Merger, & tombol shortcut Search Lokal), `Playlists` (`musicevee_playlists_v1.json`, 6 Smart Playlists termasuk `All songs` dengan bar pencarian lokal permanen + filter Favorit `♥` di bagian atas, `Your playlists` Multi-Playlist Queue Merger, & tombol shortcut Search Lokal), `Downloader` (+ tombol kompak Modal Sheet Antrean & Riwayat Unduhan `88%`), dan `Settings` (`SettingsView` + `SettingsProvider` `musevee_settings_v1.json`). Indikator putih `2.5px` bergeser mulus (`AnimatedPositioned`) tanpa fitur swipe horizontal pada Mini Player.
 3. **100% Fitur All-in-One Downloader v3.x (`DownloaderProvider` & Services):**
-   - Smart Omnibox (Deezer + iTunes + Link Spotify Track/Album/Playlist), chip folder tujuan (`Music Barat`, `Music Japan`, `Music Random`, atau `MusEvee` + `+ Baru`), deteksi duplikat lintas folder, Preview Audio 30s, Pemilih Sumber YouTube manual, `BatchPlaylistSheet`, Pindah Folder 1-klik, dan Retag MP3 instan (`-c:a copy` + biner ID3v2.4.0 `APIC` & `USLT` `\r\n` tanpa file `.lrc` eksternal).
+   - Smart Omnibox (Deezer + iTunes + Link Spotify Track/Album/Playlist), chip folder tujuan (`Music Barat`, `Music Japan`, `Music Random`, atau `MusEvee` + `+ Baru`), deteksi duplikat lintas folder, Preview Audio 30s, Pemilih Sumber YouTube manual, `BatchPlaylistSheet`, Pindah Folder 1-klik, konversi FFmpeg MP3 dengan kualitas bitrate yang dapat diatur (`320` / `192` / `128 kbps`, default `320 kbps` via `SettingsProvider`), dan Retag MP3 instan (`-c:a copy` + biner ID3v2.4.0 `APIC` & `USLT` `\r\n` tanpa file `.lrc` eksternal).
 4. **Anti Double-Romaji & Prioritas Bahasa Asli (`RomajiService` & `LyricsService`):**
    - Isolasi timestamp `[mm:ss.xx]` baris-demi-baris, normalisasi makron (`ū`/`ō`) & deduplikasi baris kembar bilingual/Romaji, penghapusan furigana inline, prioritas skor lirik Jepang/Romaji di atas terjemahan Inggris pada LRCLIB, serta pemilih manual **"Ganti Lirik"** di `NowPlayingView`, `TrackPreviewSheet`, dan `TagEditorSheet`.
 5. **Build APK Ringan ARM64 (~20 MB) & Keystore Permanen (`.github/workflows/build_apk.yml`):**
