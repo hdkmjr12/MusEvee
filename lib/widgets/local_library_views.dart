@@ -684,30 +684,6 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             ),
                           ),
                         ),
-                        if (folderNames.isNotEmpty)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            tooltip: _isSelectionMode
-                                ? 'Keluar Mode Pilih Gabungan'
-                                : 'Gabung / Pilih Banyak Folder',
-                            onPressed: () {
-                              setState(() {
-                                if (_isSelectionMode) {
-                                  _isSelectionMode = false;
-                                  _selectedFolders.clear();
-                                } else {
-                                  _isSelectionMode = true;
-                                }
-                              });
-                            },
-                            icon: Icon(
-                              _isSelectionMode
-                                  ? Icons.checklist_rtl_rounded
-                                  : Icons.library_add_check_rounded,
-                              size: 18,
-                              color: _isSelectionMode ? _kAccent : _kText,
-                            ),
-                          ),
                         if (_isSelectionMode && folderNames.length > 1)
                           TextButton(
                             style: TextButton.styleFrom(
@@ -741,7 +717,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                             foregroundColor:
                                 hiddenCount > 0 ? _kAccent : _kText,
                             visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 7),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                           ),
                           onPressed: () =>
                               _showManageFoldersSheet(context, localProvider),
@@ -753,58 +729,15 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                           ),
                           label: Text(
                             hiddenCount > 0
-                                ? 'Kelola ($hiddenCount)'
-                                : 'Kelola',
+                                ? 'Kelola Folder ($hiddenCount)'
+                                : 'Kelola Folder',
                             style: const TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
-                        if (!_isSelectionMode) ...[
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
-                              foregroundColor: _kAccent,
-                              visualDensity: VisualDensity.compact,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 7),
-                            ),
-                            onPressed: () =>
-                                widget.onCreateNewFolder(downloaderProvider),
-                            icon: const Icon(
-                              Icons.create_new_folder_outlined,
-                              size: 15,
-                            ),
-                            label: const Text(
-                              'Baru',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Pindai Ulang Folder Lokal',
-                            onPressed: () => localProvider.refreshLibrary(
-                              requestPermission: true,
-                            ),
-                            icon: localProvider.isLoadingLibrary
-                                ? const SizedBox(
-                                    width: 15,
-                                    height: 15,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: _kAccent,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.refresh_rounded,
-                                    size: 18,
-                                    color: _kMuted,
-                                  ),
-                          ),
-                        ] else
+                        if (_isSelectionMode)
                           IconButton(
                             visualDensity: VisualDensity.compact,
                             tooltip: 'Batal Pilih',
@@ -886,9 +819,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                               14,
                               12,
                               14,
-                              (_isSelectionMode && selectedList.isNotEmpty)
-                                  ? 96
-                                  : 20,
+                              _isSelectionMode ? 104 : 80,
                             ),
                             itemCount: folderNames.length,
                             separatorBuilder: (context, index) =>
@@ -1124,15 +1055,28 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                 ],
               ),
 
-              if (_isSelectionMode && selectedList.isNotEmpty)
+              if (!_isSelectionMode && folderNames.isNotEmpty)
+                Positioned(
+                  right: 16,
+                  bottom: 14,
+                  child: _FloatingMergeFab(
+                    tooltip: 'Gabung / Pilih Banyak Folder',
+                    onTap: () => setState(() => _isSelectionMode = true),
+                  ),
+                ),
+
+              if (_isSelectionMode)
                 Positioned(
                   left: 12,
                   right: 12,
                   bottom: 10,
                   child: _MultiSelectQueueActionBar(
-                    label:
-                        '${selectedList.length} Folder • $selectedSongCount lagu unik',
+                    label: selectedList.isEmpty
+                        ? 'Pilih 2+ Folder untuk digabung'
+                        : '${selectedList.length} Folder • $selectedSongCount lagu unik',
+                    hasSelection: selectedList.isNotEmpty,
                     onPlayCombined: () async {
+                      if (selectedList.isEmpty) return;
                       final targets = List<String>.from(selectedList);
                       _exitSelectionMode();
                       await localProvider.playCombinedFolders(
@@ -1142,6 +1086,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                       widget.onOpenNowPlaying();
                     },
                     onShuffleCombined: () async {
+                      if (selectedList.isEmpty) return;
                       final targets = List<String>.from(selectedList);
                       _exitSelectionMode();
                       await localProvider.playCombinedFolders(
@@ -1151,6 +1096,7 @@ class _LocalFoldersViewState extends State<LocalFoldersView> {
                       widget.onOpenNowPlaying();
                     },
                     onAppendQueue: () async {
+                      if (selectedList.isEmpty) return;
                       final targets = List<String>.from(selectedList);
                       _exitSelectionMode();
                       final added = await localProvider.playCombinedFolders(
@@ -1400,30 +1346,6 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                               ),
                             ),
                           ),
-                          if (playlists.isNotEmpty)
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: _isSelectionMode
-                                  ? 'Keluar Mode Pilih Gabungan'
-                                  : 'Gabung / Pilih Banyak Playlist',
-                              onPressed: () {
-                                setState(() {
-                                  if (_isSelectionMode) {
-                                    _isSelectionMode = false;
-                                    _selectedPlaylistIds.clear();
-                                  } else {
-                                    _isSelectionMode = true;
-                                  }
-                                });
-                              },
-                              icon: Icon(
-                                _isSelectionMode
-                                    ? Icons.checklist_rtl_rounded
-                                    : Icons.library_add_check_rounded,
-                                size: 18,
-                                color: _isSelectionMode ? _kAccent : _kText,
-                              ),
-                            ),
                           if (_isSelectionMode && playlists.length > 1)
                             TextButton(
                               style: TextButton.styleFrom(
@@ -1507,9 +1429,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 14,
                                 12,
                                 14,
-                                (_isSelectionMode && selectedIds.isNotEmpty)
-                                    ? 96
-                                    : 20,
+                                _isSelectionMode ? 104 : 80,
                               ),
                               itemCount: playlists.length,
                               separatorBuilder: (context, index) =>
@@ -1750,15 +1670,28 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                   ],
                 ),
 
-                if (_isSelectionMode && selectedIds.isNotEmpty)
+                if (!_isSelectionMode && playlists.isNotEmpty)
+                  Positioned(
+                    right: 16,
+                    bottom: 14,
+                    child: _FloatingMergeFab(
+                      tooltip: 'Gabung / Pilih Banyak Playlist',
+                      onTap: () => setState(() => _isSelectionMode = true),
+                    ),
+                  ),
+
+                if (_isSelectionMode)
                   Positioned(
                     left: 12,
                     right: 12,
                     bottom: 10,
                     child: _MultiSelectQueueActionBar(
-                      label:
-                          '${selectedIds.length} Playlist • $selectedSongCount lagu unik',
+                      label: selectedIds.isEmpty
+                          ? 'Pilih 2+ Playlist untuk digabung'
+                          : '${selectedIds.length} Playlist • $selectedSongCount lagu unik',
+                      hasSelection: selectedIds.isNotEmpty,
                       onPlayCombined: () async {
+                        if (selectedIds.isEmpty) return;
                         final targets = List<String>.from(selectedIds);
                         _exitSelectionMode();
                         await localProvider.playCombinedPlaylists(
@@ -1768,6 +1701,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                         widget.onOpenNowPlaying();
                       },
                       onShuffleCombined: () async {
+                        if (selectedIds.isEmpty) return;
                         final targets = List<String>.from(selectedIds);
                         _exitSelectionMode();
                         await localProvider.playCombinedPlaylists(
@@ -1777,6 +1711,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                         widget.onOpenNowPlaying();
                       },
                       onAppendQueue: () async {
+                        if (selectedIds.isEmpty) return;
                         final targets = List<String>.from(selectedIds);
                         _exitSelectionMode();
                         final added = await localProvider.playCombinedPlaylists(
@@ -2620,8 +2555,62 @@ class _EmptyLocalHint extends StatelessWidget {
   }
 }
 
+class _FloatingMergeFab extends StatelessWidget {
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _FloatingMergeFab({
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hairline = Colors.white.withValues(alpha: 0.16);
+    return PressableScale(
+      onTap: onTap,
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: const Color(0xFF1F242E),
+          elevation: 8,
+          shadowColor: Colors.black.withValues(alpha: 0.65),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: hairline, width: 0.9),
+          ),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.library_add_check_rounded,
+                  size: 17,
+                  color: _kAccent,
+                ),
+                SizedBox(width: 7),
+                Text(
+                  'Gabung',
+                  style: TextStyle(
+                    color: _kText,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MultiSelectQueueActionBar extends StatelessWidget {
   final String label;
+  final bool hasSelection;
   final VoidCallback onPlayCombined;
   final VoidCallback onShuffleCombined;
   final VoidCallback onAppendQueue;
@@ -2629,6 +2618,7 @@ class _MultiSelectQueueActionBar extends StatelessWidget {
 
   const _MultiSelectQueueActionBar({
     required this.label,
+    this.hasSelection = true,
     required this.onPlayCombined,
     required this.onShuffleCombined,
     required this.onAppendQueue,
@@ -2696,40 +2686,46 @@ class _MultiSelectQueueActionBar extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _ActionPillButton(
-                    icon: Icons.play_arrow_rounded,
-                    label: 'Putar',
-                    backgroundColor: _kAccent,
-                    foregroundColor: Colors.white,
-                    onTap: onPlayCombined,
-                  ),
+            Opacity(
+              opacity: hasSelection ? 1.0 : 0.45,
+              child: IgnorePointer(
+                ignoring: !hasSelection,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _ActionPillButton(
+                        icon: Icons.play_arrow_rounded,
+                        label: 'Putar',
+                        backgroundColor: _kAccent,
+                        foregroundColor: Colors.white,
+                        onTap: onPlayCombined,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: _ActionPillButton(
+                        icon: Icons.shuffle_rounded,
+                        label: 'Shuffle Mix',
+                        backgroundColor: const Color(0xFF282D38),
+                        foregroundColor: _kText,
+                        borderColor: Colors.white.withValues(alpha: 0.14),
+                        onTap: onShuffleCombined,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: _ActionPillButton(
+                        icon: Icons.playlist_add_rounded,
+                        label: '+ Queue',
+                        backgroundColor: const Color(0xFF282D38),
+                        foregroundColor: _kText,
+                        borderColor: Colors.white.withValues(alpha: 0.14),
+                        onTap: onAppendQueue,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: _ActionPillButton(
-                    icon: Icons.shuffle_rounded,
-                    label: 'Shuffle Mix',
-                    backgroundColor: const Color(0xFF282D38),
-                    foregroundColor: _kText,
-                    borderColor: Colors.white.withValues(alpha: 0.14),
-                    onTap: onShuffleCombined,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: _ActionPillButton(
-                    icon: Icons.playlist_add_rounded,
-                    label: '+ Queue',
-                    backgroundColor: const Color(0xFF282D38),
-                    foregroundColor: _kText,
-                    borderColor: Colors.white.withValues(alpha: 0.14),
-                    onTap: onAppendQueue,
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),

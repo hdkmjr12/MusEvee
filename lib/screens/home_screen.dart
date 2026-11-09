@@ -9,7 +9,6 @@ import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../widgets/batch_playlist_sheet.dart';
 import '../widgets/local_library_views.dart';
-import '../widgets/musevee_logo.dart';
 import '../widgets/musicolet_bottom_strip.dart';
 import '../widgets/musicolet_mini_player.dart';
 import '../widgets/now_playing_view.dart';
@@ -644,79 +643,81 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
         return Scaffold(
           backgroundColor: _bgCanvas,
-          // Full-bleed Now Playing without AppBar (1:1 Musicolet!), compact header on other tabs
-          appBar: isOnNowPlaying
-              ? null
-              : _buildMusEveeAppBar(provider, localProvider),
-          body: Column(
-            children: [
-              // Dismissible Dark Minimalist First-Run Permission Onboarding Banner
-              if (!isOnNowPlaying && localProvider.shouldShowPermissionOnboarding)
-                _buildPermissionOnboardingBanner(localProvider),
+          body: SafeArea(
+            top: !isOnNowPlaying,
+            bottom: false,
+            child: Column(
+              children: [
+                // Dismissible Dark Minimalist First-Run Permission Onboarding Banner
+                if (!isOnNowPlaying &&
+                    localProvider.shouldShowPermissionOnboarding)
+                  _buildPermissionOnboardingBanner(localProvider),
 
-              Expanded(
-                child: AnimatedIndexedStack(
-                  index: _selectedTabIndex,
-                  duration: const Duration(milliseconds: 200),
-                  children: [
-                    // 0: Queue (`=♪`)
-                    PlaybackQueueView(
-                      onOpenNowPlaying: () =>
-                          setState(() => _selectedTabIndex = _tabNowPlaying),
-                      onNavigateToDownloader: () =>
-                          setState(() => _selectedTabIndex = _tabDownloader),
-                    ),
+                Expanded(
+                  child: AnimatedIndexedStack(
+                    index: _selectedTabIndex,
+                    duration: const Duration(milliseconds: 200),
+                    children: [
+                      // 0: Queue (`=♪`)
+                      PlaybackQueueView(
+                        onOpenNowPlaying: () =>
+                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onNavigateToDownloader: () =>
+                            setState(() => _selectedTabIndex = _tabDownloader),
+                      ),
 
-                    // 1: Now Playing (`▶` in circle — 1:1 Musicolet)
-                    NowPlayingView(
-                      onNavigateToDownloader: () =>
-                          setState(() => _selectedTabIndex = _tabDownloader),
-                      onNavigateToFolders: () =>
-                          setState(() => _selectedTabIndex = _tabFolders),
-                      onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
-                    ),
+                      // 1: Now Playing (`▶` in circle — 1:1 Musicolet)
+                      NowPlayingView(
+                        onNavigateToDownloader: () =>
+                            setState(() => _selectedTabIndex = _tabDownloader),
+                        onNavigateToFolders: () =>
+                            setState(() => _selectedTabIndex = _tabFolders),
+                        onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
+                      ),
 
-                    // 2: Folders (`📁` + Multi-Folder Queue Merger)
-                    LocalFoldersView(
-                      onOpenNowPlaying: () =>
-                          setState(() => _selectedTabIndex = _tabNowPlaying),
-                      onCreateNewFolder: _showCreateFolderDialog,
-                      onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
-                    ),
+                      // 2: Folders (`📁` + Multi-Folder Queue Merger)
+                      LocalFoldersView(
+                        onOpenNowPlaying: () =>
+                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onCreateNewFolder: _showCreateFolderDialog,
+                        onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
+                      ),
 
-                    // 3: Playlists (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger)
-                    LocalPlaylistsView(
-                      onOpenNowPlaying: () =>
-                          setState(() => _selectedTabIndex = _tabNowPlaying),
-                      onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
-                    ),
+                      // 3: Playlists (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger)
+                      LocalPlaylistsView(
+                        onOpenNowPlaying: () =>
+                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
+                      ),
 
-                    // 4: Downloader (`⬇` Cloud Download — Smart Omnibox + Queue/History Sheet Trigger)
-                    _buildSearchAndDownloadTab(provider, totalActiveCount),
+                      // 4: Downloader (`⬇` Cloud Download — Smart Omnibox + Queue/History Sheet Trigger)
+                      _buildSearchAndDownloadTab(provider, totalActiveCount),
 
-                    // 5: Search Lokal (`🔍`)
-                    LocalSearchView(
-                      onOpenNowPlaying: () =>
-                          setState(() => _selectedTabIndex = _tabNowPlaying),
-                      onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
-                    ),
-                  ],
+                      // 5: Search Lokal (`🔍`)
+                      LocalSearchView(
+                        onOpenNowPlaying: () =>
+                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
-              // Thin Download Progress Banner when FFmpeg / Downloader is active
-              if (provider.isBusy ||
-                  activeQueueCount > 0 ||
-                  provider.state == DownloaderState.error)
-                _buildFloatingMiniProgressBanner(provider),
+                // Thin Download Progress Banner ONLY when FFmpeg / Download is actively running
+                if (provider.isDownloading ||
+                    activeQueueCount > 0 ||
+                    (provider.state == DownloaderState.error &&
+                        !provider.isPrivateOrUnavailableCollectionError))
+                  _buildFloatingMiniProgressBanner(provider),
 
-              // Musicolet Thin Mini Player on all non-Now-Playing tabs
-              if (!isOnNowPlaying)
-                MusicoletMiniPlayer(
-                  onTapOpenNowPlaying: () =>
-                      setState(() => _selectedTabIndex = _tabNowPlaying),
-                ),
-            ],
+                // Musicolet Thin Mini Player on all non-Now-Playing tabs
+                if (!isOnNowPlaying)
+                  MusicoletMiniPlayer(
+                    onTapOpenNowPlaying: () =>
+                        setState(() => _selectedTabIndex = _tabNowPlaying),
+                  ),
+              ],
+            ),
           ),
           bottomNavigationBar: MusicoletBottomStrip(
             selectedIndex: _selectedTabIndex,
@@ -876,351 +877,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _showAboutAndLiveIslandDialog(
-    LocalMusicProvider localProvider,
-  ) async {
-    await localProvider.checkPermissionsStatus();
-    if (!mounted) return;
-    final hairline = Colors.white.withValues(alpha: 0.09);
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogCtx) {
-        return Consumer<LocalMusicProvider>(
-          builder: (ctx, lp, _) {
-            final allFilesOk = lp.hasAllFilesAccess;
-            final notifOk = lp.hasNotificationPermission;
-
-            return AlertDialog(
-              backgroundColor: _surfaceCard,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: hairline, width: 0.8),
-              ),
-              titlePadding: const EdgeInsets.fromLTRB(18, 16, 14, 8),
-              contentPadding: const EdgeInsets.fromLTRB(18, 6, 18, 14),
-              actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              title: const Row(
-                children: [
-                  MusEveeLogo(size: 28),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'MusEvee v4.4',
-                          style: TextStyle(
-                            color: _textPrimary,
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        SizedBox(height: 1),
-                        Text(
-                          'Musicolet Dark Player & Hi-Res Downloader',
-                          style: TextStyle(
-                            color: _textMuted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Divider(height: 12, thickness: 0.8, color: hairline),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'STATUS IZIN & INTEGRASI SISTEM',
-                    style: TextStyle(
-                      color: _textMuted,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Status 1: All Files Access
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: _surfaceSubtle,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: hairline, width: 0.8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          allFilesOk
-                              ? Icons.check_circle_rounded
-                              : Icons.warning_amber_rounded,
-                          color: allFilesOk
-                              ? const Color(0xFF12B76A)
-                              : const Color(0xFFF79009),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'All Files Access (Android 11–15)',
-                                style: TextStyle(
-                                  color: _textPrimary,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                allFilesOk
-                                    ? 'Aktif — Hapus lagu, pindah folder & retag lirik 1-klik.'
-                                    : 'Belum aktif — Diperlukan untuk mutasi file 1-klik.',
-                                style: const TextStyle(
-                                  color: _textMuted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (!allFilesOk)
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              foregroundColor: _primaryAccent,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: () =>
-                                lp.requestAllFilesAccessPermission(),
-                            child: const Text(
-                              'Aktifkan',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Status 2: Notification & Live Island Ready
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: _surfaceSubtle,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: hairline, width: 0.8),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          notifOk
-                              ? Icons.check_circle_rounded
-                              : Icons.notifications_off_outlined,
-                          color: notifOk
-                              ? const Color(0xFF12B76A)
-                              : const Color(0xFFF79009),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Notification & Live Island Ready',
-                                style: TextStyle(
-                                  color: _textPrimary,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                notifOk
-                                    ? 'Aktif — MediaSession & kapsul Live Island siap.'
-                                    : 'Izin notifikasi belum diaktifkan.',
-                                style: const TextStyle(
-                                  color: _textMuted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (!notifOk)
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              foregroundColor: _primaryAccent,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            onPressed: () =>
-                                lp.requestNotificationAndLiveIslandPermission(),
-                            child: const Text(
-                              'Aktifkan',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // ZTE / nubia Live Island Tip
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: _primaryAccent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: _primaryAccent.withValues(alpha: 0.35),
-                        width: 0.8,
-                      ),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.tips_and_updates_outlined,
-                          color: _primaryAccent,
-                          size: 16,
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Tips ZTE / nubia: Pastikan fitur "Live Island -> Media Playback" aktif di Pengaturan HP Anda agar kapsul musik tampil otomatis saat memutar lagu.',
-                            style: TextStyle(
-                              color: _textPrimary,
-                              fontSize: 11,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                  child: const Text(
-                    'Tutup',
-                    style: TextStyle(
-                      color: _primaryAccent,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  PreferredSizeWidget _buildMusEveeAppBar(
-    DownloaderProvider provider,
-    LocalMusicProvider localProvider,
-  ) {
-    final hairline = Colors.white.withValues(alpha: 0.08);
-    return AppBar(
-      toolbarHeight: 48,
-      titleSpacing: 14,
-      backgroundColor: const Color(0xFF12151C),
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(1),
-        child: Divider(height: 1, thickness: 0.7, color: hairline),
-      ),
-      title: Row(
-        children: [
-          const MusEveeLogo(size: 22),
-          const SizedBox(width: 9),
-          const Text(
-            'MusEvee',
-            style: TextStyle(
-              color: _textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-            decoration: BoxDecoration(
-              color: _surfaceSubtle,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: hairline, width: 0.8),
-            ),
-            child: const Text(
-              'v4.4',
-              style: TextStyle(
-                color: _primaryAccent,
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        if (provider.trackMetadata != null &&
-            _selectedTabIndex == _tabDownloader)
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _primaryAccent,
-                backgroundColor: _surfaceSubtle,
-                minimumSize: const Size(0, 30),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                side: BorderSide(color: hairline, width: 0.8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              onPressed: () => _openTrackPreviewSheet(provider),
-              icon: const Icon(Icons.music_note_rounded, size: 14),
-              label: const Text(
-                'Pratinjau Aktif',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          tooltip: 'Info MusEvee & Status Live Island',
-          onPressed: () => _showAboutAndLiveIslandDialog(localProvider),
-          icon: Icon(
-            Icons.info_outline_rounded,
-            size: 19,
-            color: (!localProvider.hasAllFilesAccess ||
-                    !localProvider.hasNotificationPermission)
-                ? const Color(0xFFF79009)
-                : _textMuted,
-          ),
-        ),
-        const SizedBox(width: 4),
-      ],
-    );
-  }
-
   // ===========================================================================
   // MODAL BOTTOM SHEET: ANTREAN & RIWAYAT UNDUHAN (88% TINGGI LAYAR)
   // ===========================================================================
@@ -1332,7 +988,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) {
     final hairline = Colors.white.withValues(alpha: 0.10);
     final hasHistory = provider.queueItems.isNotEmpty;
-    final isActive = totalActiveCount > 0 || provider.isBusy;
+    final isActive = totalActiveCount > 0 || provider.isDownloading;
 
     return PressableScale(
       onTap: _openDownloadQueueHistorySheet,
@@ -1780,7 +1436,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (provider.isBusy)
+              if (provider.isDownloading)
                 LinearProgressIndicator(
                   value: provider.progress.clamp(0.0, 1.0),
                   minHeight: 2.0,
@@ -1795,7 +1451,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 child: Row(
                   children: [
-                    if (provider.isBusy)
+                    if (provider.isDownloading)
                       const SizedBox(
                         width: 13,
                         height: 13,
@@ -1826,7 +1482,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       ),
                     ),
-                    if (provider.isBusy) ...[
+                    if (provider.isDownloading) ...[
                       const SizedBox(width: 8),
                       Text(
                         '$pct%',

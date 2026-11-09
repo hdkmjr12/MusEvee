@@ -184,7 +184,7 @@ class _AnimatedEqualizerIconState extends State<AnimatedEqualizerIcon>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 950),
+      duration: const Duration(milliseconds: 1500),
     );
     if (widget.isPlaying) {
       _controller.repeat();
@@ -243,8 +243,9 @@ class _EqualizerBarsPainter extends CustomPainter {
     required this.color,
   });
 
-  static const List<double> _phases = [0.0, 1.85, 3.6, 5.1];
-  static const List<double> _freqMultipliers = [1.0, 2.0, 1.0, 2.0];
+  static const List<double> _phases = [0.0, 1.55, 3.15, 4.70];
+  static const List<double> _minHeights = [0.22, 0.28, 0.24, 0.26];
+  static const List<double> _amplitudes = [0.58, 0.68, 0.50, 0.62];
   static const List<double> _pausedHeights = [0.24, 0.36, 0.22, 0.30];
 
   @override
@@ -265,12 +266,10 @@ class _EqualizerBarsPainter extends CustomPainter {
       if (!isPlaying) {
         factor = _pausedHeights[i];
       } else {
-        final angle =
-            (progress * 2 * math.pi * _freqMultipliers[i]) + _phases[i];
-        final secondary =
-            math.cos((progress * 2 * math.pi) - (_phases[i] * 0.7)) * 0.18;
-        final normalized = ((math.sin(angle) + 1.0) * 0.5) + secondary;
-        factor = (0.22 + (normalized * 0.76)).clamp(0.20, 1.0);
+        final angle = (progress * 2 * math.pi) + _phases[i];
+        // Smooth, relaxed sine wave normalized to [0.0, 1.0]
+        final wave = (math.sin(angle) + 1.0) * 0.5;
+        factor = (_minHeights[i] + (wave * _amplitudes[i])).clamp(0.20, 0.96);
       }
 
       final barHeight = (maxBarHeight * factor).clamp(2.5, maxBarHeight);

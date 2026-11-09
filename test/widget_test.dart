@@ -43,8 +43,12 @@ void main() {
     await tester.tap(find.byIcon(Icons.cloud_download_outlined).last);
     await tester.pumpAndSettle();
 
-    expect(find.text('MusEvee'), findsWidgets);
-    expect(find.text('v4.4'), findsOneWidget);
+    expect(
+      find.text(
+        'MusEvee All-in-One Downloader (MP3 320kbps + USLT Lyrics)',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('YOASOBI - Idol'), findsOneWidget);
 
     // Tap the compact Queue & History button next to the Downloader Omnibox

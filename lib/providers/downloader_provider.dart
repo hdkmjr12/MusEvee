@@ -134,6 +134,15 @@ class DownloaderProvider extends ChangeNotifier {
       _state == DownloaderState.downloadingAudio ||
       _state == DownloaderState.taggingAudio;
 
+  /// True ONLY when an actual audio download or FFmpeg tagging is running
+  /// (either directly or inside the download queue). Never true during
+  /// catalog search or metadata/lyrics lookup.
+  bool get isDownloading =>
+      activeQueueCount > 0 ||
+      _isProcessingQueue ||
+      _state == DownloaderState.downloadingAudio ||
+      _state == DownloaderState.taggingAudio;
+
   bool get canDownload =>
       _trackMetadata != null &&
       (_state == DownloaderState.readyToDownload ||
