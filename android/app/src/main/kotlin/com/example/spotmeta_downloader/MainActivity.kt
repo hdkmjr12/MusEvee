@@ -7,6 +7,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.AudioAttributes
@@ -28,6 +29,7 @@ import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -168,6 +170,9 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         syncPersistentAppState()
         super.onCreate(savedInstanceState)
+        ioExecutor.execute {
+            migrateAndCleanupStorageFootprint()
+        }
         mediaNotifier = MusEveeMediaNotifier(this) { action, positionMs ->
             mainHandler.post {
                 handleMediaNotificationAction(action, positionMs)
@@ -451,7 +456,7 @@ class MainActivity : FlutterActivity() {
                             try {
                                 val file = File(path)
                                 val details = if (file.exists() && file.isFile) {
-                                    extractTrackMetadataMap(file)
+                                    extractTrackMetadataMap(file, includeFullLyrics = true)
                                 } else {
                                     null
                                 }
@@ -460,6 +465,35 @@ class MainActivity : FlutterActivity() {
                                 mainHandler.post { result.success(null) }
                             }
                         }
+                    }
+                }
+                "readEmbeddedCoverBytes" -> {
+                    val path = call.argument<String>("path")?.trim()
+                    if (path.isNullOrEmpty()) {
+                        result.success(null)
+                    } else {
+                        ioExecutor.execute {
+                            try {
+                                val file = File(path)
+                                val bytes = if (file.exists() && file.isFile) {
+                                    extractFullEmbeddedCoverBytes(file)
+                                } else {
+                                    null
+                                }
+                                mainHandler.post { result.success(bytes) }
+                            } catch (_: Exception) {
+                                mainHandler.post { result.success(null) }
+                            }
+                        }
+                    }
+                }
+                "cleanupTempCacheFiles" -> {
+                    ioExecutor.execute {
+                        try {
+                            cleanupTempFilesInternal()
+                        } catch (_: Exception) {
+                        }
+                        mainHandler.post { result.success(true) }
                     }
                 }
 
@@ -1271,7 +1305,10 @@ class MainActivity : FlutterActivity() {
         val apicBytes: ByteArray?
     )
 
-    private fun extractTrackMetadataMap(file: File): Map<String, Any?> {
+    private fun extractTrackMetadataMap(
+        file: File,
+        includeFullLyrics: Boolean = false
+    ): Map<String, Any?> {
         var mmrTitle: String? = null
         var mmrArtist: String? = null
         var mmrAlbum: String? = null
@@ -1337,8 +1374,8 @@ class MainActivity : FlutterActivity() {
         var dominantColor = 0xFF1E222B.toInt()
 
         if (coverBytes != null && coverBytes.isNotEmpty()) {
-            // Store extracted cover artwork in persistent `filesDir/covers` so Android OS
-            // cache cleanup never deletes cover thumbnails behind the library cache's back.
+            // Store compact 256x256 JPEG cover thumbnail (~8-15 KB) in `filesDir/covers`
+            // so total User Data stays under 5 MB even with hundreds of local songs.
             val coversDir = File(applicationContext.filesDir, "covers")
             if (!coversDir.exists()) {
                 coversDir.mkdirs()
@@ -1347,8 +1384,13 @@ class MainActivity : FlutterActivity() {
             val prefix = "cov_${safeHash}_"
             val cachedCover = File(coversDir, "${prefix}${file.lastModified()}.jpg")
             try {
-                if (!cachedCover.exists() || cachedCover.length() == 0L) {
-                    cachedCover.writeBytes(coverBytes)
+                if (!cachedCover.exists() || cachedCover.length() == 0L || cachedCover.length() > 36864L) {
+                    val thumbBytes = compressCoverToThumbnailBytes(
+                        coverBytes,
+                        maxDim = 256,
+                        quality = 78
+                    )
+                    cachedCover.writeBytes(thumbBytes)
                 }
                 // Prune any older cover file revisions for this same audio path
                 coversDir.listFiles()?.forEach { existing ->
@@ -1371,6 +1413,9 @@ class MainActivity : FlutterActivity() {
         } else {
             readCompanionLrcIfPresent(file)
         }
+        val hasLyricsFlag = !resolvedLyrics.isNullOrBlank()
+        val hasSyncedLyricsFlag = hasLyricsFlag &&
+            Regex("""\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]""").containsMatchIn(resolvedLyrics!!)
 
         val folderName = file.parentFile?.name ?: "Music"
         val bitrateKbps = if (bitrateBps > 0) (bitrateBps / 1000L).toInt() else 320
@@ -1388,10 +1433,160 @@ class MainActivity : FlutterActivity() {
             "bitrateKbps" to bitrateKbps,
             "sampleRateHz" to sampleRateHz,
             "coverFilePath" to coverFilePath,
-            "usltLyrics" to resolvedLyrics,
+            "usltLyrics" to if (includeFullLyrics) resolvedLyrics else null,
+            "hasLyrics" to hasLyricsFlag,
+            "hasSyncedLyrics" to hasSyncedLyricsFlag,
             "dominantColor" to dominantColor,
             "lastModifiedMs" to file.lastModified()
         )
+    }
+
+    /**
+     * Downscales and compresses raw APIC cover bytes into a compact `256x256 px`
+     * JPEG thumbnail (`quality = 78`, `~8-15 KB` per track) for list views & MiniPlayer.
+     */
+    private fun compressCoverToThumbnailBytes(
+        rawBytes: ByteArray,
+        maxDim: Int = 256,
+        quality: Int = 78
+    ): ByteArray {
+        return try {
+            val boundsOpts = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, boundsOpts)
+            val srcW = boundsOpts.outWidth
+            val srcH = boundsOpts.outHeight
+            if (srcW <= 0 || srcH <= 0) return rawBytes
+
+            var sampleSize = 1
+            while ((srcW / sampleSize) > maxDim * 2 || (srcH / sampleSize) > maxDim * 2) {
+                sampleSize *= 2
+            }
+
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts)
+                ?: return rawBytes
+
+            val finalBitmap = if (decoded.width > maxDim || decoded.height > maxDim) {
+                val scale = minOf(
+                    maxDim.toFloat() / decoded.width.toFloat(),
+                    maxDim.toFloat() / decoded.height.toFloat()
+                )
+                val targetW = maxOf(1, Math.round(decoded.width * scale))
+                val targetH = maxOf(1, Math.round(decoded.height * scale))
+                val scaled = Bitmap.createScaledBitmap(decoded, targetW, targetH, true)
+                if (scaled != decoded) {
+                    decoded.recycle()
+                }
+                scaled
+            } else {
+                decoded
+            }
+
+            val out = ByteArrayOutputStream(16384)
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            finalBitmap.recycle()
+            val compressed = out.toByteArray()
+            if (compressed.isNotEmpty() && compressed.size < rawBytes.size) {
+                compressed
+            } else {
+                rawBytes
+            }
+        } catch (_: Exception) {
+            rawBytes
+        }
+    }
+
+    /**
+     * Reads full-resolution embedded APIC artwork bytes on-demand in memory
+     * for `NowPlayingView` without writing a large file to disk.
+     */
+    private fun extractFullEmbeddedCoverBytes(file: File): ByteArray? {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val pic = retriever.embeddedPicture
+            if (pic != null && pic.isNotEmpty()) {
+                return pic
+            }
+        } catch (_: Exception) {
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            parseId3v2Tags(file, needApic = true).apicBytes
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Migrates oversized legacy cover files (`> 36 KB`) in `filesDir/covers` down to
+     * `256x256 px` thumbnails (`~8-15 KB`) and purges leftover temporary files so
+     * MusEvee's User Data stays under 5 MB like Musicolet.
+     */
+    private fun migrateAndCleanupStorageFootprint() {
+        try {
+            val coversDir = File(applicationContext.filesDir, "covers")
+            if (coversDir.exists() && coversDir.isDirectory) {
+                coversDir.listFiles()?.forEach { coverFile ->
+                    if (coverFile.isFile && coverFile.length() > 36864L) {
+                        try {
+                            val raw = coverFile.readBytes()
+                            val compressed = compressCoverToThumbnailBytes(
+                                raw,
+                                maxDim = 256,
+                                quality = 78
+                            )
+                            if (compressed.isNotEmpty() && compressed.size < raw.size) {
+                                coverFile.writeBytes(compressed)
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+        cleanupTempFilesInternal()
+    }
+
+    private fun cleanupTempFilesInternal() {
+        val roots = listOfNotNull(
+            applicationContext.cacheDir,
+            applicationContext.externalCacheDir,
+            applicationContext.filesDir
+        )
+        for (root in roots) {
+            try {
+                root.listFiles()?.forEach { child ->
+                    val nameLower = child.name.lowercase()
+                    if (child.isFile && (
+                            nameLower.endsWith(".tmp") ||
+                                nameLower.endsWith(".webm") ||
+                                nameLower.endsWith(".m4a") ||
+                                nameLower.startsWith("cover_") ||
+                                nameLower.startsWith("output_") ||
+                                nameLower.startsWith("retag_") ||
+                                nameLower.startsWith("yt_")
+                            )
+                    ) {
+                        try {
+                            child.delete()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
     }
 
     /**

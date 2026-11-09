@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +8,8 @@ import 'package:spotmeta_downloader/main.dart';
 import 'package:spotmeta_downloader/models/local_song.dart';
 import 'package:spotmeta_downloader/providers/downloader_provider.dart';
 import 'package:spotmeta_downloader/providers/local_music_provider.dart';
+import 'package:spotmeta_downloader/services/metadata_service.dart';
+import 'package:spotmeta_downloader/utils/app_strings.dart';
 import 'package:spotmeta_downloader/widgets/local_library_views.dart';
 
 LocalSong _mockSong(
@@ -33,8 +37,16 @@ LocalSong _mockSong(
 }
 
 void main() {
+  setUp(() {
+    AppStrings.debugLanguageCodeOverride = 'id';
+  });
+
+  tearDown(() {
+    AppStrings.debugLanguageCodeOverride = null;
+  });
+
   testWidgets(
-      'MusEveeApp renders 6-tab Musicolet UI, switches to Downloader tab, and opens Queue/History Modal Sheet',
+      'MusEveeApp renders 6-tab Musicolet UI, switches to Downloader tab with 3 Horizontal Carousels, and opens Queue/History Modal Sheet',
       (WidgetTester tester) async {
     await tester.pumpWidget(const MusEveeApp());
     await tester.pump();
@@ -60,7 +72,26 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('YOASOBI - Idol'), findsOneWidget);
+
+    // Verify the 3 Horizontal Carousels are rendered in the Downloader tab
+    expect(find.byKey(const ValueKey('carousel_for_you')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('carousel_global_trending')),
+      findsOneWidget,
+    );
+    expect(find.text('Untukmu'), findsOneWidget);
+    expect(find.text('Global Trending'), findsOneWidget);
+    expect(find.text('Idol'), findsOneWidget);
+
+    // Scroll down slightly in the Downloader ListView to reveal the 3rd carousel (Indonesia Trending)
+    await tester.drag(find.byType(ListView).first, const Offset(0, -240));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('carousel_indonesia_trending')),
+      findsOneWidget,
+    );
+    expect(find.text('Indonesia Trending'), findsOneWidget);
 
     // Tap the compact Queue & History button next to the Downloader Omnibox
     await tester.tap(find.byTooltip('Antrean & Riwayat Unduhan'));
@@ -499,6 +530,8 @@ void main() {
       ['Song 2'],
     );
 
+    AppStrings.debugLanguageCodeOverride = 'en';
+
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -529,5 +562,97 @@ void main() {
     expect(find.text('Not played'), findsOneWidget);
     expect(find.text('Your playlists'), findsOneWidget);
     expect(find.text('New Playlist'), findsOneWidget);
+
+    // Restrict Multi-Select / Mix Playlist ONLY to Your playlists:
+    // playCombinedPlaylists must ignore SmartPlaylistId entries and only merge user playlists!
+    final userPl1 = await localProvider.createPlaylist('J-Pop Mix');
+    final userPl2 = await localProvider.createPlaylist('Workout Mix');
+    await localProvider.addSongToPlaylist(userPl1.id, song1.filePath);
+    await localProvider.addSongToPlaylist(userPl2.id, song2.filePath);
+
+    final smartOnlyCount = await localProvider.playCombinedPlaylists([
+      SmartPlaylistId.allSongs,
+      SmartPlaylistId.favorites,
+    ]);
+    expect(smartOnlyCount, 0);
+
+    final userMixCount = await localProvider.playCombinedPlaylists([
+      SmartPlaylistId.allSongs, // ignored
+      userPl1.id,
+      userPl2.id,
+    ]);
+    expect(userMixCount, 2);
+    expect(
+      localProvider.queue.map((s) => s.title).toList(),
+      ['Song 1', 'Song 2'],
+    );
+  });
+
+  test(
+      'AppStrings automatically switches UI texts between Indonesian (id/in) and English (en)',
+      () {
+    AppStrings.debugLanguageCodeOverride = 'id';
+    expect(AppStrings.isIndonesian, isTrue);
+    expect(AppStrings.smartPlaylistTitle(SmartPlaylistId.allSongs), 'Semua lagu');
+    expect(AppStrings.yourPlaylistsHeader, 'Playlist kamu');
+    expect(AppStrings.forYouTitle, 'Untukmu');
+    expect(AppStrings.omniboxHint, 'Cari lagu atau tempel link...');
+
+    AppStrings.debugLanguageCodeOverride = 'en';
+    expect(AppStrings.isIndonesian, isFalse);
+    expect(AppStrings.smartPlaylistTitle(SmartPlaylistId.allSongs), 'All songs');
+    expect(AppStrings.yourPlaylistsHeader, 'Your playlists');
+    expect(AppStrings.forYouTitle, 'For You');
+    expect(AppStrings.omniboxHint, 'Search songs or paste link...');
+  });
+
+  test(
+      'Offline detection distinguishes network errors from empty search and supports manual/typing banner dismissal',
+      () {
+    expect(
+      MetadataService.isNetworkOfflineError(
+        const SocketException('Failed host lookup: api.deezer.com'),
+      ),
+      isTrue,
+    );
+    expect(
+      MetadataService.isNetworkOfflineError(
+        const NetworkOfflineException('No internet connection'),
+      ),
+      isTrue,
+    );
+
+    final dlProvider = DownloaderProvider();
+    addTearDown(dlProvider.dispose);
+
+    expect(dlProvider.statusBannerDismissed, isFalse);
+
+    dlProvider.clearTransientErrorOnTyping();
+    expect(dlProvider.statusBannerDismissed, isTrue);
+    expect(dlProvider.shouldShowStatusBanner, isFalse);
+
+    dlProvider.dismissStatusBanner();
+    expect(dlProvider.statusBannerDismissed, isTrue);
+    expect(dlProvider.shouldShowStatusBanner, isFalse);
+  });
+
+  test(
+      'LocalSong.toJson omits raw usltLyrics text and stores compact boolean flags (< 5 MB User Data optimization)',
+      () {
+    final syncedSong = _mockSong(
+      10,
+      lyrics: '[00:01.00] Line 1\n[00:05.00] Line 2',
+    );
+    final jsonMap = syncedSong.toJson();
+
+    expect(jsonMap.containsKey('usltLyrics'), isFalse);
+    expect(jsonMap['hasLyrics'], isTrue);
+    expect(jsonMap['hasSyncedLyrics'], isTrue);
+
+    // Deserializing from compact JSON preserves hasLyrics and hasSyncedLyrics flags even before on-demand USLT load
+    final restored = LocalSong.fromJson(jsonMap);
+    expect(restored.usltLyrics, isNull);
+    expect(restored.hasLyrics, isTrue);
+    expect(restored.hasSyncedLyrics, isTrue);
   });
 }

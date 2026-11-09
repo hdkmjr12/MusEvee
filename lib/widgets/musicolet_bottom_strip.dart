@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/app_strings.dart';
+
 /// Musicolet's signature dense bottom icon strip with a smooth sliding white
 /// bottom pill indicator (`Curves.easeOutCubic`, `240ms`) across 6 main tabs:
 /// 0: Queue (`=♪`)
@@ -21,35 +23,35 @@ class MusicoletBottomStrip extends StatelessWidget {
     this.activeDownloadBadgeCount = 0,
   });
 
-  static const List<({String tooltip, IconData icon, IconData activeIcon})>
-      _tabs = [
+  static List<({String tooltip, IconData icon, IconData activeIcon})>
+      get _tabs => [
     (
-      tooltip: 'Queue (Antrean Putar)',
+      tooltip: AppStrings.tabQueueTooltip,
       icon: Icons.queue_music_rounded,
       activeIcon: Icons.queue_music_rounded,
     ),
     (
-      tooltip: 'Now Playing (Pemutar & Lirik)',
+      tooltip: AppStrings.tabNowPlayingTooltip,
       icon: Icons.play_circle_outline_rounded,
       activeIcon: Icons.play_circle_filled_rounded,
     ),
     (
-      tooltip: 'Folders (Folder Lokal)',
+      tooltip: AppStrings.tabFoldersTooltip,
       icon: Icons.folder_outlined,
       activeIcon: Icons.folder_rounded,
     ),
     (
-      tooltip: 'Playlists (Daftar Putar)',
+      tooltip: AppStrings.tabPlaylistsTooltip,
       icon: Icons.library_music_outlined,
       activeIcon: Icons.library_music_rounded,
     ),
     (
-      tooltip: 'Downloader (Cari & Unduh Lagu)',
+      tooltip: AppStrings.tabDownloaderTooltip,
       icon: Icons.cloud_download_outlined,
       activeIcon: Icons.cloud_download_rounded,
     ),
     (
-      tooltip: 'Search Lokal (Cari di Memori)',
+      tooltip: AppStrings.tabSearchLocalTooltip,
       icon: Icons.search_rounded,
       activeIcon: Icons.search_rounded,
     ),

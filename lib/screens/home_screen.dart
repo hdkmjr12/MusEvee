@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +10,7 @@ import '../models/track_metadata.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../services/folder_service.dart';
+import '../utils/app_strings.dart';
 import '../widgets/batch_playlist_sheet.dart';
 import '../widgets/local_library_views.dart';
 import '../widgets/musicolet_bottom_strip.dart';
@@ -44,20 +47,157 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const Color _textMuted = Color(0xFF98A2B3);
   static const Color _redDot = Color(0xFFF04438);
 
-  static const List<String> _sampleSearches = [
-    'YOASOBI - Idol',
-    'ASCA - RESISTER',
-    'Ado - Show',
-    'Kenshi Yonezu - KICK BACK',
-    'Katy Perry - The One That Got Away',
-    'Hindia - Evaluasi',
+  static const List<TrackMetadata> _fallbackForYouTracks = [
+    TrackMetadata(
+      spotifyUrl: 'search:YOASOBI - Idol',
+      title: 'Idol',
+      artist: 'YOASOBI',
+      album: 'THE BOOK 3',
+      releaseYear: '2023',
+      durationSeconds: 213,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/71/42/e6/7142e695-a7f7-f562-b1c9-0a8a3d8d910f/197188749316.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:ASCA - RESISTER',
+      title: 'RESISTER',
+      artist: 'ASCA',
+      album: '百歌繚乱',
+      releaseYear: '2019',
+      durationSeconds: 227,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/68/97/2e/68972e45-5f2b-47ea-82cd-2110796d386f/jacket_VVXX00409B00Z_550.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Ado - Show',
+      title: 'Show',
+      artist: 'Ado',
+      album: 'Zanmu',
+      releaseYear: '2023',
+      durationSeconds: 189,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/4a/1f/3c/4a1f3c68-2d53-91b7-0991-03a511e5d612/23UM1IM10688.rgb.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Kenshi Yonezu - KICK BACK',
+      title: 'KICK BACK',
+      artist: 'Kenshi Yonezu',
+      album: 'LOST CORNER',
+      releaseYear: '2022',
+      durationSeconds: 193,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/f3/2b/99/f32b9921-1c9d-9b34-8d87-e55d53184998/4547366591347.jpg/300x300bb.jpg',
+    ),
+  ];
+
+  static const List<TrackMetadata> _fallbackGlobalTrendingTracks = [
+    TrackMetadata(
+      spotifyUrl: 'search:Lady Gaga & Bruno Mars - Die With A Smile',
+      title: 'Die With A Smile',
+      artist: 'Lady Gaga & Bruno Mars',
+      album: 'Die With A Smile',
+      releaseYear: '2024',
+      durationSeconds: 251,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/11/55/be/1155be56-2f5a-9870-8941-72b0933b2e33/24UMGIM85348.rgb.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Billie Eilish - BIRDS OF A FEATHER',
+      title: 'BIRDS OF A FEATHER',
+      artist: 'Billie Eilish',
+      album: 'HIT ME HARD AND SOFT',
+      releaseYear: '2024',
+      durationSeconds: 210,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/92/9f/69/929f69f1-9977-3a44-d674-11f70c852d1b/24UMGIM36186.rgb.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:ROSÉ & Bruno Mars - APT.',
+      title: 'APT.',
+      artist: 'ROSÉ & Bruno Mars',
+      album: 'rosie',
+      releaseYear: '2024',
+      durationSeconds: 169,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/8d/2c/0e/8d2c0e61-4d75-6217-1052-8e4e6e622382/075679630384.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Katy Perry - The One That Got Away',
+      title: 'The One That Got Away',
+      artist: 'Katy Perry',
+      album: 'Teenage Dream',
+      releaseYear: '2010',
+      durationSeconds: 227,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/7b/58/c2/7b58c21a-2b51-2bb2-e59d-9bb9b96ad8c3/00602527491769.rgb.jpg/300x300bb.jpg',
+    ),
+  ];
+
+  static const List<TrackMetadata> _fallbackIndonesiaTrendingTracks = [
+    TrackMetadata(
+      spotifyUrl: 'search:Bernadya - Satu Bulan',
+      title: 'Satu Bulan',
+      artist: 'Bernadya',
+      album: 'Sialnya, Hidup Harus Tetap Berjalan',
+      releaseYear: '2024',
+      durationSeconds: 200,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/7e/68/95/7e68952f-168a-510d-772b-a21c333b7a98/cover.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Hindia - Evaluasi',
+      title: 'Evaluasi',
+      artist: 'Hindia',
+      album: 'Menari Dengan Bayangan',
+      releaseYear: '2019',
+      durationSeconds: 194,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/91/06/29/9106299e-8b1e-1d06-2e82-9a9804393b0b/cover.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Sal Priadi - Gala Bunga Matahari',
+      title: 'Gala Bunga Matahari',
+      artist: 'Sal Priadi',
+      album: 'MARKERS AND SUCH PENS FLASHDISKS',
+      releaseYear: '2024',
+      durationSeconds: 209,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/b8/82/61/b882610c-5439-9942-3a89-243767349e13/cover.jpg/300x300bb.jpg',
+    ),
+    TrackMetadata(
+      spotifyUrl: 'search:Mahalini - Mati-Matian',
+      title: 'Mati-Matian',
+      artist: 'Mahalini',
+      album: 'Mati-Matian',
+      releaseYear: '2024',
+      durationSeconds: 242,
+      coverUrl:
+          'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/c2/21/83/c2218314-8a42-3b69-7b92-360627051737/cover.jpg/300x300bb.jpg',
+    ),
   ];
 
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
-  // Default to Now Playing (Tab 1) just like Musicolet!
   int _selectedTabIndex = _tabNowPlaying;
+
+  void _triggerDiscoveryLoadIfNeeded({bool forceRefresh = false}) {
+    if (!Platform.isAndroid && !forceRefresh) return;
+    final dlProvider = context.read<DownloaderProvider>();
+    final localProvider = context.read<LocalMusicProvider>();
+    dlProvider.loadDiscoveryCarousels(
+      localSongs: localProvider.allSongs,
+      playCountResolver: localProvider.playCountFor,
+      forceRefresh: forceRefresh,
+    );
+  }
+
+  void _selectTab(int idx) {
+    setState(() => _selectedTabIndex = idx);
+    if (idx == _tabDownloader) {
+      _triggerDiscoveryLoadIfNeeded();
+    }
+  }
 
   @override
   void initState() {
@@ -1050,61 +1190,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     children: [
                       // 0: Queue (`=♪`)
                       PlaybackQueueView(
-                        onOpenNowPlaying: () =>
-                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                         onNavigateToDownloader: () =>
-                            setState(() => _selectedTabIndex = _tabDownloader),
+                            _selectTab(_tabDownloader),
                       ),
 
                       // 1: Now Playing (`▶` in circle — 1:1 Musicolet)
                       NowPlayingView(
                         onNavigateToDownloader: () =>
-                            setState(() => _selectedTabIndex = _tabDownloader),
-                        onNavigateToFolders: () =>
-                            setState(() => _selectedTabIndex = _tabFolders),
+                            _selectTab(_tabDownloader),
+                        onNavigateToFolders: () => _selectTab(_tabFolders),
                         onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                       ),
 
                       // 2: Folders (`📁` + Multi-Folder Queue Merger)
                       LocalFoldersView(
-                        onOpenNowPlaying: () =>
-                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                         onCreateNewFolder: _showCreateFolderDialog,
                         onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                       ),
 
                       // 3: Playlists (`musicevee_playlists_v1.json` + Multi-Playlist Queue Merger)
                       LocalPlaylistsView(
-                        onOpenNowPlaying: () =>
-                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                         onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                       ),
 
-                      // 4: Downloader (`⬇` Cloud Download — Smart Omnibox + Queue/History Sheet Trigger)
-                      _buildSearchAndDownloadTab(provider, totalActiveCount),
+                      // 4: Downloader (`⬇` Cloud Download — Smart Omnibox + 3 Discovery Carousels + Queue/History Sheet Trigger)
+                      _buildSearchAndDownloadTab(
+                        provider,
+                        localProvider,
+                        totalActiveCount,
+                      ),
 
                       // 5: Search Lokal (`🔍`)
                       LocalSearchView(
-                        onOpenNowPlaying: () =>
-                            setState(() => _selectedTabIndex = _tabNowPlaying),
+                        onOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                         onMoveLocalSongFolder: _showMoveLocalSongFolderSheet,
                       ),
                     ],
                   ),
                 ),
 
-                // Thin Download Progress Banner ONLY when FFmpeg / Download is actively running
-                if (provider.isDownloading ||
-                    activeQueueCount > 0 ||
-                    (provider.state == DownloaderState.error &&
-                        !provider.isPrivateOrUnavailableCollectionError))
+                // Thin Download Progress / Dismissible Warning Banner
+                if (provider.shouldShowStatusBanner)
                   _buildFloatingMiniProgressBanner(provider),
 
                 // Musicolet Thin Mini Player on all non-Now-Playing tabs
                 if (!isOnNowPlaying)
                   MusicoletMiniPlayer(
-                    onTapOpenNowPlaying: () =>
-                        setState(() => _selectedTabIndex = _tabNowPlaying),
+                    onTapOpenNowPlaying: () => _selectTab(_tabNowPlaying),
                   ),
               ],
             ),
@@ -1112,9 +1247,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           bottomNavigationBar: MusicoletBottomStrip(
             selectedIndex: _selectedTabIndex,
             activeDownloadBadgeCount: totalActiveCount,
-            onTabSelected: (idx) {
-              setState(() => _selectedTabIndex = idx);
-            },
+            onTabSelected: _selectTab,
           ),
         );
       },
@@ -1476,10 +1609,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // ===========================================================================
-  // TAB 4: DOWNLOADER (`⬇` — Smart Omnibox + Folder Chips + Search Results)
+  // TAB 4: DOWNLOADER (`⬇` — Smart Omnibox + 3 Discovery Carousels + Search Results)
   // ===========================================================================
   Widget _buildSearchAndDownloadTab(
     DownloaderProvider provider,
+    LocalMusicProvider localProvider,
     int totalActiveCount,
   ) {
     final results = provider.searchResults;
@@ -1515,10 +1649,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           fontSize: 13.5,
                           fontWeight: FontWeight.w500,
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) {
+                          provider.clearTransientErrorOnTyping();
+                          setState(() {});
+                        },
                         onSubmitted: (_) => _submitOmnibox(provider),
                         decoration: InputDecoration(
-                          hintText: 'Cari lagu atau tempel link...',
+                          hintText: AppStrings.omniboxHint,
                           fillColor: _surfaceSubtle,
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -1536,9 +1673,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   onPressed: provider.isBusy
                                       ? null
                                       : () => _pasteAndSubmit(provider),
-                                  child: const Text(
-                                    'Tempel',
-                                    style: TextStyle(
+                                  child: Text(
+                                    AppStrings.pasteButton,
+                                    style: const TextStyle(
                                       color: _primaryAccent,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -1546,7 +1683,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ),
                                 )
                               : IconButton(
-                                  tooltip: 'Bersihkan',
+                                  tooltip: AppStrings.clearTooltip,
                                   icon: const Icon(
                                     Icons.close_rounded,
                                     color: _textMuted,
@@ -1554,6 +1691,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   ),
                                   onPressed: () {
                                     _inputController.clear();
+                                    provider.clearTransientErrorOnTyping();
+                                    if (provider.state ==
+                                            DownloaderState.error ||
+                                        provider.searchResults.isNotEmpty) {
+                                      provider.reset();
+                                    }
                                     setState(() {});
                                   },
                                 ),
@@ -1578,7 +1721,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               ? null
                               : () => _submitOmnibox(provider),
                           child: Text(
-                            isSpotify ? 'Buka' : 'Cari',
+                            isSpotify
+                                ? AppStrings.openButton
+                                : AppStrings.searchButton,
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -1601,21 +1746,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       _buildDownloaderCapabilityPill(
                         icon: Icons.music_note_rounded,
                         iconColor: _primaryAccent,
-                        label: 'Judul / Artis (Romaji J-Pop)',
+                        label: AppStrings.capabilityTitleArtist,
                         hairline: hairline,
                       ),
                       const SizedBox(width: 6),
                       _buildDownloaderCapabilityPill(
                         icon: Icons.play_circle_fill_rounded,
                         iconColor: const Color(0xFFFF4444),
-                        label: 'Link YouTube / YT Music',
+                        label: AppStrings.capabilityYoutube,
                         hairline: hairline,
                       ),
                       const SizedBox(width: 6),
                       _buildDownloaderCapabilityPill(
                         icon: Icons.album_rounded,
                         iconColor: const Color(0xFF1ED760),
-                        label: 'Link Spotify (Track, Album & Playlist)',
+                        label: AppStrings.capabilitySpotify,
                         hairline: hairline,
                       ),
                     ],
@@ -1634,9 +1779,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         color: _textMuted,
                       ),
                       const SizedBox(width: 5),
-                      const Text(
-                        'Simpan ke:',
-                        style: TextStyle(
+                      Text(
+                        AppStrings.saveToLabel,
+                        style: const TextStyle(
                           color: _textMuted,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -1709,11 +1854,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
           Expanded(
             child: provider.state == DownloaderState.searchingCatalog
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(
+                        const SizedBox(
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
@@ -1721,10 +1866,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             color: _primaryAccent,
                           ),
                         ),
-                        SizedBox(height: 12),
+                        const SizedBox(height: 12),
                         Text(
-                          'Mencari katalog lagu...',
-                          style: TextStyle(color: _textMuted, fontSize: 13),
+                          AppStrings.searchingCatalogStatus,
+                          style: const TextStyle(
+                            color: _textMuted,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),
@@ -1745,7 +1893,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           );
                         },
                       )
-                    : _buildDownloaderEmptyState(provider),
+                    : _buildDownloaderEmptyState(provider, localProvider),
           ),
         ],
       ),
@@ -1783,97 +1931,419 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildDownloaderEmptyState(DownloaderProvider provider) {
+  Widget _buildDownloaderEmptyState(
+    DownloaderProvider provider,
+    LocalMusicProvider localProvider,
+  ) {
     final hairline = Colors.white.withValues(alpha: 0.08);
+    final isOffline =
+        provider.isDiscoveryOffline ||
+        (provider.state == DownloaderState.error && provider.isOfflineError);
+
+    final forYouItems = provider.forYouTracks.isNotEmpty
+        ? provider.forYouTracks
+        : _fallbackForYouTracks;
+    final globalItems = provider.globalTrendingTracks.isNotEmpty
+        ? provider.globalTrendingTracks
+        : _fallbackGlobalTrendingTracks;
+    final indonesiaItems = provider.indonesiaTrendingTracks.isNotEmpty
+        ? provider.indonesiaTrendingTracks
+        : _fallbackIndonesiaTrendingTracks;
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
       children: [
+        if (isOffline) ...[
+          _buildOfflineStateCard(provider, hairline),
+          const SizedBox(height: 12),
+        ],
+
+        // Header Info Card (compact)
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
             color: _surfaceCard,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: hairline, width: 0.8),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              const Row(
-                children: [
-                  Icon(
-                    Icons.cloud_download_rounded,
-                    color: _primaryAccent,
-                    size: 19,
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'MusEvee All-in-One Downloader (MP3 320kbps + USLT Lyrics)',
-                      style: TextStyle(
+              const Icon(
+                Icons.cloud_download_rounded,
+                color: _primaryAccent,
+                size: 18,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppStrings.downloaderCardTitle,
+                      style: const TextStyle(
                         color: _textPrimary,
-                        fontSize: 13.5,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      AppStrings.downloaderCardDesc,
+                      style: const TextStyle(
+                        color: _textMuted,
+                        fontSize: 11,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (provider.isLoadingDiscovery)
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: _primaryAccent,
+                    ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Ketik judul lagu (Deezer/iTunes) atau tempel tautan Track / Album / Playlist Spotify. Lirik otomatis diprioritaskan ke bahasa asli & tertanam langsung ke tag USLT MP3.',
-                style: TextStyle(
-                  color: _textMuted,
-                  fontSize: 12,
-                  height: 1.4,
+                )
+              else
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: AppStrings.refreshRetryButton,
+                  onPressed: () {
+                    provider.dismissStatusBanner();
+                    _triggerDiscoveryLoadIfNeeded(forceRefresh: true);
+                  },
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    size: 17,
+                    color: _textMuted,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Pencarian Cepat:',
-                style: TextStyle(
-                  color: _textMuted,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // 1. FOR YOU / UNTUKMU HORIZONTAL CAROUSEL
+        _buildDiscoveryCarouselSection(
+          sectionKey: const ValueKey('carousel_for_you'),
+          title: AppStrings.forYouTitle,
+          subtitle: AppStrings.forYouSubtitle(provider.forYouSeedArtists),
+          icon: Icons.auto_awesome_rounded,
+          iconColor: _primaryAccent,
+          tracks: forYouItems,
+          provider: provider,
+          hairline: hairline,
+        ),
+        const SizedBox(height: 14),
+
+        // 2. GLOBAL TRENDING HORIZONTAL CAROUSEL
+        _buildDiscoveryCarouselSection(
+          sectionKey: const ValueKey('carousel_global_trending'),
+          title: AppStrings.globalTrendingTitle,
+          subtitle: AppStrings.globalTrendingSubtitle,
+          icon: Icons.public_rounded,
+          iconColor: const Color(0xFF1ED760),
+          tracks: globalItems,
+          provider: provider,
+          hairline: hairline,
+        ),
+        const SizedBox(height: 14),
+
+        // 3. INDONESIA TRENDING HORIZONTAL CAROUSEL
+        _buildDiscoveryCarouselSection(
+          sectionKey: const ValueKey('carousel_indonesia_trending'),
+          title: AppStrings.indonesiaTrendingTitle,
+          subtitle: AppStrings.indonesiaTrendingSubtitle,
+          icon: Icons.local_fire_department_rounded,
+          iconColor: const Color(0xFFFF7A45),
+          tracks: indonesiaItems,
+          provider: provider,
+          hairline: hairline,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOfflineStateCard(
+    DownloaderProvider provider,
+    Color hairline,
+  ) {
+    return Container(
+      key: const ValueKey('downloader_offline_card'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surfaceCard,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _redDot.withValues(alpha: 0.45),
+          width: 0.9,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: _redDot.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.wifi_off_rounded,
+              color: _redDot,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppStrings.offlineTitle,
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _sampleSearches.map((query) {
-                  return ActionChip(
-                    backgroundColor: _surfaceSubtle,
-                    side: BorderSide(color: hairline, width: 0.8),
+                const SizedBox(height: 3),
+                Text(
+                  AppStrings.offlineSubtitle,
+                  style: const TextStyle(
+                    color: _textMuted,
+                    fontSize: 11.5,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  key: const ValueKey('downloader_offline_retry_button'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: _primaryAccent.withValues(alpha: 0.18),
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    side: BorderSide(
+                      color: _primaryAccent.withValues(alpha: 0.65),
+                      width: 0.8,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    label: Text(
-                      query,
-                      style: const TextStyle(
-                        color: _textPrimary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    onPressed: provider.isBusy
-                        ? null
-                        : () {
-                            _inputController.text = query;
-                            setState(() {});
+                  ),
+                  onPressed: provider.isBusy
+                      ? null
+                      : () {
+                          provider.dismissStatusBanner();
+                          if (_inputController.text.trim().isNotEmpty) {
                             _submitOmnibox(provider);
-                          },
-                  );
-                }).toList(),
+                          } else {
+                            _triggerDiscoveryLoadIfNeeded(forceRefresh: true);
+                          }
+                        },
+                  icon: const Icon(Icons.refresh_rounded, size: 15),
+                  label: Text(
+                    AppStrings.refreshRetryButton,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscoveryCarouselSection({
+    required Key sectionKey,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required List<TrackMetadata> tracks,
+    required DownloaderProvider provider,
+    required Color hairline,
+  }) {
+    return Column(
+      key: sectionKey,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 15, color: iconColor),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: const TextStyle(
+                color: _textPrimary,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.15,
               ),
-            ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 154,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: tracks.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final track = tracks[index];
+              final duplicateFolder = provider.duplicateFolderFor(track);
+              return _buildDiscoveryTrackCard(
+                track: track,
+                duplicateFolder: duplicateFolder,
+                hairline: hairline,
+                onTap: provider.isBusy
+                    ? null
+                    : () => _onTapSearchResult(provider, track),
+              );
+            },
           ),
         ),
       ],
     );
   }
 
+  Widget _buildDiscoveryTrackCard({
+    required TrackMetadata track,
+    required String? duplicateFolder,
+    required Color hairline,
+    required VoidCallback? onTap,
+  }) {
+    return PressableScale(
+      onTap: onTap,
+      child: Container(
+        width: 110,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: _surfaceCard,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: hairline, width: 0.8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Compact 98x94 Album Art (decoded at 140x140 in RAM only — 0 KB persistent disk)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 98,
+                height: 94,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (track.coverUrl.isNotEmpty)
+                      Image.network(
+                        track.coverUrl,
+                        fit: BoxFit.cover,
+                        cacheWidth: 140,
+                        cacheHeight: 140,
+                        errorBuilder: (context, error, stackTrace) =>
+                            _buildCarouselCoverPlaceholder(),
+                      )
+                    else
+                      _buildCarouselCoverPlaceholder(),
+                    if (duplicateFolder != null)
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Icon(
+                            Icons.check_circle_rounded,
+                            size: 11,
+                            color: Color(0xFF4CAF50),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _textPrimary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                height: 1.15,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              track.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _textMuted,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w500,
+                height: 1.15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCarouselCoverPlaceholder() {
+    return Container(
+      color: _surfaceSubtle,
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.music_note_rounded,
+        color: _textMuted,
+        size: 26,
+      ),
+    );
+  }
+
   // ===========================================================================
-  // FLOATING MINI DOWNLOAD PROGRESS BANNER
+  // FLOATING MINI DOWNLOAD PROGRESS / DISMISSIBLE WARNING BANNER
   // ===========================================================================
   Widget _buildFloatingMiniProgressBanner(DownloaderProvider provider) {
     final isError = provider.state == DownloaderState.error;
@@ -1905,7 +2375,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
-                  vertical: 7,
+                  vertical: 6,
                 ),
                 child: Row(
                   children: [
@@ -1948,6 +2418,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           color: _primaryAccent,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        key: const ValueKey('dismiss_status_banner_button'),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 24,
+                          minHeight: 24,
+                        ),
+                        tooltip: AppStrings.closeTooltip,
+                        onPressed: provider.dismissStatusBanner,
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 15,
+                          color: _textMuted,
                         ),
                       ),
                     ],

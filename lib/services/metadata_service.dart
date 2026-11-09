@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import '../models/track_metadata.dart';
+import '../utils/app_strings.dart';
 
 class MetadataException implements Exception {
   final String message;
@@ -11,6 +14,15 @@ class MetadataException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Thrown when a catalog search or metadata request fails due to no internet /
+/// DNS failure / connection timeout (distinct from an empty search result).
+class NetworkOfflineException extends MetadataException {
+  const NetworkOfflineException([
+    super.message =
+        'Tidak ada koneksi internet. Periksa jaringan Anda lalu coba lagi.',
+  ]);
 }
 
 class SpotifyPrivateOrUnavailableException extends MetadataException {
@@ -41,6 +53,40 @@ class SpotifyCollectionResult {
 
 class MetadataService {
   final Dio _dio;
+
+  /// Returns true if [error] represents a network connectivity / DNS / timeout
+  /// failure rather than an application or empty-search error.
+  static bool isNetworkOfflineError(Object error) {
+    if (error is NetworkOfflineException ||
+        error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException) {
+      return true;
+    }
+    if (error is DioException) {
+      if (error.type == DioExceptionType.connectionError ||
+          error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout) {
+        return true;
+      }
+      final inner = error.error;
+      if (inner is SocketException ||
+          inner is TimeoutException ||
+          inner is HandshakeException) {
+        return true;
+      }
+    }
+    final msg = error.toString().toLowerCase();
+    return msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('network is unreachable') ||
+        msg.contains('connection refused') ||
+        msg.contains('connection timed out') ||
+        msg.contains('connection error') ||
+        msg.contains('software caused connection abort') ||
+        msg.contains('no address associated with hostname');
+  }
 
   MetadataService({Dio? dio})
       : _dio = dio ??
@@ -631,39 +677,68 @@ class MetadataService {
     }
 
     // Step 2: Run multi-region iTunes (JP + Global/ID) & Deezer searches in parallel
+    int networkFailureCount = 0;
+    int totalCatalogRequests = 0;
+    void recordAttempt() => totalCatalogRequests++;
+    void recordNetErr(Object e) {
+      if (isNetworkOfflineError(e)) {
+        networkFailureCount++;
+      }
+    }
+
     final searchFutures = <Future<_CatalogBatch>>[
-      _searchItunesCatalog(
-        query,
-        country: 'ID',
-        limit: 15,
-      ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 8)),
-      _searchDeezerCatalog(
-        query,
-        limit: 15,
-      ).then((list) => _CatalogBatch(tracks: list, isItunes: false, boost: 10)),
-      _searchItunesCatalog(
-        query,
-        country: 'JP',
-        lang: 'ja_jp',
-        limit: 15,
-      ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 6)),
+      () {
+        recordAttempt();
+        return _searchItunesCatalog(
+          query,
+          country: 'ID',
+          limit: 15,
+          onError: recordNetErr,
+        ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 8));
+      }(),
+      () {
+        recordAttempt();
+        return _searchDeezerCatalog(
+          query,
+          limit: 15,
+          onError: recordNetErr,
+        ).then(
+          (list) => _CatalogBatch(tracks: list, isItunes: false, boost: 10),
+        );
+      }(),
+      () {
+        recordAttempt();
+        return _searchItunesCatalog(
+          query,
+          country: 'JP',
+          lang: 'ja_jp',
+          limit: 15,
+          onError: recordNetErr,
+        ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 6));
+      }(),
     ];
 
     for (final jaQ in jaQueries.take(2)) {
-      searchFutures.add(
-        _searchItunesCatalog(
+      searchFutures.add(() {
+        recordAttempt();
+        return _searchItunesCatalog(
           jaQ,
           country: 'JP',
           lang: 'ja_jp',
           limit: 15,
-        ).then((list) => _CatalogBatch(tracks: list, isItunes: true, boost: 12)),
-      );
-      searchFutures.add(
-        _searchDeezerCatalog(
+          onError: recordNetErr,
+        ).then(
+          (list) => _CatalogBatch(tracks: list, isItunes: true, boost: 12),
+        );
+      }());
+      searchFutures.add(() {
+        recordAttempt();
+        return _searchDeezerCatalog(
           jaQ,
           limit: 10,
-        ).then((list) => _CatalogBatch(tracks: list, isItunes: false, boost: 8)),
-      );
+          onError: recordNetErr,
+        ).then((list) => _CatalogBatch(tracks: list, isItunes: false, boost: 8));
+      }());
     }
 
     final batches = await Future.wait<_CatalogBatch>(searchFutures);
@@ -747,12 +822,288 @@ class MetadataService {
       });
 
     if (ranked.isEmpty) {
-      throw MetadataException(
-        'Tidak ditemukan lagu untuk kata kunci "$query". Coba gunakan nama artis dan judul lagu.',
-      );
+      if (networkFailureCount > 0 &&
+          networkFailureCount >= totalCatalogRequests) {
+        throw NetworkOfflineException(AppStrings.offlineSubtitle);
+      }
+      throw MetadataException(AppStrings.noResultsFoundFor(query));
     }
 
     return ranked.take(25).map((e) => e.track).toList();
+  }
+
+  /// Fetches Global Trending tracks (`Global Trending` carousel) via Deezer Global
+  /// Chart API with iTunes US Top Songs RSS fallback.
+  Future<List<TrackMetadata>> fetchGlobalTrendingTracks({int limit = 12}) async {
+    int netErrors = 0;
+    int attempts = 0;
+
+    // 1. Primary: Deezer Global Chart API
+    attempts++;
+    try {
+      final resp = await _dio
+          .get<dynamic>(
+            'https://api.deezer.com/chart/0/tracks',
+            queryParameters: {'limit': limit},
+          )
+          .timeout(const Duration(seconds: 9));
+      final map = _ensureMap(resp.data);
+      final rawList = map?['data'];
+      if (rawList is List && rawList.isNotEmpty) {
+        final tracks = _parseDeezerTrackList(rawList, limit: limit);
+        if (tracks.isNotEmpty) return tracks;
+      }
+    } catch (e) {
+      if (isNetworkOfflineError(e)) netErrors++;
+    }
+
+    // 2. Fallback: iTunes US Top Songs RSS
+    attempts++;
+    try {
+      final rssTracks = await _fetchItunesRssTopSongs(
+        country: 'us',
+        limit: limit,
+      );
+      if (rssTracks.isNotEmpty) return rssTracks;
+    } catch (e) {
+      if (isNetworkOfflineError(e)) netErrors++;
+    }
+
+    // 3. Fallback: iTunes US Search
+    attempts++;
+    final fallback = await _searchItunesCatalog(
+      'top hits',
+      country: 'US',
+      limit: limit,
+      onError: (e) {
+        if (isNetworkOfflineError(e)) netErrors++;
+      },
+    );
+    if (fallback.isNotEmpty) return fallback;
+
+    if (netErrors > 0 && netErrors >= attempts) {
+      throw NetworkOfflineException(AppStrings.offlineSubtitle);
+    }
+    return const [];
+  }
+
+  /// Fetches Indonesia Trending tracks (`Indonesia Trending` carousel) via iTunes
+  /// Indonesia Top Songs RSS (`country=id`) with iTunes ID catalog fallback.
+  Future<List<TrackMetadata>> fetchIndonesiaTrendingTracks({
+    int limit = 12,
+  }) async {
+    int netErrors = 0;
+    int attempts = 0;
+
+    // 1. Primary: iTunes Indonesia Top Songs RSS (`country=id`)
+    attempts++;
+    try {
+      final rssTracks = await _fetchItunesRssTopSongs(
+        country: 'id',
+        limit: limit,
+      );
+      if (rssTracks.isNotEmpty) return rssTracks;
+    } catch (e) {
+      if (isNetworkOfflineError(e)) netErrors++;
+    }
+
+    // 2. Fallback: iTunes Indonesia Search for popular Indonesian artists
+    attempts++;
+    final fallback = await _searchItunesCatalog(
+      'pop indonesia hits',
+      country: 'ID',
+      limit: limit,
+      onError: (e) {
+        if (isNetworkOfflineError(e)) netErrors++;
+      },
+    );
+    if (fallback.isNotEmpty) return fallback;
+
+    if (netErrors > 0 && netErrors >= attempts) {
+      throw NetworkOfflineException(AppStrings.offlineSubtitle);
+    }
+    return const [];
+  }
+
+  /// Fetches personalized `For You` (`Untukmu`) track recommendations based on
+  /// [seedArtists] sampled from the user's local library (`Most played` /
+  /// `Recently added`), excluding any track whose normalized identity is in
+  /// [ownedIdentityKeys].
+  Future<List<TrackMetadata>> fetchForYouRecommendations({
+    required List<String> seedArtists,
+    Set<String> ownedIdentityKeys = const {},
+    int limit = 12,
+  }) async {
+    final cleanSeeds = <String>[];
+    final seenSeeds = <String>{};
+    for (final raw in seedArtists) {
+      final primary = raw
+          .split(RegExp(r'[,&/]|feat\.?|ft\.?', caseSensitive: false))
+          .first
+          .trim();
+      if (primary.isEmpty ||
+          primary.toLowerCase() == 'unknown artist' ||
+          primary.toLowerCase() == 'unknown') {
+        continue;
+      }
+      if (seenSeeds.add(primary.toLowerCase())) {
+        cleanSeeds.add(primary);
+      }
+      if (cleanSeeds.length >= 4) break;
+    }
+
+    final effectiveSeeds = cleanSeeds.isNotEmpty
+        ? cleanSeeds
+        : const <String>['YOASOBI', 'Hindia', 'Ado', 'Mahalini'];
+
+    int netErrors = 0;
+    int attempts = 0;
+
+    final perSeedLists = await Future.wait<List<TrackMetadata>>(
+      effectiveSeeds.map((artist) async {
+        attempts++;
+        final itunes = await _searchItunesCatalog(
+          artist,
+          country: 'ID',
+          limit: 6,
+          onError: (e) {
+            if (isNetworkOfflineError(e)) netErrors++;
+          },
+        );
+        if (itunes.isNotEmpty) return itunes;
+        attempts++;
+        return _searchDeezerCatalog(
+          artist,
+          limit: 6,
+          onError: (e) {
+            if (isNetworkOfflineError(e)) netErrors++;
+          },
+        );
+      }),
+    );
+
+    // Interleave tracks across seed artists and filter out already-owned local songs
+    final result = <TrackMetadata>[];
+    final seenKeys = <String>{};
+    int maxLen = 0;
+    for (final list in perSeedLists) {
+      if (list.length > maxLen) maxLen = list.length;
+    }
+
+    for (int row = 0; row < maxLen && result.length < limit; row++) {
+      for (int col = 0; col < perSeedLists.length && result.length < limit; col++) {
+        final list = perSeedLists[col];
+        if (row >= list.length) continue;
+        final candidate = list[row];
+        if (_coverNoiseRegex.hasMatch(candidate.title) ||
+            _coverNoiseRegex.hasMatch(candidate.album)) {
+          continue;
+        }
+        final identity = TrackMetadata.normalizeTrackIdentity(
+          candidate.title,
+          candidate.artist,
+        );
+        if (identity.isNotEmpty && ownedIdentityKeys.contains(identity)) {
+          continue;
+        }
+        final dedupKey = _dedupTrackKey(candidate.artist, candidate.title);
+        if (seenKeys.add(dedupKey)) {
+          result.add(candidate);
+        }
+      }
+    }
+
+    if (result.isEmpty && netErrors > 0 && netErrors >= attempts) {
+      throw NetworkOfflineException(AppStrings.offlineSubtitle);
+    }
+    return result;
+  }
+
+  Future<List<TrackMetadata>> _fetchItunesRssTopSongs({
+    required String country,
+    int limit = 12,
+  }) async {
+    final resp = await _dio
+        .get<dynamic>(
+          'https://itunes.apple.com/$country/rss/topsongs/limit=$limit/json',
+        )
+        .timeout(const Duration(seconds: 9));
+    final root = _ensureMap(resp.data);
+    final feed = _ensureMap(root?['feed']);
+    final rawEntries = feed?['entry'];
+    final entries = rawEntries is List
+        ? rawEntries
+        : (rawEntries is Map ? <dynamic>[rawEntries] : const <dynamic>[]);
+    if (entries.isEmpty) return const [];
+
+    final out = <TrackMetadata>[];
+    for (final raw in entries) {
+      final entry = _ensureMap(raw);
+      if (entry == null) continue;
+      final title =
+          (_ensureMap(entry['im:name'])?['label']?.toString() ?? '').trim();
+      final artist =
+          (_ensureMap(entry['im:artist'])?['label']?.toString() ?? '').trim();
+      if (title.isEmpty || artist.isEmpty) continue;
+
+      final collectionObj = _ensureMap(entry['im:collection']);
+      final album =
+          (_ensureMap(collectionObj?['im:name'])?['label']?.toString() ?? title)
+              .trim();
+      final releaseLabel =
+          (_ensureMap(entry['im:releaseDate'])?['label']?.toString() ?? '')
+              .trim();
+      final year = _extractYear(releaseLabel);
+
+      String coverUrl = '';
+      final rawImages = entry['im:image'];
+      if (rawImages is List && rawImages.isNotEmpty) {
+        final lastImg = _ensureMap(rawImages.last);
+        coverUrl = (lastImg?['label']?.toString() ?? '').trim();
+        if (coverUrl.isNotEmpty) {
+          coverUrl = coverUrl.replaceAll(
+            RegExp(r'\d+x\d+bb'),
+            '300x300bb',
+          );
+        }
+      }
+
+      String? previewUrl;
+      int durationSec = 200;
+      final rawLinks = entry['link'];
+      if (rawLinks is List) {
+        for (final lk in rawLinks) {
+          final lkMap = _ensureMap(lk);
+          final attrs = _ensureMap(lkMap?['attributes']);
+          final type = (attrs?['type']?.toString() ?? '').toLowerCase();
+          final href = (attrs?['href']?.toString() ?? '').trim();
+          if (href.isNotEmpty &&
+              (type.contains('audio') || attrs?['im:assetType'] == 'preview')) {
+            previewUrl = href;
+          }
+          final durMs = _parseInt(_ensureMap(lkMap?['im:duration'])?['label']);
+          if (durMs > 0) {
+            durationSec = (durMs / 1000).round();
+          }
+        }
+      }
+
+      out.add(
+        TrackMetadata(
+          spotifyUrl: 'search:$artist - $title',
+          title: title,
+          artist: artist,
+          album: album.isNotEmpty ? album : title,
+          releaseYear:
+              year.isNotEmpty ? year : DateTime.now().year.toString(),
+          durationSeconds: durationSec,
+          coverUrl: coverUrl,
+          previewAudioUrl: previewUrl,
+        ),
+      );
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   static final RegExp _japaneseScriptRegex = RegExp(
@@ -1069,6 +1420,7 @@ class MetadataService {
     String? country,
     String? lang,
     int limit = 15,
+    void Function(Object error)? onError,
   }) async {
     try {
       final params = <String, dynamic>{
@@ -1133,56 +1485,65 @@ class MetadataService {
       }
       return tracks;
     } catch (e) {
+      onError?.call(e);
       debugPrint('[MusEvee] SEARCH: iTunes ($country) search gagal: $e');
       return const [];
     }
   }
 
+  List<TrackMetadata> _parseDeezerTrackList(
+    List<dynamic> list, {
+    int limit = 15,
+  }) {
+    final tracks = <TrackMetadata>[];
+    for (final item in list.take(limit)) {
+      final m = _ensureMap(item);
+      if (m == null) continue;
+
+      final title = (m['title']?.toString() ?? '').trim();
+      final artistObj = _ensureMap(m['artist']);
+      final artist = (artistObj?['name']?.toString() ?? '').trim();
+      if (title.isEmpty || artist.isEmpty) continue;
+
+      final albumObj = _ensureMap(m['album']);
+      final albumTitle = (albumObj?['title']?.toString() ?? title).trim();
+      final coverXl = (albumObj?['cover_xl']?.toString() ??
+              albumObj?['cover_big']?.toString() ??
+              albumObj?['cover_medium']?.toString() ??
+              '')
+          .trim();
+
+      final durationSec = _parseInt(m['duration']);
+      final previewUrl = (m['preview']?.toString() ?? '').trim();
+      final linkUrl = (m['link']?.toString() ?? '').trim();
+
+      tracks.add(
+        TrackMetadata(
+          spotifyUrl: linkUrl.isNotEmpty ? linkUrl : 'search:$artist - $title',
+          title: title,
+          artist: artist,
+          album: albumTitle.isNotEmpty ? albumTitle : title,
+          releaseYear: DateTime.now().year.toString(),
+          durationSeconds: durationSec > 0 ? durationSec : 200,
+          coverUrl: coverXl,
+          previewAudioUrl: previewUrl.isNotEmpty ? previewUrl : null,
+        ),
+      );
+    }
+    return tracks;
+  }
+
   Future<List<TrackMetadata>> _searchDeezerCatalog(
     String query, {
     int limit = 15,
+    void Function(Object error)? onError,
   }) async {
     try {
-      final list = await _queryDeezerSearch(query);
+      final list = await _queryDeezerSearch(query, onError: onError);
       if (list.isEmpty) return const [];
-
-      final tracks = <TrackMetadata>[];
-      for (final item in list.take(limit)) {
-        final m = _ensureMap(item);
-        if (m == null) continue;
-
-        final title = (m['title']?.toString() ?? '').trim();
-        final artistObj = _ensureMap(m['artist']);
-        final artist = (artistObj?['name']?.toString() ?? '').trim();
-        if (title.isEmpty || artist.isEmpty) continue;
-
-        final albumObj = _ensureMap(m['album']);
-        final albumTitle = (albumObj?['title']?.toString() ?? title).trim();
-        final coverXl = (albumObj?['cover_xl']?.toString() ??
-                albumObj?['cover_big']?.toString() ??
-                albumObj?['cover_medium']?.toString() ??
-                '')
-            .trim();
-
-        final durationSec = _parseInt(m['duration']);
-        final previewUrl = (m['preview']?.toString() ?? '').trim();
-        final linkUrl = (m['link']?.toString() ?? '').trim();
-
-        tracks.add(
-          TrackMetadata(
-            spotifyUrl: linkUrl.isNotEmpty ? linkUrl : 'search:$artist - $title',
-            title: title,
-            artist: artist,
-            album: albumTitle.isNotEmpty ? albumTitle : title,
-            releaseYear: DateTime.now().year.toString(),
-            durationSeconds: durationSec > 0 ? durationSec : 200,
-            coverUrl: coverXl,
-            previewAudioUrl: previewUrl.isNotEmpty ? previewUrl : null,
-          ),
-        );
-      }
-      return tracks;
+      return _parseDeezerTrackList(list, limit: limit);
     } catch (e) {
+      onError?.call(e);
       debugPrint('[MusEvee] SEARCH: Deezer search gagal: $e');
       return const [];
     }
@@ -1566,7 +1927,10 @@ class MetadataService {
     }
   }
 
-  Future<List<dynamic>> _queryDeezerSearch(String query) async {
+  Future<List<dynamic>> _queryDeezerSearch(
+    String query, {
+    void Function(Object error)? onError,
+  }) async {
     try {
       final response = await _dio.get<dynamic>(
         'https://api.deezer.com/search',
@@ -1578,6 +1942,7 @@ class MetadataService {
         return dataList;
       }
     } catch (e, s) {
+      onError?.call(e);
       debugPrint('[AUTO_E2E] TAHAP_2: Query Deezer "$query" gagal: $e\n$s');
     }
     return const [];

@@ -213,7 +213,7 @@ class _NowPlayingViewState extends State<NowPlayingView> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: _buildCoverArtImage(song),
+                        child: _buildCoverArtImage(localProvider, song),
                       ),
                     ),
                   ),
@@ -344,7 +344,23 @@ class _NowPlayingViewState extends State<NowPlayingView> {
     );
   }
 
-  Widget _buildCoverArtImage(LocalSong song) {
+  Widget _buildCoverArtImage(LocalMusicProvider localProvider, LocalSong song) {
+    final fullBytes = localProvider.currentFullCoverBytes;
+    if (fullBytes != null && fullBytes.isNotEmpty) {
+      return Image.memory(
+        fullBytes,
+        fit: BoxFit.cover,
+        cacheWidth: 960,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildThumbnailOrDefaultCoverArt(song),
+      );
+    }
+    return _buildThumbnailOrDefaultCoverArt(song);
+  }
+
+  Widget _buildThumbnailOrDefaultCoverArt(LocalSong song) {
     if (song.hasCover) {
       return Image.file(
         File(song.coverFilePath!),

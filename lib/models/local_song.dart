@@ -71,6 +71,8 @@ class LocalSong {
   final int sampleRateHz;
   final String? coverFilePath;
   final String? usltLyrics;
+  final bool hasLyricsFlag;
+  final bool hasSyncedLyricsFlag;
   final int dominantColorValue;
   final int lastModifiedMs;
 
@@ -88,6 +90,8 @@ class LocalSong {
     required this.sampleRateHz,
     this.coverFilePath,
     this.usltLyrics,
+    this.hasLyricsFlag = false,
+    this.hasSyncedLyricsFlag = false,
     this.dominantColorValue = 0xFF1E222B,
     this.lastModifiedMs = 0,
   });
@@ -110,6 +114,11 @@ class LocalSong {
 
     final rawCover = (map['coverFilePath']?.toString() ?? '').trim();
     final rawUslt = (map['usltLyrics']?.toString() ?? '').trim();
+    final explicitHasLyrics = map['hasLyrics'] == true;
+    final explicitHasSynced = map['hasSyncedLyrics'] == true;
+    final computedHasLyrics = explicitHasLyrics || rawUslt.isNotEmpty;
+    final computedHasSynced = explicitHasSynced ||
+        (rawUslt.isNotEmpty && _lrcLineTimeRegex.hasMatch(rawUslt));
 
     return LocalSong(
       filePath: rawPath,
@@ -127,6 +136,8 @@ class LocalSong {
       sampleRateHz: parseInt(map['sampleRateHz'], 44100),
       coverFilePath: rawCover.isNotEmpty ? rawCover : null,
       usltLyrics: rawUslt.isNotEmpty ? rawUslt : null,
+      hasLyricsFlag: computedHasLyrics,
+      hasSyncedLyricsFlag: computedHasSynced,
       dominantColorValue: parseInt(
         map['dominantColor'] ?? map['dominantColorValue'],
         0xFF1E222B,
@@ -138,6 +149,9 @@ class LocalSong {
   factory LocalSong.fromJson(Map<String, dynamic> json) =>
       LocalSong.fromNativeMap(json);
 
+  /// Compact metadata-only serialization for `musevee_library_cache_v1.json`.
+  /// Full `usltLyrics` strings are intentionally omitted from disk cache and
+  /// loaded on-demand when a track is played so User Data stays under 5 MB.
   Map<String, dynamic> toJson() {
     return {
       'filePath': filePath,
@@ -152,7 +166,8 @@ class LocalSong {
       'bitrateKbps': bitrateKbps,
       'sampleRateHz': sampleRateHz,
       'coverFilePath': coverFilePath,
-      'usltLyrics': usltLyrics,
+      'hasLyrics': hasLyrics,
+      'hasSyncedLyrics': hasSyncedLyrics,
       'dominantColor': dominantColorValue,
       'lastModifiedMs': lastModifiedMs,
     };
@@ -172,10 +187,14 @@ class LocalSong {
     int? sampleRateHz,
     String? coverFilePath,
     String? usltLyrics,
+    bool? hasLyricsFlag,
+    bool? hasSyncedLyricsFlag,
     int? dominantColorValue,
     int? lastModifiedMs,
     bool clearLyrics = false,
   }) {
+    final resolvedUslt =
+        clearLyrics ? null : (usltLyrics ?? this.usltLyrics);
     return LocalSong(
       filePath: filePath ?? this.filePath,
       fileName: fileName ?? this.fileName,
@@ -189,7 +208,19 @@ class LocalSong {
       bitrateKbps: bitrateKbps ?? this.bitrateKbps,
       sampleRateHz: sampleRateHz ?? this.sampleRateHz,
       coverFilePath: coverFilePath ?? this.coverFilePath,
-      usltLyrics: clearLyrics ? null : (usltLyrics ?? this.usltLyrics),
+      usltLyrics: resolvedUslt,
+      hasLyricsFlag: clearLyrics
+          ? false
+          : (hasLyricsFlag ??
+              (resolvedUslt != null && resolvedUslt.trim().isNotEmpty
+                  ? true
+                  : this.hasLyricsFlag)),
+      hasSyncedLyricsFlag: clearLyrics
+          ? false
+          : (hasSyncedLyricsFlag ??
+              (resolvedUslt != null && _lrcLineTimeRegex.hasMatch(resolvedUslt)
+                  ? true
+                  : this.hasSyncedLyricsFlag)),
       dominantColorValue: dominantColorValue ?? this.dominantColorValue,
       lastModifiedMs: lastModifiedMs ?? this.lastModifiedMs,
     );
@@ -198,10 +229,12 @@ class LocalSong {
   bool get hasCover =>
       coverFilePath != null && coverFilePath!.trim().isNotEmpty;
 
-  bool get hasLyrics => usltLyrics != null && usltLyrics!.trim().isNotEmpty;
+  bool get hasLyrics =>
+      hasLyricsFlag || (usltLyrics != null && usltLyrics!.trim().isNotEmpty);
 
   bool get hasSyncedLyrics =>
-      hasLyrics && _lrcLineTimeRegex.hasMatch(usltLyrics!);
+      hasSyncedLyricsFlag ||
+      (usltLyrics != null && _lrcLineTimeRegex.hasMatch(usltLyrics!));
 
   /// Resolves the physical parent directory path containing this audio file.
   String get folderPath {

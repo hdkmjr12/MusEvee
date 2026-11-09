@@ -12,6 +12,7 @@ import '../services/lyrics_service.dart';
 import '../services/metadata_service.dart';
 import '../services/romaji_service.dart';
 import '../services/tagging_service.dart';
+import '../utils/app_strings.dart';
 
 enum DownloaderState {
   idle,
@@ -87,6 +88,18 @@ class DownloaderProvider extends ChangeNotifier {
   String? _errorMessage;
   String? _savedFilePath;
   bool _isPrivateOrUnavailableCollectionError = false;
+  bool _isOfflineError = false;
+  bool _statusBannerDismissed = false;
+  Timer? _bannerAutoDismissTimer;
+
+  // Discovery Carousels State (`For You`, `Global Trending`, `Indonesia Trending`)
+  List<TrackMetadata> _forYouTracks = const [];
+  List<TrackMetadata> _globalTrendingTracks = const [];
+  List<TrackMetadata> _indonesiaTrendingTracks = const [];
+  List<String> _forYouSeedArtists = const [];
+  bool _isLoadingDiscovery = false;
+  bool _isDiscoveryOffline = false;
+  bool _hasLoadedDiscovery = false;
 
   DownloaderState get state => _state;
   TrackMetadata? get trackMetadata => _trackMetadata;
@@ -96,6 +109,16 @@ class DownloaderProvider extends ChangeNotifier {
   String get selectedFolder => _selectedFolder;
   List<DownloadItem> get queueItems => List.unmodifiable(_queueItems);
   Map<String, int> get folderSongCounts => Map.unmodifiable(_folderSongCounts);
+
+  List<TrackMetadata> get forYouTracks => List.unmodifiable(_forYouTracks);
+  List<TrackMetadata> get globalTrendingTracks =>
+      List.unmodifiable(_globalTrendingTracks);
+  List<TrackMetadata> get indonesiaTrendingTracks =>
+      List.unmodifiable(_indonesiaTrendingTracks);
+  List<String> get forYouSeedArtists => List.unmodifiable(_forYouSeedArtists);
+  bool get isLoadingDiscovery => _isLoadingDiscovery;
+  bool get isDiscoveryOffline => _isDiscoveryOffline;
+  bool get hasLoadedDiscovery => _hasLoadedDiscovery;
 
   bool get isPreviewPlaying => _isPreviewPlaying;
   String? get activePreviewUrl => _activePreviewUrl;
@@ -127,6 +150,60 @@ class DownloaderProvider extends ChangeNotifier {
   String? get savedFilePath => _savedFilePath;
   bool get isPrivateOrUnavailableCollectionError =>
       _isPrivateOrUnavailableCollectionError;
+  bool get isOfflineError => _isOfflineError;
+  bool get statusBannerDismissed => _statusBannerDismissed;
+
+  /// True when the bottom floating status/error banner should be shown.
+  bool get shouldShowStatusBanner {
+    if (isDownloading || activeQueueCount > 0) {
+      return true;
+    }
+    if (_state == DownloaderState.error &&
+        !_isPrivateOrUnavailableCollectionError &&
+        !_statusBannerDismissed) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Manually dismisses the bottom error/warning banner (`✕` button).
+  void dismissStatusBanner() {
+    _bannerAutoDismissTimer?.cancel();
+    _bannerAutoDismissTimer = null;
+    if (_statusBannerDismissed) return;
+    _statusBannerDismissed = true;
+    notifyListeners();
+  }
+
+  /// Automatically clears transient error state / banner when the user types a
+  /// new query in the Omnibox or taps Refresh.
+  void clearTransientErrorOnTyping() {
+    _bannerAutoDismissTimer?.cancel();
+    _bannerAutoDismissTimer = null;
+    bool mutated = false;
+    if (!_statusBannerDismissed) {
+      _statusBannerDismissed = true;
+      mutated = true;
+    }
+    if (_state == DownloaderState.error && !isDownloading) {
+      _state = _searchResults.isNotEmpty
+          ? DownloaderState.showingSearchResults
+          : DownloaderState.idle;
+      _errorMessage = null;
+      _isOfflineError = false;
+      _isPrivateOrUnavailableCollectionError = false;
+      mutated = true;
+    }
+    if (mutated) {
+      notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _bannerAutoDismissTimer?.cancel();
+    super.dispose();
+  }
 
   bool get isBusy =>
       _state == DownloaderState.searchingCatalog ||
@@ -590,6 +667,7 @@ class DownloaderProvider extends ChangeNotifier {
   /// Resets the state back to idle.
   void reset() {
     stopPreviewAudio();
+    _bannerAutoDismissTimer?.cancel();
     _state = DownloaderState.idle;
     _trackMetadata = null;
     _currentCollection = null;
@@ -602,6 +680,156 @@ class DownloaderProvider extends ChangeNotifier {
     _statusMessage = 'Siap mencari lagu.';
     _errorMessage = null;
     _savedFilePath = null;
+    _isOfflineError = false;
+    _isPrivateOrUnavailableCollectionError = false;
+    _statusBannerDismissed = false;
+    notifyListeners();
+  }
+
+  // ===========================================================================
+  // DISCOVERY CAROUSELS (`For You`, `Global Trending`, `Indonesia Trending`)
+  // ===========================================================================
+  @visibleForTesting
+  void seedDiscoveryCarouselsForTesting({
+    List<TrackMetadata>? forYou,
+    List<TrackMetadata>? globalTrending,
+    List<TrackMetadata>? indonesiaTrending,
+    List<String>? seedArtists,
+    bool isOffline = false,
+  }) {
+    _forYouTracks = forYou ?? const [];
+    _globalTrendingTracks = globalTrending ?? const [];
+    _indonesiaTrendingTracks = indonesiaTrending ?? const [];
+    _forYouSeedArtists = seedArtists ?? const [];
+    _isDiscoveryOffline = isOffline;
+    _isLoadingDiscovery = false;
+    _hasLoadedDiscovery = true;
+    notifyListeners();
+  }
+
+  /// Loads the 3 horizontal discovery carousels (`For You`, `Global Trending`,
+  /// `Indonesia Trending`) in parallel using in-memory catalog queries and
+  /// sampling top artists from [localSongs].
+  Future<void> loadDiscoveryCarousels({
+    List<LocalSong>? localSongs,
+    int Function(String filePath)? playCountResolver,
+    bool forceRefresh = false,
+  }) async {
+    if (_isLoadingDiscovery) return;
+    if (!forceRefresh &&
+        _hasLoadedDiscovery &&
+        !_isDiscoveryOffline &&
+        (_forYouTracks.isNotEmpty ||
+            _globalTrendingTracks.isNotEmpty ||
+            _indonesiaTrendingTracks.isNotEmpty)) {
+      return;
+    }
+
+    _isLoadingDiscovery = true;
+    _isDiscoveryOffline = false;
+    notifyListeners();
+
+    final songs = localSongs ?? const <LocalSong>[];
+    final ownedKeys = <String>{
+      for (final s in songs)
+        TrackMetadata.normalizeTrackIdentity(s.title, s.artist),
+    }..remove('');
+
+    // Sample top 4 artists from local library (weighted by play count + recency)
+    final artistScores = <String, int>{};
+    final artistDisplayNames = <String, String>{};
+    final sortedSongs = List<LocalSong>.from(songs)
+      ..sort((a, b) => b.lastModifiedMs.compareTo(a.lastModifiedMs));
+    for (int i = 0; i < sortedSongs.length; i++) {
+      final s = sortedSongs[i];
+      final rawArtist = s.artist
+          .split(RegExp(r'[,&/]|feat\.?|ft\.?', caseSensitive: false))
+          .first
+          .trim();
+      if (rawArtist.isEmpty ||
+          rawArtist.toLowerCase() == 'unknown artist' ||
+          rawArtist.toLowerCase() == 'unknown') {
+        continue;
+      }
+      final key = rawArtist.toLowerCase();
+      artistDisplayNames.putIfAbsent(key, () => rawArtist);
+      final plays = playCountResolver?.call(s.filePath) ?? 0;
+      final recencyBonus = (20 - i).clamp(1, 20);
+      artistScores[key] = (artistScores[key] ?? 0) + (plays * 15) + recencyBonus;
+    }
+
+    final rankedArtistKeys = artistScores.keys.toList()
+      ..sort((a, b) => artistScores[b]!.compareTo(artistScores[a]!));
+    final seedArtists = rankedArtistKeys
+        .take(4)
+        .map((k) => artistDisplayNames[k]!)
+        .toList();
+    _forYouSeedArtists = seedArtists;
+
+    int offlineSectionErrors = 0;
+    List<TrackMetadata> fetchedForYou = _forYouTracks;
+    List<TrackMetadata> fetchedGlobal = _globalTrendingTracks;
+    List<TrackMetadata> fetchedIndo = _indonesiaTrendingTracks;
+
+    await Future.wait<void>([
+      () async {
+        try {
+          final list = await _metadataService.fetchForYouRecommendations(
+            seedArtists: seedArtists,
+            ownedIdentityKeys: ownedKeys,
+            limit: 12,
+          );
+          if (list.isNotEmpty) fetchedForYou = list;
+        } catch (e) {
+          if (MetadataService.isNetworkOfflineError(e)) {
+            offlineSectionErrors++;
+          }
+        }
+      }(),
+      () async {
+        try {
+          final list = await _metadataService.fetchGlobalTrendingTracks(
+            limit: 12,
+          );
+          if (list.isNotEmpty) fetchedGlobal = list;
+        } catch (e) {
+          if (MetadataService.isNetworkOfflineError(e)) {
+            offlineSectionErrors++;
+          }
+        }
+      }(),
+      () async {
+        try {
+          final list = await _metadataService.fetchIndonesiaTrendingTracks(
+            limit: 12,
+          );
+          if (list.isNotEmpty) fetchedIndo = list;
+        } catch (e) {
+          if (MetadataService.isNetworkOfflineError(e)) {
+            offlineSectionErrors++;
+          }
+        }
+      }(),
+    ]);
+
+    _forYouTracks = fetchedForYou;
+    _globalTrendingTracks = fetchedGlobal;
+    _indonesiaTrendingTracks = fetchedIndo;
+
+    final allCarouselTracks = <TrackMetadata>[
+      ..._forYouTracks,
+      ..._globalTrendingTracks,
+      ..._indonesiaTrendingTracks,
+    ];
+    if (allCarouselTracks.isNotEmpty) {
+      await _checkDuplicatesForTracks(allCarouselTracks);
+      _isDiscoveryOffline = false;
+    } else if (offlineSectionErrors > 0) {
+      _isDiscoveryOffline = true;
+    }
+
+    _isLoadingDiscovery = false;
+    _hasLoadedDiscovery = true;
     notifyListeners();
   }
 
@@ -631,6 +859,9 @@ class DownloaderProvider extends ChangeNotifier {
     if (isBusy) return;
 
     _errorMessage = null;
+    _isOfflineError = false;
+    _isPrivateOrUnavailableCollectionError = false;
+    _statusBannerDismissed = false;
     _savedFilePath = null;
     _trackMetadata = null;
     _currentCollection = null;
@@ -911,6 +1142,9 @@ class DownloaderProvider extends ChangeNotifier {
 
     await stopPreviewAudio();
     _errorMessage = null;
+    _isOfflineError = false;
+    _isPrivateOrUnavailableCollectionError = false;
+    _statusBannerDismissed = false;
     _savedFilePath = null;
     _trackMetadata = null;
     _currentCollection = null;
@@ -1145,6 +1379,7 @@ class DownloaderProvider extends ChangeNotifier {
         progress: 1.0,
         message: 'Selesai',
       );
+      unawaited(_cleanupNativeTempCacheFiles());
       debugPrint(
         '[AUTO_E2E] COMPLETED: status=completed (100%), file=$outputPath',
       );
@@ -1275,6 +1510,7 @@ class DownloaderProvider extends ChangeNotifier {
     } finally {
       _isProcessingQueue = false;
       notifyListeners();
+      unawaited(_cleanupNativeTempCacheFiles());
     }
   }
 
@@ -1399,6 +1635,7 @@ class DownloaderProvider extends ChangeNotifier {
     );
 
     notifyListeners();
+    unawaited(_cleanupNativeTempCacheFiles());
     return newPath;
   }
 
@@ -1478,12 +1715,22 @@ class DownloaderProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> _cleanupNativeTempCacheFiles() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _systemChannel.invokeMethod<bool>('cleanupTempCacheFiles');
+    } catch (_) {}
+  }
+
   void _setState(
     DownloaderState newState, {
     required double progress,
     required String message,
   }) {
     _state = newState;
+    if (newState != DownloaderState.error) {
+      _isOfflineError = false;
+    }
     _progress = progress.clamp(0.0, 1.0);
     _statusMessage = message;
     final pct = (_progress * 100).round();
@@ -1492,16 +1739,36 @@ class DownloaderProvider extends ChangeNotifier {
   }
 
   void _handleError(Object error, StackTrace stackTrace) {
+    _bannerAutoDismissTimer?.cancel();
+    final isOffline = MetadataService.isNetworkOfflineError(error);
+    _isOfflineError = isOffline;
+    _statusBannerDismissed = false;
+
     final cleanMsg = error
         .toString()
         .replaceFirst(RegExp(r'^Exception:\s*'), '')
         .trim();
     _state = DownloaderState.error;
-    _errorMessage = cleanMsg.isNotEmpty
-        ? cleanMsg
-        : 'Terjadi kesalahan yang tidak diketahui.';
-    _statusMessage = _errorMessage!;
-    debugPrint('[AUTO_E2E] ERROR: $_errorMessage\n$stackTrace');
+    if (isOffline) {
+      _errorMessage = AppStrings.offlineSubtitle;
+      _statusMessage = AppStrings.offlineTitle;
+    } else {
+      _errorMessage = cleanMsg.isNotEmpty
+          ? cleanMsg
+          : (AppStrings.isIndonesian
+              ? 'Terjadi kesalahan yang tidak diketahui.'
+              : 'An unknown error occurred.');
+      _statusMessage = _errorMessage!;
+    }
+    debugPrint('[AUTO_E2E] ERROR (offline=$isOffline): $_errorMessage\n$stackTrace');
     notifyListeners();
+
+    // Auto-dismiss transient bottom error banner after 5 seconds
+    _bannerAutoDismissTimer = Timer(const Duration(seconds: 5), () {
+      if (!_statusBannerDismissed && _state == DownloaderState.error) {
+        _statusBannerDismissed = true;
+        notifyListeners();
+      }
+    });
   }
 }

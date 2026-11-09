@@ -8,6 +8,7 @@ import '../models/local_playlist.dart';
 import '../models/local_song.dart';
 import '../providers/downloader_provider.dart';
 import '../providers/local_music_provider.dart';
+import '../utils/app_strings.dart';
 import 'pressable_scale.dart';
 import 'tag_editor_sheet.dart';
 
@@ -1427,6 +1428,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
   final Set<String> _selectedPlaylistIds = <String>{};
 
   void _togglePlaylistSelection(String playlistId) {
+    // Only user-created playlists (`Your playlists`) may be selected in Merge Mode!
+    if (SmartPlaylistId.isSmartId(playlistId)) return;
     setState(() {
       if (_selectedPlaylistIds.contains(playlistId)) {
         _selectedPlaylistIds.remove(playlistId);
@@ -1480,20 +1483,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
     }
   }
 
-  static String _smartPlaylistEmptyHint(String smartId) {
-    switch (smartId) {
-      case SmartPlaylistId.favorites:
-        return 'Belum ada lagu favorit. Ketuk ikon ♥ pada lagu untuk menambahkan ke Favorites.';
-      case SmartPlaylistId.recentlyPlayed:
-        return 'Belum ada riwayat lagu yang baru diputar.';
-      case SmartPlaylistId.mostPlayed:
-        return 'Belum ada statistik lagu yang sering diputar.';
-      case SmartPlaylistId.notPlayed:
-        return 'Semua lagu di perpustakaan sudah pernah diputar!';
-      default:
-        return 'Belum ada lagu di perpustakaan aktif.';
-    }
-  }
+  static String _smartPlaylistEmptyHint(String smartId) =>
+      AppStrings.smartPlaylistEmptyHint(smartId);
 
   Future<void> _promptRename(
     LocalMusicProvider provider,
@@ -1561,8 +1552,8 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
       builder: (context, localProvider, downloaderProvider, _) {
         final playlists = localProvider.playlists;
         const smartIds = SmartPlaylistId.allIds;
+        // Multi-Select / Mix Playlist ONLY applies to `Your playlists` (user-created playlists)
         final validIds = <String>{
-          ...smartIds,
           ...playlists.map((p) => p.id),
         };
         _selectedPlaylistIds.removeWhere((id) => !validIds.contains(id));
@@ -1762,212 +1753,197 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                         children: [
                           // ===================================================
                           // 1. TOP SECTION: 6 AUTO-GENERATED SMART PLAYLISTS
+                          //    (Non-selectable in Merge Mode — dimmed when
+                          //     selecting from `Your playlists`)
                           // ===================================================
-                          for (final smartId in smartIds) ...[
-                            Builder(
-                              builder: (context) {
-                                final title = SmartPlaylistId.titleFor(smartId);
-                                final icon = _smartPlaylistIcon(smartId);
-                                final songs = localProvider
-                                    .songsForSmartPlaylist(smartId);
-                                final isSelected =
-                                    _selectedPlaylistIds.contains(smartId);
+                          AnimatedOpacity(
+                            opacity: _isSelectionMode ? 0.38 : 1.0,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            child: IgnorePointer(
+                              ignoring: _isSelectionMode,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (final smartId in smartIds) ...[
+                                    Builder(
+                                      builder: (context) {
+                                        final title =
+                                            SmartPlaylistId.titleFor(smartId);
+                                        final icon =
+                                            _smartPlaylistIcon(smartId);
+                                        final songs = localProvider
+                                            .songsForSmartPlaylist(smartId);
 
-                                return _MographSelectionCard(
-                                  isSelected: isSelected,
-                                  isSelectionMode: _isSelectionMode,
-                                  child: PressableScale(
-                                    pressedScale: 0.985,
-                                    child: Material(
-                                      color: isSelected
-                                          ? _kAccent.withValues(alpha: 0.14)
-                                          : Colors.transparent,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        side: isSelected
-                                            ? BorderSide(
-                                                color: _kAccent.withValues(
-                                                  alpha: 0.75,
+                                        return PressableScale(
+                                          pressedScale: 0.985,
+                                          child: Material(
+                                            color: Colors.transparent,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            clipBehavior: Clip.antiAlias,
+                                            child: InkWell(
+                                              onTap: () {
+                                                setState(
+                                                  () => _openedPlaylistId =
+                                                      smartId,
+                                                );
+                                              },
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 11,
                                                 ),
-                                                width: 1.1,
-                                              )
-                                            : BorderSide.none,
-                                      ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: InkWell(
-                                        onTap: () {
-                                          if (_isSelectionMode) {
-                                            _togglePlaylistSelection(smartId);
-                                          } else {
-                                            setState(
-                                              () => _openedPlaylistId = smartId,
-                                            );
-                                          }
-                                        },
-                                        onLongPress: () =>
-                                            _togglePlaylistSelection(smartId),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 11,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              _MographSelectCheckbox(
-                                                isVisible: _isSelectionMode,
-                                                isSelected: isSelected,
-                                              ),
-                                              Icon(
-                                                icon,
-                                                color: Colors.white,
-                                                size: 23,
-                                              ),
-                                              const SizedBox(width: 16),
-                                              Expanded(
-                                                child: Text(
-                                                  title,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ),
-                                              Text(
-                                                '${songs.length}',
-                                                style: const TextStyle(
-                                                  color: _kMuted,
-                                                  fontSize: 12.5,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                              if (!_isSelectionMode)
-                                                PopupMenuButton<String>(
-                                                  icon: const Icon(
-                                                    Icons.more_vert_rounded,
-                                                    size: 18,
-                                                    color: _kMuted,
-                                                  ),
-                                                  color: _kSubtle,
-                                                  onSelected: (value) async {
-                                                    if (value == 'play') {
-                                                      localProvider
-                                                          .playPlaylist(
-                                                        smartId,
-                                                      );
-                                                      widget.onOpenNowPlaying();
-                                                    } else if (value ==
-                                                        'shuffle') {
-                                                      localProvider
-                                                          .playPlaylist(
-                                                        smartId,
-                                                        shuffle: true,
-                                                      );
-                                                      widget.onOpenNowPlaying();
-                                                    } else if (value ==
-                                                        'add_queue') {
-                                                      final added =
-                                                          await localProvider
-                                                              .playCombinedPlaylists(
-                                                        [smartId],
-                                                        appendToCurrentQueue:
-                                                            true,
-                                                      );
-                                                      if (context.mounted) {
-                                                        ScaffoldMessenger.of(
-                                                          context,
-                                                        ).showSnackBar(
-                                                          SnackBar(
-                                                            content: Text(
-                                                              added > 0
-                                                                  ? '$added lagu dari "$title" ditambahkan ke antrean.'
-                                                                  : 'Semua lagu dari "$title" sudah ada di antrean.',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      icon,
+                                                      color: Colors.white,
+                                                      size: 23,
+                                                    ),
+                                                    const SizedBox(width: 16),
+                                                    Expanded(
+                                                      child: Text(
+                                                        title,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontSize: 15,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      '${songs.length}',
+                                                      style: const TextStyle(
+                                                        color: _kMuted,
+                                                        fontSize: 12.5,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                    PopupMenuButton<String>(
+                                                      icon: const Icon(
+                                                        Icons.more_vert_rounded,
+                                                        size: 18,
+                                                        color: _kMuted,
+                                                      ),
+                                                      color: _kSubtle,
+                                                      onSelected:
+                                                          (value) async {
+                                                        if (value == 'play') {
+                                                          localProvider
+                                                              .playPlaylist(
+                                                            smartId,
+                                                          );
+                                                          widget
+                                                              .onOpenNowPlaying();
+                                                        } else if (value ==
+                                                            'shuffle') {
+                                                          localProvider
+                                                              .playPlaylist(
+                                                            smartId,
+                                                            shuffle: true,
+                                                          );
+                                                          widget
+                                                              .onOpenNowPlaying();
+                                                        } else if (value ==
+                                                            'add_queue') {
+                                                          final added =
+                                                              await localProvider
+                                                                  .playCombinedPlaylists(
+                                                            [smartId],
+                                                            appendToCurrentQueue:
+                                                                true,
+                                                          );
+                                                          if (context.mounted) {
+                                                            ScaffoldMessenger
+                                                                .of(
+                                                              context,
+                                                            ).showSnackBar(
+                                                              SnackBar(
+                                                                content: Text(
+                                                                  added > 0
+                                                                      ? '$added lagu dari "$title" ditambahkan ke antrean.'
+                                                                      : 'Semua lagu dari "$title" sudah ada di antrean.',
+                                                                ),
+                                                              ),
+                                                            );
+                                                          }
+                                                        }
+                                                      },
+                                                      itemBuilder: (_) =>
+                                                          const [
+                                                        PopupMenuItem(
+                                                          value: 'play',
+                                                          child: Text(
+                                                            'Putar Semua',
+                                                            style: TextStyle(
+                                                              color: _kText,
+                                                              fontSize: 13,
                                                             ),
                                                           ),
-                                                        );
-                                                      }
-                                                    } else if (value ==
-                                                        'multi_select') {
-                                                      _togglePlaylistSelection(
-                                                        smartId,
-                                                      );
-                                                    }
-                                                  },
-                                                  itemBuilder: (_) => const [
-                                                    PopupMenuItem(
-                                                      value: 'play',
-                                                      child: Text(
-                                                        'Putar Semua',
-                                                        style: TextStyle(
-                                                          color: _kText,
-                                                          fontSize: 13,
                                                         ),
-                                                      ),
-                                                    ),
-                                                    PopupMenuItem(
-                                                      value: 'shuffle',
-                                                      child: Text(
-                                                        'Acak Playlist (Shuffle)',
-                                                        style: TextStyle(
-                                                          color: _kText,
-                                                          fontSize: 13,
+                                                        PopupMenuItem(
+                                                          value: 'shuffle',
+                                                          child: Text(
+                                                            'Acak Playlist (Shuffle)',
+                                                            style: TextStyle(
+                                                              color: _kText,
+                                                              fontSize: 13,
+                                                            ),
+                                                          ),
                                                         ),
-                                                      ),
-                                                    ),
-                                                    PopupMenuItem(
-                                                      value: 'add_queue',
-                                                      child: Text(
-                                                        'Tambahkan ke Antrean Saat Ini (+ Queue)',
-                                                        style: TextStyle(
-                                                          color: _kText,
-                                                          fontSize: 13,
+                                                        PopupMenuItem(
+                                                          value: 'add_queue',
+                                                          child: Text(
+                                                            'Tambahkan ke Antrean Saat Ini (+ Queue)',
+                                                            style: TextStyle(
+                                                              color: _kText,
+                                                              fontSize: 13,
+                                                            ),
+                                                          ),
                                                         ),
-                                                      ),
-                                                    ),
-                                                    PopupMenuItem(
-                                                      value: 'multi_select',
-                                                      child: Text(
-                                                        'Pilih untuk Digabung (Multi-Playlist)',
-                                                        style: TextStyle(
-                                                          color: _kAccent,
-                                                          fontSize: 13,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
+                                                      ],
                                                     ),
                                                   ],
                                                 ),
-                                            ],
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                        );
+                                      },
+                                    ),
+                                    Divider(
+                                      height: 1,
+                                      color: Colors.white.withValues(
+                                        alpha: 0.05,
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
+                                  ],
+                                ],
+                              ),
                             ),
-                            Divider(
-                              height: 1,
-                              color: Colors.white.withValues(alpha: 0.05),
-                            ),
-                          ],
+                          ),
 
                           // ===================================================
                           // 2. BOTTOM SECTION: "Your playlists" + "+ New Playlist"
                           // ===================================================
                           const SizedBox(height: 14),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 6,
                               vertical: 4,
                             ),
                             child: Text(
-                              'Your playlists',
-                              style: TextStyle(
+                              AppStrings.yourPlaylists,
+                              style: const TextStyle(
                                 color: musicoletGreen,
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
@@ -2000,23 +1976,23 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                       await localProvider.createPlaylist(name);
                                     }
                                   },
-                                  child: const Padding(
-                                    padding: EdgeInsets.symmetric(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
                                       horizontal: 14,
                                       vertical: 9,
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(
+                                        const Icon(
                                           Icons.add_rounded,
                                           color: musicoletGreen,
                                           size: 20,
                                         ),
-                                        SizedBox(width: 8),
+                                        const SizedBox(width: 8),
                                         Text(
-                                          'New Playlist',
-                                          style: TextStyle(
+                                          AppStrings.newPlaylist,
+                                          style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w600,
@@ -2038,7 +2014,7 @@ class _LocalPlaylistsViewState extends State<LocalPlaylistsView> {
                                 vertical: 14,
                               ),
                               child: Text(
-                                'Belum ada playlist buatanmu. Ketuk "+ New Playlist" atau unduh Album/Playlist Spotify agar dibuat otomatis.',
+                                AppStrings.noUserPlaylistsHint,
                                 style: TextStyle(
                                   color: _kMuted.withValues(alpha: 0.85),
                                   fontSize: 12.5,

@@ -90,30 +90,31 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare Named APK (`MusEvee-v4.5-arm64.apk`)
+      - name: Prepare Named APK (`MusEvee-v4.6-arm64.apk`)
         run: |
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.5-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.6-arm64.apk
 
       - name: Upload MusEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusEvee-v4.5-arm64-APK
-          path: MusEvee-v4.5-arm64.apk
+          name: MusEvee-v4.6-arm64-APK
+          path: MusEvee-v4.6-arm64.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release (`v4.5.0`)
+      - name: Publish GitHub Release (`v4.6.0`)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.5.0
-          name: "MusEvee v4.5 (Rotated Context Queue + 6 Musicolet Smart Playlists + SingleTask Recent Apps + Interactive Folder Explorer)"
+          tag_name: v4.6.0
+          name: "MusEvee v4.6 (Your Playlists Mix + 3 Discovery Carousels + Offline & Auto-Locale + <5MB Data Footprint)"
           body: |
-            ### MusEvee v4.5 — Release APK (Android ARM64 ~20 MB)
-            - **Context-Aware & Rotated Queue (`index 0` / `#1`):** Memilih lagu dari **Folder**, **Playlist**, atau **Search Lokal** otomatis mengganti antrean sesuai konteks asal dan merotasi daftar sehingga lagu terpilih berada di urutan `#1` (`index 0`), diikuti lagu-lagu setelahnya, dan lagu-lagu yang tadinya di atas dipindahkan ke bagian paling bawah antrean.
-            - **Perombakan Halaman `Playlists` ala Musicolet (6 Smart Playlists + `Your playlists`):** Menampilkan 6 Auto-Playlist dinamis di bagian atas (`All songs`, `Favorites`, `Recently added`, `Recently played`, `Most played`, `Not played`) dengan pelacakan statistik putar persisten (`musevee_play_stats_v1.json`), diikuti sub-header hijau **`Your playlists`** dan tombol **`+ New Playlist`**.
-            - **Fix Duplikasi Aplikasi di Android Recent Apps (`singleTask`):** Mengubah `android:launchMode="singleTask"` pada `MainActivity` dan menghapus `taskAffinity=""` sehingga berbagi tautan (Share Intent), ketukan notifikasi media, maupun Live Island selalu diarahkan ke satu instance tunggal `MusEvee`.
-            - **UI Downloader Lebih Informatif & Interactive Folder Explorer pada Tombol `+`:** Memperpendek `hintText` Omnibox menjadi `"Cari lagu atau tempel link..."`, menambahkan 3 badge kemampuan (`Judul / Artis (Romaji J-Pop)`, `Link YouTube / YT Music`, `Link Spotify (Track, Album & Playlist)`), serta membuka **Interactive Folder Picker / Storage Explorer** saat tombol `+` di **"Simpan ke:"** diketuk.
-          files: MusEvee-v4.5-arm64.apk
+            ### MusEvee v4.6 — Release APK (Android ARM64 ~20 MB)
+            - **Pembatasan Fitur Multi-Select / Mix Playlist HANYA untuk `Your playlists`:** Keenam baris *Smart Playlists* (`All songs`, `Favorites`, `Recently added`, `Recently played`, `Most played`, `Not played`) di bagian atas tidak dapat dicentang dan meredup (`opacity: 0.38`) saat mode Gabung aktif agar pengguna fokus memilih item di dalam `Your playlists`.
+            - **3 Horizontal Carousels Bersampul Kecil di Tab Downloader:** Mengganti *Pencarian Cepat* lama dengan 3 baris *Horizontal Carousel* bergambar sampul kompak (`~100x100 px`, *in-memory RAM cache* `0 KB` di disk): **`For You` / `Untukmu`** (disampling dari artis favorit di perpustakaan lokal yang belum dimiliki), **`Global Trending`**, dan **`Indonesia Trending`**.
+            - **Deteksi Offline Akurat & Error Banner yang Bisa Ditutup (`✕`):** Memisahkan *network/offline error* (`NetworkOfflineException`) dari *"Tidak ditemukan lagu"* dengan tampilan kartu **Offline + Tombol Segarkan / Coba Lagi**, serta menambahkan tombol tutup (`✕`) & *auto-dismiss* 5 detik pada setiap banner peringatan.
+            - **Lokalisasi Otomatis Sesuai Bahasa Sistem HP (Indonesia vs English):** Mendeteksi bahasa sistem perangkat secara otomatis (`id`/`in` -> **Bahasa Indonesia**, selain itu -> **English**).
+            - **Optimasi Drastis Ukuran Data Pengguna (`< 5 MB` ala Musicolet):** Mengompresi thumbnail sampul di `filesDir/covers` ke maksimal `256x256 px` JPEG (`quality: 78`, `~8–15 KB` per file) beserta migrasi kompresi otomatis saat startup, memuat sampul resolusi penuh & teks `USLT` secara *on-demand* di RAM tanpa menyimpannya mentah di JSON cache, dan membersihkan file sementara (`.tmp`/FFmpeg) secara otomatis.
+          files: MusEvee-v4.6-arm64.apk
           draft: false
           prerelease: false
           make_latest: "true"

@@ -14,6 +14,7 @@ import '../services/folder_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/romaji_service.dart';
 import '../services/tagging_service.dart';
+import '../utils/app_strings.dart';
 
 /// Musicolet's playback loop / advance modes:
 /// - `repeatAll`: Repeat entire queue (`🔁`)
@@ -91,24 +92,7 @@ class SmartPlaylistId {
 
   static bool isSmartId(String id) => allIds.contains(id);
 
-  static String titleFor(String id) {
-    switch (id) {
-      case allSongs:
-        return 'All songs';
-      case favorites:
-        return 'Favorites';
-      case recentlyAdded:
-        return 'Recently added';
-      case recentlyPlayed:
-        return 'Recently played';
-      case mostPlayed:
-        return 'Most played';
-      case notPlayed:
-        return 'Not played';
-      default:
-        return id;
-    }
-  }
+  static String titleFor(String id) => AppStrings.smartPlaylistTitle(id);
 }
 
 /// Persistent play count & last-played timestamp for a local audio track
@@ -272,6 +256,8 @@ class LocalMusicProvider extends ChangeNotifier {
   List<LyricsCandidate> _localLyricsCandidates = const [];
   bool _isLoadingLyricsCandidates = false;
   bool _isProcessingLocalTag = false;
+  Uint8List? _currentFullCoverBytes;
+  String? _currentFullCoverSongPath;
 
   // Local Search Query
   String _localSearchQuery = '';
@@ -327,6 +313,11 @@ class LocalMusicProvider extends ChangeNotifier {
       List.unmodifiable(_localLyricsCandidates);
   bool get isLoadingLyricsCandidates => _isLoadingLyricsCandidates;
   bool get isProcessingLocalTag => _isProcessingLocalTag;
+  Uint8List? get currentFullCoverBytes =>
+      (_currentFullCoverSongPath != null &&
+              _currentFullCoverSongPath == currentSong?.filePath)
+          ? _currentFullCoverBytes
+          : null;
 
   String get localSearchQuery => _localSearchQuery;
   bool get filterFavoritesOnly => _filterFavoritesOnly;
@@ -1503,8 +1494,8 @@ class LocalMusicProvider extends ChangeNotifier {
     );
   }
 
-  /// Merges songs across multiple playlists ([playlistIds], supporting both
-  /// Smart Playlists and User Playlists), deduplicates by `filePath`,
+  /// Merges songs across multiple user playlists ([playlistIds], restricted to
+  /// `Your playlists` when combining multiple playlists), deduplicates by `filePath`,
   /// and either replaces the active Queue (with optional Fisher-Yates True Shuffle Mix
   /// across all combined tracks) or appends to the end of the current Queue.
   /// Returns the number of unique songs loaded/appended.
@@ -1515,12 +1506,17 @@ class LocalMusicProvider extends ChangeNotifier {
   }) async {
     if (playlistIds.isEmpty) return 0;
 
+    final allowSingleSmartAppend =
+        playlistIds.length == 1 && appendToCurrentQueue;
     final seenPaths = <String>{};
     final combined = <LocalSong>[];
 
     for (final rawId in playlistIds) {
       final id = rawId.trim();
       if (id.isEmpty) continue;
+      if (SmartPlaylistId.isSmartId(id) && !allowSingleSmartAppend) {
+        continue;
+      }
       final songs = songsForPlaylistId(id);
       for (final song in songs) {
         if (seenPaths.add(song.filePath)) {
@@ -1581,12 +1577,101 @@ class LocalMusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Loads embedded `USLT` lyrics on-demand from the physical MP3 file if
+  /// `musevee_library_cache_v1.json` omitted the full text string (`hasLyrics == true`
+  /// while `usltLyrics` is empty).
+  Future<LocalSong> ensureSongLyricsLoaded(LocalSong song) async {
+    if ((song.usltLyrics != null && song.usltLyrics!.trim().isNotEmpty) ||
+        !_shouldInvokeNativeChannel) {
+      return song;
+    }
+    try {
+      final map = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'readLocalTrackDetails',
+        {'path': song.filePath},
+      );
+      if (map != null) {
+        final refreshed = LocalSong.fromNativeMap(map);
+        if (refreshed.filePath.isNotEmpty) {
+          _replaceSongInMemoryCaches(refreshed);
+          return refreshed;
+        }
+      }
+    } catch (_) {}
+    return song;
+  }
+
+  void _replaceSongInMemoryCaches(LocalSong refreshed) {
+    final discIdx = _discoveredSongs.indexWhere(
+      (s) => s.filePath == refreshed.filePath,
+    );
+    if (discIdx != -1) {
+      _discoveredSongs[discIdx] = refreshed;
+    }
+    final allIdx = _allSongs.indexWhere(
+      (s) => s.filePath == refreshed.filePath,
+    );
+    if (allIdx != -1) {
+      _allSongs[allIdx] = refreshed;
+    }
+    for (int i = 0; i < _queueEntries.length; i++) {
+      if (_queueEntries[i].song.filePath == refreshed.filePath) {
+        _queueEntries[i] = _queueEntries[i].copyWith(song: refreshed);
+      }
+    }
+    for (int i = 0; i < _originalQueueEntries.length; i++) {
+      if (_originalQueueEntries[i].song.filePath == refreshed.filePath) {
+        _originalQueueEntries[i] = _originalQueueEntries[i].copyWith(
+          song: refreshed,
+        );
+      }
+    }
+    _invalidateGroupingCaches();
+  }
+
+  Future<void> _loadCurrentSongDetailsAndCoverOnDemand(
+    LocalSong song,
+    int sessionId,
+  ) async {
+    if (!_shouldInvokeNativeChannel) return;
+    try {
+      if (song.hasLyrics &&
+          (song.usltLyrics == null || song.usltLyrics!.trim().isEmpty)) {
+        final refreshed = await ensureSongLyricsLoaded(song);
+        if (sessionId == _playbackSessionId &&
+            currentSong?.filePath == refreshed.filePath) {
+          if (refreshed.hasSyncedLyrics) {
+            _lyricsDisplayMode = EmbeddedLyricsDisplayMode.synced;
+          }
+          _syncProgressNotifiers();
+          notifyListeners();
+        }
+      }
+      final rawBytes = await _systemChannel.invokeMethod<Uint8List>(
+        'readEmbeddedCoverBytes',
+        {'path': song.filePath},
+      );
+      if (sessionId == _playbackSessionId &&
+          currentSong?.filePath == song.filePath) {
+        _currentFullCoverBytes =
+            (rawBytes != null && rawBytes.isNotEmpty) ? rawBytes : null;
+        _currentFullCoverSongPath = song.filePath;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
   Future<void> _startCurrentQueueTrack({int startPositionMs = 0}) async {
     final song = currentSong;
     if (song == null) return;
 
     if (startPositionMs == 0) {
       _recordTrackPlayed(song.filePath);
+    }
+
+    if (_currentFullCoverSongPath != song.filePath) {
+      _currentFullCoverBytes = null;
+      _currentFullCoverSongPath = null;
     }
 
     final sessionId = ++_playbackSessionId;
@@ -1605,6 +1690,7 @@ class LocalMusicProvider extends ChangeNotifier {
     _savePlayerSession();
 
     if (!_shouldInvokeNativeChannel) return;
+    _loadCurrentSongDetailsAndCoverOnDemand(song, sessionId);
     try {
       await _systemChannel.invokeMethod<bool>(
         'setVolume',
@@ -2081,13 +2167,15 @@ class LocalMusicProvider extends ChangeNotifier {
         shouldClearSynced = true;
       }
 
-      final baseMeta = song.toTrackMetadata();
+      final hydratedSong = await ensureSongLyricsLoaded(song);
+      final baseMeta = hydratedSong.toTrackMetadata();
       final updatedMeta = baseMeta.copyWith(
-        title: title.trim().isNotEmpty ? title.trim() : song.title,
-        artist: artist.trim().isNotEmpty ? artist.trim() : song.artist,
-        album: album.trim().isNotEmpty ? album.trim() : song.album,
-        releaseYear:
-            releaseYear.trim().isNotEmpty ? releaseYear.trim() : song.year,
+        title: title.trim().isNotEmpty ? title.trim() : hydratedSong.title,
+        artist: artist.trim().isNotEmpty ? artist.trim() : hydratedSong.artist,
+        album: album.trim().isNotEmpty ? album.trim() : hydratedSong.album,
+        releaseYear: releaseYear.trim().isNotEmpty
+            ? releaseYear.trim()
+            : hydratedSong.year,
         syncedLyrics: resolvedSyncedLyrics,
         plainLyrics: resolvedPlainLyrics,
         clearSyncedLyrics: shouldClearSynced,
@@ -2160,7 +2248,8 @@ class LocalMusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      var meta = song.toTrackMetadata();
+      final hydratedSong = await ensureSongLyricsLoaded(song);
+      var meta = hydratedSong.toTrackMetadata();
       if (includeMetadata && RomajiService.trackHasJapanese(meta)) {
         meta = await _romajiService.romanizeTrackInfo(meta);
       }

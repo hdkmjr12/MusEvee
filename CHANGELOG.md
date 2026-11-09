@@ -6,6 +6,33 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.6] — 2026-04-12 (Pembatasan Mix Playlist HANYA untuk `Your playlists`, 3 Horizontal Carousels Bersampul Kecil di Tab Downloader, Deteksi Offline Akurat & Error Banner yang Bisa Ditutup `✕`, Lokalisasi Otomatis Sistem `id`/`en`, & Optimasi Ukuran Data Pengguna `< 5 MB`)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Pembatasan Fitur Multi-Select / Mix Playlist HANYA untuk `Your playlists` (`lib/widgets/local_library_views.dart`, `lib/providers/local_music_provider.dart`, `test/widget_test.dart`):**
+  - Membatasi fitur **Gabung / Mix Playlist** (melalui tombol mengambang `_MorphingMergeActionBar`, *long-press*, maupun menu konteks) agar **HANYA berlaku untuk daftar `Your playlists` (playlist buatan pengguna)**.
+  - Menghapus *checkbox* (`_MographSelectCheckbox`), *long-press selection*, dan opsi menu `'multi_select'` pada keenam baris *Smart Playlists* (`All songs`, `Favorites`, `Recently added`, `Recently played`, `Most played`, `Not played`), serta memberikan reduksi opasitas (`opacity: 0.38`) pada seksi Smart Playlists saat mode Gabung aktif agar pengguna fokus memilih item di dalam `Your playlists`.
+- **Ganti Pencarian Cepat dengan 3 Baris Horizontal Carousel Bersampul Kecil di Tab Downloader (`lib/screens/home_screen.dart`, `lib/providers/downloader_provider.dart`, `lib/services/metadata_service.dart`):**
+  - Mengganti kotak *Pencarian Cepat* (`_sampleSearches`) dengan **3 Baris Horizontal Carousel** yang menampilkan kartu lagu bersampul kecil (`~100x100 px`, `cacheWidth: 140, cacheHeight: 140`, disimpan hanya di *in-memory RAM cache* selama sesi aktif sehingga menambah `0 KB` pada *User Data* permanen):
+    1. **`For You` / `Untukmu` (`fetchForYouRecommendations`):** Mengambil sampel 3–4 artis teratas dari lagu yang paling sering diputar (`Most played`) atau baru ditambahkan (`Recently added`) di `LocalMusicProvider`, mencari lagu populer lain dari artis-artis tersebut melalui API katalog yang **belum dimiliki** pengguna di folder lokal, serta menampilkan fallback kurasi jika perpustakaan lokal masih kosong.
+    2. **`Global Trending` (`fetchGlobalTrendingTracks`):** Menampilkan deretan lagu yang sedang trending secara global (via Deezer Chart API / iTunes Global RSS).
+    3. **`Indonesia Trending` (`fetchIndonesiaTrendingTracks`):** Menampilkan deretan lagu yang sedang trending di Indonesia (via iTunes Indonesia RSS `country=id` / katalog iTunes ID).
+  - Mengetuk kartu lagu pada carousel langsung membuka `TrackPreviewSheet` untuk *preview* 30 detik atau pengunduhan.
+- **Deteksi Offline Akurat & Error Banner yang Bisa Ditutup (`lib/services/metadata_service.dart`, `lib/providers/downloader_provider.dart`, `lib/screens/home_screen.dart`):**
+  - Memisahkan kegagalan jaringan (`SocketException`, `TimeoutException`, `DioException` connection error / kegagalan DNS) dari hasil kosong (`[]`) menggunakan `NetworkOfflineException` dan `isOfflineError`, sehingga pengguna tidak pernah lagi melihat pesan palsu `"Tidak ditemukan lagu..."` saat perangkat tidak terhubung ke internet.
+  - Menampilkan kartu khusus **Offline State** (`Icons.wifi_off_rounded`) lengkap dengan tombol **Segarkan / Coba Lagi (`Refresh / Retry`)**.
+  - Menambahkan tombol tutup (`✕`, `dismiss_status_banner_button`), *auto-dismiss* otomatis setelah 5 detik, dan pembersihan otomatis saat pengguna mulai mengetik kueri baru (`clearTransientErrorOnTyping()`).
+- **Lokalisasi Otomatis Sesuai Bahasa Sistem HP (Indonesia vs English) (`lib/utils/app_strings.dart`, `lib/widgets/musicolet_bottom_strip.dart`, `lib/widgets/local_library_views.dart`, `lib/screens/home_screen.dart`):**
+  - Mendeteksi bahasa sistem perangkat secara otomatis (`PlatformDispatcher.instance.locale.languageCode`): jika `id` atau `in`, antarmuka ditampilkan dalam **Bahasa Indonesia**; jika bahasa lain, seluruh antarmuka utama otomatis ditampilkan dalam **Bahasa Inggris (`en`)**.
+- **Optimasi Drastis Ukuran Data Pengguna (`< 5 MB` ala Musicolet) (`android/app/src/main/kotlin/com/example/spotmeta_downloader/MainActivity.kt`, `lib/models/local_song.dart`, `lib/providers/local_music_provider.dart`, `lib/widgets/now_playing_view.dart`):**
+  - **Kompresi Thumbnail Sampul (`filesDir/covers`) & Migrasi Startup:** Mengecilkan resolusi thumbnail sampul di `filesDir/covers` menjadi maksimal **`256x256 px` JPEG (`quality: 78`, `~8–15 KB` per file)** menggunakan `compressCoverToThumbnailBytes`, dilengkapi migrasi otomatis saat aplikasi dibuka (`migrateAndCleanupStorageFootprint`) yang mengompresi ulang file sampul lama berukuran `> 36 KB`.
+  - **On-Demand Full-Res Cover & On-Demand `USLT` Lyrics:** Membaca sampul `APIC` resolusi penuh secara *on-demand* di memori (`readEmbeddedCoverBytes` -> `currentFullCoverBytes`) untuk `NowPlayingView` dan menghapus penyimpanan teks mentah `usltLyrics` dari `musevee_library_cache_v1.json` (hanya menyimpan boolean `hasLyrics` & `hasSyncedLyrics`), lalu memuat teks lirik secara *on-demand* (`ensureSongLyricsLoaded`) saat lagu diputar atau diedit.
+  - **Auto-Cleanup Temp & FFmpeg Cache:** Membersihkan sisa file sementara (`.tmp`, artefak unduhan/FFmpeg) di `cacheDir` dan `filesDir` saat startup maupun setiap kali proses unduh/retag selesai (`cleanupTempCacheFiles`).
+- **Bump Versi & Pembaruan CI/CD (`pubspec.yaml`, `.github/workflows/build_apk.yml`):**
+  - Menaikkan versi aplikasi ke `4.6.0+11` dan memperbarui artefak serta GitHub Release otomatis menjadi `MusEvee-v4.6-arm64.apk` (`v4.6.0`).
+
+---
+
 ## [v4.5] — 2026-04-20 (Context-Aware & Rotated Queue `#1`, Perombakan Halaman `Playlists` ala Musicolet dengan 6 Smart Playlists + `Your playlists`, Fix Duplikasi Aplikasi di Recent Apps `singleTask`, & Interactive Folder Explorer pada Downloader)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)
