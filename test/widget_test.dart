@@ -1291,16 +1291,17 @@ void main() {
     );
     expect(slideTransformEnd.transform.getTranslation().y, closeTo(0.0, 0.01));
 
-    // Section E: Tapping a lyric line on Home NEVER invokes seekTo; it navigates to the Lyrics panel (p -> 0.0)
+    // Section E: Tapping a lyric line on Home NEVER invokes seekTo; it opens the Full Lyrics Sheet while staying on Home (p == 1.0)
     final posBeforeHomeTap = localProvider.positionMs;
     await tester.tap(find.byKey(const ValueKey<String>('lyric_line_next')));
     await tester.pumpAndSettle();
     expect(localProvider.positionMs, posBeforeHomeTap);
+    expect(find.byType(BottomSheet), findsOneWidget);
     final nowPlayingStateForHomeTap = tester.state<NowPlayingViewState>(
       find.byType(NowPlayingView),
     );
-    expect(nowPlayingStateForHomeTap.currentPanelProgress, closeTo(0.0, 1e-4));
-    nowPlayingStateForHomeTap.debugSetPanelProgress(1.0);
+    expect(nowPlayingStateForHomeTap.currentPanelProgress, closeTo(1.0, 1e-4));
+    Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
     await tester.pumpAndSettle();
 
     // Open `...` menu and execute items across all 3 groups:
@@ -4283,12 +4284,22 @@ void main() {
       expect(introLine1TopY, lessThan(introLine2TopY));
 
       // =======================================================================
-      // (e.1) Home tap never seeks in Intro Stack state
+      // (e.1) Home tap & long-press in Intro Stack state open the Full Lyrics Sheet and never seek
       // =======================================================================
       await tester.tap(line0Finder);
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(localProvider.positionMs, 3000);
-      state.debugSetPanelProgress(1.0);
+      expect(state.currentPanelProgress, closeTo(1.0, 1e-4));
+      expect(find.byType(BottomSheet), findsOneWidget);
+      Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
+      await tester.pumpAndSettle();
+
+      await tester.longPress(line1Finder);
+      await tester.pumpAndSettle();
+      expect(localProvider.positionMs, 3000);
+      expect(state.currentPanelProgress, closeTo(1.0, 1e-4));
+      expect(find.byType(BottomSheet), findsOneWidget);
+      Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
       await tester.pumpAndSettle();
 
       // =======================================================================
@@ -4372,7 +4383,7 @@ void main() {
       );
 
       // =======================================================================
-      // (e.2) Home tap never seeks in normal active state (tapping all 3 slots)
+      // (e.2) Home tap in normal active state (tapping all 3 slots) opens Full Lyrics Sheet and never seeks
       // =======================================================================
       localProvider.handleNativePosition(
         positionMs: 16000,
@@ -4391,9 +4402,11 @@ void main() {
         find.byKey(const ValueKey<String>('lyric_line_next')),
       ]) {
         await tester.tap(slotText);
-        await tester.pump();
+        await tester.pumpAndSettle();
         expect(localProvider.positionMs, 16000);
-        state.debugSetPanelProgress(1.0);
+        expect(state.currentPanelProgress, closeTo(1.0, 1e-4));
+        expect(find.byType(BottomSheet), findsOneWidget);
+        Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
         await tester.pumpAndSettle();
       }
 
@@ -4713,10 +4726,14 @@ void main() {
         expect(txt.style!.color, palette.nowPlayingSecondary);
       }
 
-      // (e.3) Tapping plain-text Home column never seeks
+      // (e.3) Tapping plain-text Home column opens Full Lyrics Sheet and never seeks
       await tester.tap(plain1);
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(localProvider.positionMs, 45000);
+      expect(state.currentPanelProgress, closeTo(1.0, 1e-4));
+      expect(find.byType(BottomSheet), findsOneWidget);
+      Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
+      await tester.pumpAndSettle();
 
       // Lyrics panel (p = 0.0): uniform styling (14.5pt, height 1.2) and NO idle auto-return timer
       state.debugSetPanelProgress(0.0);

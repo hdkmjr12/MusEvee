@@ -6,6 +6,15 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.8 — Home Lyric Column: Tap and Long-Press Both Open the Full Lyrics Sheet] — 2026-11-11 (Ketuk (`onTap`) dan Tekan Lama (`onLongPress`) pada Kolom Lirik `Home` Sama-sama Membuka `Full Lyrics Sheet`)
+
+### Diubah (Changed)
+- **Ketuk (`onTap`) dan Tekan Lama (`onLongPress`) pada Kolom Lirik `Home` (`p = 1.0`) Sama-sama Membuka `Full Lyrics Sheet` (`lib/widgets/now_playing_view.dart`, `test/widget_test.dart`):**
+  - Mengubah seluruh 12 handler `onTap` di dalam `_buildLeftLyricsColumn` (3 `GestureDetector` kolom luar + 9 `GestureDetector` per slot pada jalur *Intro Stack* `effectiveIdx == -1`, jalur *Settled 3-Line*, dan jalur *Plain-Text Lyrics*) agar memanggil `_showFullLyricsSheet(context: context, localProvider: localProvider, song: song)` — seragam dengan perilaku `onLongPress` yang sudah ada.
+  - Panel panggung `Lyrics` (`p = 0.0`) dicapai dari `Home` melalui geseran horizontal (maupun titik indikator pager), dan baik ketukan maupun tekan lama pada kolom lirik `Home` tetap **tidak pernah** mengubah posisi pemutaran (`seekTo`).
+
+---
+
 ## [v4.8 — Lyrics Panel Line Change Travels Upward with Locked Typography (`300 ms`, `Curves.easeOutCubic`)] — 2026-11-11 (Pergantian Baris pada Panel `Lyrics` (`p = 0.0`) Meluncur Naik Satu Langkah (`300 ms`) dengan Tipografi Terkunci Tanpa Interpolasi Ukuran Font dan Tanpa *Rewrap* di Tengah Transisi)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)

@@ -6095,8 +6095,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                     height: zoneHeight,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => animateToPagerPanel(
-                        NowPlayingView.lyricsPanelIndex,
+                      onTap: () => _showFullLyricsSheet(
+                        context: context,
+                        localProvider: localProvider,
+                        song: song,
                       ),
                       onLongPress: () => _showFullLyricsSheet(
                         context: context,
@@ -6130,8 +6132,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     height: slotH0,
                                     child: GestureDetector(
                                       behavior: HitTestBehavior.opaque,
-                                      onTap: () => animateToPagerPanel(
-                                        NowPlayingView.lyricsPanelIndex,
+                                      onTap: () => _showFullLyricsSheet(
+                                        context: context,
+                                        localProvider: localProvider,
+                                        song: song,
                                       ),
                                       child: Opacity(
                                         opacity: snap0.opacity.clamp(0.0, 1.0),
@@ -6170,8 +6174,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     height: slotH1,
                                     child: GestureDetector(
                                       behavior: HitTestBehavior.opaque,
-                                      onTap: () => animateToPagerPanel(
-                                        NowPlayingView.lyricsPanelIndex,
+                                      onTap: () => _showFullLyricsSheet(
+                                        context: context,
+                                        localProvider: localProvider,
+                                        song: song,
                                       ),
                                       child: Opacity(
                                         opacity: op1.clamp(0.0, 1.0),
@@ -6214,8 +6220,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     height: slotH2,
                                     child: GestureDetector(
                                       behavior: HitTestBehavior.opaque,
-                                      onTap: () => animateToPagerPanel(
-                                        NowPlayingView.lyricsPanelIndex,
+                                      onTap: () => _showFullLyricsSheet(
+                                        context: context,
+                                        localProvider: localProvider,
+                                        song: song,
                                       ),
                                       child: Opacity(
                                         opacity: op2.clamp(0.0, 1.0),
@@ -6509,8 +6517,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                   height: zoneHeight,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => animateToPagerPanel(
-                      NowPlayingView.lyricsPanelIndex,
+                    onTap: () => _showFullLyricsSheet(
+                      context: context,
+                      localProvider: localProvider,
+                      song: song,
                     ),
                     onLongPress: () => _showFullLyricsSheet(
                       context: context,
@@ -6623,8 +6633,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                       height: prevSlotH,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () => animateToPagerPanel(
-                                          NowPlayingView.lyricsPanelIndex,
+                                        onTap: () => _showFullLyricsSheet(
+                                          context: context,
+                                          localProvider: localProvider,
+                                          song: song,
                                         ),
                                         child: SizedBox(
                                           key: const ValueKey<String>(
@@ -6665,8 +6677,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                       height: centerSlotH,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () => animateToPagerPanel(
-                                          NowPlayingView.lyricsPanelIndex,
+                                        onTap: () => _showFullLyricsSheet(
+                                          context: context,
+                                          localProvider: localProvider,
+                                          song: song,
                                         ),
                                         child: Opacity(
                                           opacity: activeOpacity,
@@ -6712,8 +6726,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                       height: nextSlotH,
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.opaque,
-                                        onTap: () => animateToPagerPanel(
-                                          NowPlayingView.lyricsPanelIndex,
+                                        onTap: () => _showFullLyricsSheet(
+                                          context: context,
+                                          localProvider: localProvider,
+                                          song: song,
                                         ),
                                         child: Opacity(
                                           opacity: nextOpacity,
@@ -6821,8 +6837,10 @@ class NowPlayingViewState extends State<NowPlayingView>
               height: zoneHeight,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => animateToPagerPanel(
-                  NowPlayingView.lyricsPanelIndex,
+                onTap: () => _showFullLyricsSheet(
+                  context: context,
+                  localProvider: localProvider,
+                  song: song,
                 ),
                 onLongPress: () => _showFullLyricsSheet(
                   context: context,
@@ -6847,8 +6865,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                           height: h0,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => animateToPagerPanel(
-                              NowPlayingView.lyricsPanelIndex,
+                            onTap: () => _showFullLyricsSheet(
+                              context: context,
+                              localProvider: localProvider,
+                              song: song,
                             ),
                             child: Opacity(
                               opacity: MusEveePalette.homeIntroLine0Opacity,
@@ -6881,8 +6901,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                           height: h1,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => animateToPagerPanel(
-                              NowPlayingView.lyricsPanelIndex,
+                            onTap: () => _showFullLyricsSheet(
+                              context: context,
+                              localProvider: localProvider,
+                              song: song,
                             ),
                             child: Opacity(
                               opacity: MusEveePalette.homeIntroLine1Opacity,
@@ -6915,8 +6937,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                           height: h2,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => animateToPagerPanel(
-                              NowPlayingView.lyricsPanelIndex,
+                            onTap: () => _showFullLyricsSheet(
+                              context: context,
+                              localProvider: localProvider,
+                              song: song,
                             ),
                             child: Opacity(
                               opacity: MusEveePalette.homeIntroLine2Opacity,
