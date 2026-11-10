@@ -151,6 +151,7 @@ class _MusEveeAppState extends State<MusEveeApp> {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: 'Poppins',
       scaffoldBackgroundColor: p.bgCanvas,
       extensions: const <ThemeExtension<dynamic>>[MusEveePalette.dark],
       colorScheme: ColorScheme.dark(
@@ -282,6 +283,7 @@ class _MusEveeAppState extends State<MusEveeApp> {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: 'Poppins',
       scaffoldBackgroundColor: p.bgCanvas,
       extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
       colorScheme: ColorScheme.light(

@@ -117,6 +117,43 @@ class TrackPlayStat {
       );
 }
 
+/// Cached document-level lyrics transformation for a single [LocalSong]
+/// storing both the original (e.g., Kanji/Kana) document and its converted
+/// Romaji document so toggling conversion on/off is instantaneous and converts
+/// the entire lyric list once per toggle/load (never lazily per line per frame).
+class _SongLyricsDocumentCache {
+  final String filePath;
+  final String originalUslt;
+  final String originalTitle;
+  final String originalArtist;
+  final String originalAlbum;
+  final List<SyncedLyricEntry> originalSyncedEntries;
+  final List<String> originalPlainLines;
+
+  final String romanizedUslt;
+  final String romanizedTitle;
+  final String romanizedArtist;
+  final String romanizedAlbum;
+  final List<SyncedLyricEntry> romanizedSyncedEntries;
+  final List<String> romanizedPlainLines;
+
+  const _SongLyricsDocumentCache({
+    required this.filePath,
+    required this.originalUslt,
+    required this.originalTitle,
+    required this.originalArtist,
+    required this.originalAlbum,
+    required this.originalSyncedEntries,
+    required this.originalPlainLines,
+    required this.romanizedUslt,
+    required this.romanizedTitle,
+    required this.romanizedArtist,
+    required this.romanizedAlbum,
+    required this.romanizedSyncedEntries,
+    required this.romanizedPlainLines,
+  });
+}
+
 class LocalMusicProvider extends ChangeNotifier {
   static const MethodChannel _systemChannel = MethodChannel(
     'com.spotmeta.downloader/system',
@@ -262,6 +299,12 @@ class LocalMusicProvider extends ChangeNotifier {
   bool _isProcessingLocalTag = false;
   Uint8List? _currentFullCoverBytes;
   String? _currentFullCoverSongPath;
+
+  // Document-level Romaji conversion state & per-song document cache
+  final Set<String> _romajiEnabledPaths = <String>{};
+  final Map<String, _SongLyricsDocumentCache> _lyricsDocumentCacheByPath =
+      <String, _SongLyricsDocumentCache>{};
+  final Map<String, int> _romajiGenerationByPath = <String, int>{};
 
   // Local Search Query
   String _localSearchQuery = '';
@@ -736,11 +779,76 @@ class LocalMusicProvider extends ChangeNotifier {
     }).toList();
   }
 
+  /// Whether document-level Romaji mode is currently active for [filePath].
+  bool isRomajiEnabledForSong(String filePath) =>
+      filePath.isNotEmpty && _romajiEnabledPaths.contains(filePath);
+
+  /// Whether document-level Romaji mode is active for [currentSong].
+  bool get isCurrentSongRomajiEnabled {
+    final s = currentSong;
+    return s != null && isRomajiEnabledForSong(s.filePath);
+  }
+
+  /// Single document-level synced lyrics source consumed by ALL views:
+  /// - Home 3-line column (`_buildLeftLyricsColumn`)
+  /// - Fluid morph (`_buildFluidMorphLyricsScene`)
+  /// - Settled Lyrics panel (`_buildLyricsStagePanel`)
+  /// - Full-lyrics sheet (`_showFullLyricsSheet`)
+  /// When Romaji mode is active for [song], returns the cached document-level
+  /// converted line list (same timestamps, converted text for every line).
+  List<SyncedLyricEntry> syncedLyricsFor(LocalSong? song) {
+    if (song == null || !song.hasSyncedLyrics) return const [];
+    final cachedDoc = _lyricsDocumentCacheByPath[song.filePath];
+    if (cachedDoc != null) {
+      if (_romajiEnabledPaths.contains(song.filePath)) {
+        return cachedDoc.romanizedSyncedEntries;
+      }
+      return cachedDoc.originalSyncedEntries;
+    }
+    return song.parsedSyncedLyrics;
+  }
+
+  /// Single document-level plain lyrics source consumed by ALL plain-lyrics views.
+  List<String> plainLyricLinesFor(LocalSong? song) {
+    if (song == null || !song.hasLyrics) return const [];
+    final cachedDoc = _lyricsDocumentCacheByPath[song.filePath];
+    if (cachedDoc != null) {
+      if (_romajiEnabledPaths.contains(song.filePath)) {
+        return cachedDoc.romanizedPlainLines;
+      }
+      return cachedDoc.originalPlainLines;
+    }
+    return song.plainLyricLines;
+  }
+
+  /// Deterministic signature of the currently displayed lyrics document for [song]
+  /// so all lyric metrics/row caches in `NowPlayingView` key on (and invalidate
+  /// with) the displayed text.
+  String displayedLyricsSignatureFor(LocalSong? song) {
+    if (song == null || !song.hasLyrics) return '';
+    final isRomaji = _romajiEnabledPaths.contains(song.filePath);
+    final gen = _romajiGenerationByPath[song.filePath] ?? 0;
+    final entries = syncedLyricsFor(song);
+    if (entries.isNotEmpty) {
+      int hash = 17;
+      for (int i = 0; i < entries.length; i++) {
+        hash = 0x1fffffff & (hash * 31 + entries[i].text.hashCode);
+      }
+      return '${song.filePath}|romaji:$isRomaji|gen:$gen|n:${entries.length}|h:$hash';
+    }
+    final plain = plainLyricLinesFor(song);
+    int hash = 17;
+    for (int i = 0; i < plain.length; i++) {
+      hash = 0x1fffffff & (hash * 31 + plain[i].hashCode);
+    }
+    return '${song.filePath}|romaji:$isRomaji|gen:$gen|p:${plain.length}|h:$hash';
+  }
+
   /// Binary-searches the active synced lyric line index for [_positionMs].
   int get activeSyncedLyricIndex {
     final song = currentSong;
     if (song == null || !song.hasSyncedLyrics) return -1;
-    final entries = song.parsedSyncedLyrics;
+    final entries = syncedLyricsFor(song);
     if (entries.isEmpty) return -1;
 
     int low = 0;
@@ -2164,6 +2272,7 @@ class LocalMusicProvider extends ChangeNotifier {
     required String lyricsText,
     required bool preferSyncedLyrics,
     String? syncedLyrics,
+    bool preserveRomajiCache = false,
   }) async {
     _isProcessingLocalTag = true;
     notifyListeners();
@@ -2221,11 +2330,60 @@ class LocalMusicProvider extends ChangeNotifier {
           ? true
           : preferSyncedLyrics;
 
-      final newPath = await _taggingService.retagExistingMp3(
-        filePath: song.filePath,
-        updatedMetadata: updatedMeta,
-        preferSyncedLyrics: effectivePreferSynced,
+      final resolvedUsltPayload = effectivePreferSynced
+          ? (resolvedSyncedLyrics ?? resolvedPlainLyrics)
+          : resolvedPlainLyrics;
+
+      String newPath = song.filePath;
+      if (_shouldInvokeNativeChannel) {
+        newPath = await _taggingService.retagExistingMp3(
+          filePath: song.filePath,
+          updatedMetadata: updatedMeta,
+          preferSyncedLyrics: effectivePreferSynced,
+        );
+      }
+
+      final updatedInMemory = hydratedSong.copyWith(
+        filePath: newPath,
+        title: updatedMeta.title,
+        artist: updatedMeta.artist,
+        album: updatedMeta.album,
+        year: updatedMeta.releaseYear,
+        usltLyrics: resolvedUsltPayload,
+        clearLyrics: resolvedUsltPayload.trim().isEmpty,
       );
+      _replaceSongInMemoryCaches(updatedInMemory);
+
+      if (!preserveRomajiCache) {
+        _romajiEnabledPaths.remove(song.filePath);
+        _romajiEnabledPaths.remove(newPath);
+        _lyricsDocumentCacheByPath.remove(song.filePath);
+        _lyricsDocumentCacheByPath.remove(newPath);
+      } else if (newPath != song.filePath) {
+        if (_romajiEnabledPaths.remove(song.filePath)) {
+          _romajiEnabledPaths.add(newPath);
+        }
+        final oldDoc = _lyricsDocumentCacheByPath.remove(song.filePath);
+        if (oldDoc != null) {
+          _lyricsDocumentCacheByPath[newPath] = _SongLyricsDocumentCache(
+            filePath: newPath,
+            originalUslt: oldDoc.originalUslt,
+            originalTitle: oldDoc.originalTitle,
+            originalArtist: oldDoc.originalArtist,
+            originalAlbum: oldDoc.originalAlbum,
+            originalSyncedEntries: oldDoc.originalSyncedEntries,
+            originalPlainLines: oldDoc.originalPlainLines,
+            romanizedUslt: oldDoc.romanizedUslt,
+            romanizedTitle: oldDoc.romanizedTitle,
+            romanizedArtist: oldDoc.romanizedArtist,
+            romanizedAlbum: oldDoc.romanizedAlbum,
+            romanizedSyncedEntries: oldDoc.romanizedSyncedEntries,
+            romanizedPlainLines: oldDoc.romanizedPlainLines,
+          );
+        }
+      }
+      _romajiGenerationByPath[newPath] =
+          (_romajiGenerationByPath[newPath] ?? 0) + 1;
 
       if (_favoritePaths.remove(song.filePath)) {
         _favoritePaths.add(newPath);
@@ -2240,6 +2398,7 @@ class LocalMusicProvider extends ChangeNotifier {
         resumePositionMs: savedPos,
       );
 
+      _syncProgressNotifiers();
       return newPath;
     } finally {
       _isProcessingLocalTag = false;
@@ -2272,47 +2431,236 @@ class LocalMusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Converts a local song's embedded USLT lyrics (and optionally Japanese
-  /// title/artist/album) to deduplicated Romaji and writes it back into the MP3.
-  Future<bool> autoRomanizeLocalSong(
-    LocalSong song, {
+  /// Computes and caches the full document-level Romaji transformation for
+  /// [hydratedSong] once per song/source so toggling Romaji on/off never
+  /// re-converts per line or per frame.
+  Future<_SongLyricsDocumentCache> _ensureSongRomajiDocumentCached(
+    LocalSong hydratedSong, {
     bool includeMetadata = false,
   }) async {
+    final path = hydratedSong.filePath;
+    final currentUslt = hydratedSong.usltLyrics ?? '';
+    final existing = _lyricsDocumentCacheByPath[path];
+
+    if (existing != null &&
+        (existing.originalUslt == currentUslt ||
+            existing.romanizedUslt == currentUslt)) {
+      if (!includeMetadata ||
+          !RomajiService.containsJapanese(existing.romanizedTitle)) {
+        return existing;
+      }
+    }
+
+    final baseSourceUslt = (existing != null &&
+            existing.romanizedUslt == currentUslt &&
+            existing.originalUslt.isNotEmpty)
+        ? existing.originalUslt
+        : currentUslt;
+    final baseTitle = (existing != null &&
+            existing.romanizedTitle == hydratedSong.title &&
+            existing.originalTitle.isNotEmpty)
+        ? existing.originalTitle
+        : hydratedSong.title;
+    final baseArtist = (existing != null &&
+            existing.romanizedArtist == hydratedSong.artist &&
+            existing.originalArtist.isNotEmpty)
+        ? existing.originalArtist
+        : hydratedSong.artist;
+    final baseAlbum = (existing != null &&
+            existing.romanizedAlbum == hydratedSong.album &&
+            existing.originalAlbum.isNotEmpty)
+        ? existing.originalAlbum
+        : hydratedSong.album;
+
+    final originalSyncedEntries =
+        LocalSong.parseSyncedLyricsText(baseSourceUslt);
+    final originalPlainLines =
+        LocalSong.parsePlainLyricLinesText(baseSourceUslt);
+
+    final sourceSongForMeta = hydratedSong.copyWith(
+      title: baseTitle,
+      artist: baseArtist,
+      album: baseAlbum,
+      usltLyrics: baseSourceUslt,
+    );
+    var meta = sourceSongForMeta.toTrackMetadata();
+    if (includeMetadata && RomajiService.trackHasJapanese(meta)) {
+      meta = await _romajiService.romanizeTrackInfo(meta);
+    }
+    if (meta.hasAnyLyrics) {
+      meta = await _romajiService.romanizeTrackLyrics(meta);
+    }
+
+    final romanizedUslt = meta.hasSyncedLyrics
+        ? (meta.syncedLyrics ?? '')
+        : (meta.plainLyrics ?? '');
+    final parsedRomanizedSynced =
+        LocalSong.parseSyncedLyricsText(romanizedUslt);
+    final List<SyncedLyricEntry> romanizedSyncedEntries;
+    if (parsedRomanizedSynced.length == originalSyncedEntries.length &&
+        originalSyncedEntries.isNotEmpty) {
+      romanizedSyncedEntries = List<SyncedLyricEntry>.unmodifiable([
+        for (int i = 0; i < originalSyncedEntries.length; i++)
+          SyncedLyricEntry(
+            timeMs: originalSyncedEntries[i].timeMs,
+            text: parsedRomanizedSynced[i].text,
+          ),
+      ]);
+    } else {
+      romanizedSyncedEntries = parsedRomanizedSynced;
+    }
+    final romanizedPlainLines =
+        LocalSong.parsePlainLyricLinesText(romanizedUslt);
+
+    final built = _SongLyricsDocumentCache(
+      filePath: path,
+      originalUslt: baseSourceUslt,
+      originalTitle: baseTitle,
+      originalArtist: baseArtist,
+      originalAlbum: baseAlbum,
+      originalSyncedEntries: originalSyncedEntries,
+      originalPlainLines: originalPlainLines,
+      romanizedUslt: romanizedUslt,
+      romanizedTitle: meta.title,
+      romanizedArtist: meta.artist,
+      romanizedAlbum: meta.album,
+      romanizedSyncedEntries: romanizedSyncedEntries,
+      romanizedPlainLines: romanizedPlainLines,
+    );
+    _lyricsDocumentCacheByPath[path] = built;
+    return built;
+  }
+
+  /// Enables or disables document-level Romaji mode for [song].
+  /// When enabled, the ENTIRE synced and plain lyric lists are converted as ONE
+  /// document-level transformation and cached per song + mode, immediately
+  /// updating all consumers (`Home`, `Fluid Morph`, `Lyrics` panel, and
+  /// `Full Lyrics` sheet). When disabled, immediately restores the original
+  /// unconverted script across the entire document.
+  Future<bool> setRomajiForSong(
+    LocalSong song,
+    bool enabled, {
+    bool includeMetadata = false,
+    bool persistToFile = false,
+  }) async {
     if (_isProcessingLocalTag) return false;
+
+    if (!enabled) {
+      final path = song.filePath;
+      _romajiEnabledPaths.remove(path);
+      _romajiGenerationByPath[path] = (_romajiGenerationByPath[path] ?? 0) + 1;
+      final cachedDoc = _lyricsDocumentCacheByPath[path];
+      if (cachedDoc != null) {
+        final restoredSong = song.copyWith(
+          title: cachedDoc.originalTitle,
+          artist: cachedDoc.originalArtist,
+          album: cachedDoc.originalAlbum,
+          usltLyrics: cachedDoc.originalUslt,
+        );
+        _replaceSongInMemoryCaches(restoredSong);
+        if (persistToFile && _shouldInvokeNativeChannel) {
+          try {
+            await retagLocalSong(
+              song: restoredSong,
+              title: cachedDoc.originalTitle,
+              artist: cachedDoc.originalArtist,
+              album: cachedDoc.originalAlbum,
+              releaseYear: restoredSong.year,
+              lyricsText: cachedDoc.originalUslt,
+              preferSyncedLyrics: restoredSong.hasSyncedLyrics,
+              syncedLyrics: restoredSong.hasSyncedLyrics
+                  ? cachedDoc.originalUslt
+                  : null,
+              preserveRomajiCache: true,
+            );
+          } catch (_) {
+            return false;
+          }
+        }
+      }
+      _syncProgressNotifiers();
+      notifyListeners();
+      return true;
+    }
+
     _isProcessingLocalTag = true;
     notifyListeners();
 
     try {
       final hydratedSong = await ensureSongLyricsLoaded(song);
-      var meta = hydratedSong.toTrackMetadata();
-      if (includeMetadata && RomajiService.trackHasJapanese(meta)) {
-        meta = await _romajiService.romanizeTrackInfo(meta);
-      }
-      if (meta.hasAnyLyrics) {
-        meta = await _romajiService.romanizeTrackLyrics(meta);
-      }
+      final docCache = await _ensureSongRomajiDocumentCached(
+        hydratedSong,
+        includeMetadata: includeMetadata,
+      );
+      _romajiEnabledPaths.add(hydratedSong.filePath);
+      _romajiGenerationByPath[hydratedSong.filePath] =
+          (_romajiGenerationByPath[hydratedSong.filePath] ?? 0) + 1;
+
+      final updatedSong = hydratedSong.copyWith(
+        title: includeMetadata ? docCache.romanizedTitle : hydratedSong.title,
+        artist:
+            includeMetadata ? docCache.romanizedArtist : hydratedSong.artist,
+        album: includeMetadata ? docCache.romanizedAlbum : hydratedSong.album,
+        usltLyrics: docCache.romanizedUslt,
+      );
+      _replaceSongInMemoryCaches(updatedSong);
       _isProcessingLocalTag = false;
 
-      final lyricsToSave = meta.hasSyncedLyrics
-          ? (meta.syncedLyrics ?? '')
-          : (meta.plainLyrics ?? '');
-
-      await retagLocalSong(
-        song: song,
-        title: meta.title,
-        artist: meta.artist,
-        album: meta.album,
-        releaseYear: meta.releaseYear,
-        lyricsText: lyricsToSave,
-        preferSyncedLyrics: meta.hasSyncedLyrics,
-        syncedLyrics: meta.syncedLyrics,
-      );
+      if (persistToFile && _shouldInvokeNativeChannel) {
+        await retagLocalSong(
+          song: hydratedSong,
+          title: updatedSong.title,
+          artist: updatedSong.artist,
+          album: updatedSong.album,
+          releaseYear: hydratedSong.year,
+          lyricsText: docCache.romanizedUslt,
+          preferSyncedLyrics: updatedSong.hasSyncedLyrics,
+          syncedLyrics:
+              updatedSong.hasSyncedLyrics ? docCache.romanizedUslt : null,
+          preserveRomajiCache: true,
+        );
+      } else {
+        _syncProgressNotifiers();
+        notifyListeners();
+      }
       return true;
     } catch (e) {
       _isProcessingLocalTag = false;
       notifyListeners();
       return false;
     }
+  }
+
+  /// Toggles document-level Romaji mode on/off for [song] and immediately
+  /// notifies all views to re-render the entire lyric list in the new script.
+  Future<bool> toggleRomajiForSong(
+    LocalSong song, {
+    bool includeMetadata = false,
+    bool persistToFile = false,
+  }) {
+    final nextEnabled = !isRomajiEnabledForSong(song.filePath);
+    return setRomajiForSong(
+      song,
+      nextEnabled,
+      includeMetadata: includeMetadata,
+      persistToFile: persistToFile,
+    );
+  }
+
+  /// Converts a local song's embedded USLT lyrics (and optionally Japanese
+  /// title/artist/album) to deduplicated Romaji at the document level and
+  /// writes it back into the MP3 when [persistToFile] is true.
+  Future<bool> autoRomanizeLocalSong(
+    LocalSong song, {
+    bool includeMetadata = false,
+    bool persistToFile = true,
+  }) async {
+    return setRomajiForSong(
+      song,
+      true,
+      includeMetadata: includeMetadata,
+      persistToFile: persistToFile,
+    );
   }
 
   /// Registers a newly created folder without rescanning the entire audio disk.

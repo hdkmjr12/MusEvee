@@ -279,6 +279,18 @@ class LocalSong {
     final cached = _syncedLyricsMemo[this];
     if (cached != null) return cached;
 
+    final unmodifiable = parseSyncedLyricsText(rawText);
+    _syncedLyricsMemo[this] = unmodifiable;
+    return unmodifiable;
+  }
+
+  /// Parses any raw LRC text `[mm:ss.xx]` into an unmodifiable sorted
+  /// `List<SyncedLyricEntry>` document.
+  static List<SyncedLyricEntry> parseSyncedLyricsText(String rawText) {
+    if (rawText.trim().isEmpty || !_lrcLineTimeRegex.hasMatch(rawText)) {
+      return const [];
+    }
+
     final raw = rawText
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n');
@@ -321,9 +333,7 @@ class LocalSong {
     }
 
     entries.sort((a, b) => a.timeMs.compareTo(b.timeMs));
-    final unmodifiable = List<SyncedLyricEntry>.unmodifiable(entries);
-    _syncedLyricsMemo[this] = unmodifiable;
-    return unmodifiable;
+    return List<SyncedLyricEntry>.unmodifiable(entries);
   }
 
   /// Returns clean plain lyrics lines (without timestamps or LRC headers).
@@ -335,6 +345,17 @@ class LocalSong {
     final cached = _plainLinesMemo[this];
     if (cached != null) return cached;
 
+    final unmodifiable = parsePlainLyricLinesText(rawText);
+    _plainLinesMemo[this] = unmodifiable;
+    return unmodifiable;
+  }
+
+  /// Parses any raw lyrics string into an unmodifiable list of plain lines
+  /// (stripping LRC timestamps and metadata headers).
+  static List<String> parsePlainLyricLinesText(String rawText) {
+    if (rawText.trim().isEmpty) {
+      return const [];
+    }
     final raw = rawText
         .replaceAll('\r\n', '\n')
         .replaceAll('\r', '\n');
@@ -348,9 +369,7 @@ class LocalSong {
       final cleaned = trimmed.replaceAll(_lrcLineTimeRegex, '').trim();
       out.add(cleaned);
     }
-    final unmodifiable = List<String>.unmodifiable(out);
-    _plainLinesMemo[this] = unmodifiable;
-    return unmodifiable;
+    return List<String>.unmodifiable(out);
   }
 
   /// Converts this [LocalSong] to [TrackMetadata] for compatibility with

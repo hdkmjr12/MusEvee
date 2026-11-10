@@ -325,13 +325,13 @@ class _MographPlayPauseIconState extends State<MographPlayPauseIcon>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 280),
       value: widget.isPlaying ? 1.0 : 0.0,
     );
     _morphProgress = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeOutBack,
-      reverseCurve: Curves.easeInOutCubic,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeOutCubic,
     );
   }
 
@@ -357,32 +357,11 @@ class _MographPlayPauseIconState extends State<MographPlayPauseIcon>
   Widget build(BuildContext context) {
     final resolvedColor = widget.color ?? context.palette.textPrimary;
     return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          if (!widget.enableBounceAndRotation) {
-            return child!;
-          }
-          // Mid-transition impulse (0 -> 1 -> 0 across the 320ms morph)
-          final pulse = math.sin(_controller.value * math.pi);
-          final scale = 1.0 + (pulse * 0.14);
-          final microAngle =
-              (widget.isPlaying ? 1.0 : -1.0) * pulse * 0.085;
-
-          return Transform.rotate(
-            angle: microAngle,
-            child: Transform.scale(
-              scale: scale,
-              child: child,
-            ),
-          );
-        },
-        child: AnimatedIcon(
-          icon: AnimatedIcons.play_pause,
-          progress: _morphProgress,
-          size: widget.size,
-          color: resolvedColor,
-        ),
+      child: AnimatedIcon(
+        icon: AnimatedIcons.play_pause,
+        progress: _morphProgress,
+        size: widget.size,
+        color: resolvedColor,
       ),
     );
   }

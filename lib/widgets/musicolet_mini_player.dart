@@ -5,8 +5,11 @@ import 'package:provider/provider.dart';
 
 import '../providers/local_music_provider.dart';
 import '../theme/musevee_palette.dart';
+import '../utils/app_strings.dart';
 import 'pressable_scale.dart';
 
+/// Phase 1 skin pass on the Mini Player (shown above the bottom strip on all
+/// tabs except Now Playing). Preserves 100% of existing behavior and controls.
 class MusicoletMiniPlayer extends StatelessWidget {
   final VoidCallback onTapOpenNowPlaying;
 
@@ -26,11 +29,12 @@ class MusicoletMiniPlayer extends StatelessWidget {
         }
 
         return Material(
-          color: palette.surfaceCard,
+          color: palette.bottomBar,
           child: InkWell(
             onTap: onTapOpenNowPlaying,
             child: Container(
               decoration: BoxDecoration(
+                color: palette.bottomBar,
                 border: Border(
                   top: BorderSide(
                     color: palette.hairline,
@@ -41,7 +45,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Thin Musicolet top progress hairline (isolated to 200ms ValueNotifier)
+                  // Thin top progress hairline (isolated to 200ms ValueNotifier)
                   ValueListenableBuilder<PlaybackProgress>(
                     valueListenable: localProvider.progressNotifier,
                     builder: (context, prog, _) {
@@ -53,25 +57,36 @@ class MusicoletMiniPlayer extends StatelessWidget {
                       final progress = (prog.positionMs / total).clamp(0.0, 1.0);
                       return LinearProgressIndicator(
                         value: progress,
-                        minHeight: 2.0,
-                        backgroundColor: palette.hairline,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(palette.textPrimary),
+                        minHeight: 1.8,
+                        backgroundColor: palette.seekbarInactive,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          palette.nowPlayingPrimary,
+                        ),
                       );
                     },
                   ),
                   SizedBox(
-                    height: 50,
+                    height: 54,
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 10, right: 4),
+                      padding: const EdgeInsets.only(left: 14, right: 6),
                       child: Row(
                         children: [
-                          // 38x38 Cover Art
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: _buildMiniCover(song.coverFilePath, palette),
+                          // 38x38 Circular/Rounded Cover Art with thin hairline border
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: palette.discRingBorder,
+                                width: 1.0,
+                              ),
+                            ),
+                            child: ClipOval(
+                              child: _buildMiniCover(song.coverFilePath, palette),
+                            ),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
 
                           // Title & Artist
                           Expanded(
@@ -84,61 +99,98 @@ class MusicoletMiniPlayer extends StatelessWidget {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: palette.textPrimary,
-                                    fontSize: 13,
+                                    color: palette.nowPlayingPrimary,
+                                    fontSize: 13.5,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: -0.2,
                                   ),
                                 ),
-                                const SizedBox(height: 1.5),
+                                const SizedBox(height: 2),
                                 Text(
-                                  '${song.artist} • ${song.folderName}',
+                                  song.artist,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: palette.textMuted,
+                                    color: palette.nowPlayingSecondary,
                                     fontSize: 11.5,
+                                    fontWeight: FontWeight.w400,
                                   ),
                                 ),
                               ],
                             ),
                           ),
 
-                          // Transport Controls
+                          // Transport Controls: Prev, Solid Circle Play/Pause, Next
                           PressableScale(
                             child: IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: 'Sebelumnya',
+                              constraints: const BoxConstraints(
+                                minWidth: MusEveePalette.minTouchTargetSize,
+                                minHeight: MusEveePalette.minTouchTargetSize,
+                              ),
+                              tooltip: AppStrings.tr(
+                                'Sebelumnya',
+                                'Previous',
+                                context,
+                              ),
                               onPressed: localProvider.playPrevious,
-                              icon: Icon(
-                                Icons.skip_previous_rounded,
-                                color: palette.textMuted,
-                                size: 22,
+                              icon: Transform.scale(
+                                scaleX: -1,
+                                child: Image.asset(
+                                  'assets/icons/play.png',
+                                  width: 15,
+                                  height: 15,
+                                  color: palette.nowPlayingPrimary,
+                                  colorBlendMode: BlendMode.srcIn,
+                                ),
                               ),
                             ),
                           ),
                           PressableScale(
                             child: IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip:
-                                  localProvider.isPlaying ? 'Jeda' : 'Putar',
+                              constraints: const BoxConstraints(
+                                minWidth: MusEveePalette.minTouchTargetSize,
+                                minHeight: MusEveePalette.minTouchTargetSize,
+                              ),
+                              tooltip: localProvider.isPlaying
+                                  ? AppStrings.tr('Jeda', 'Pause', context)
+                                  : AppStrings.tr('Putar', 'Play', context),
                               onPressed: localProvider.togglePlayPause,
-                              icon: MographPlayPauseIcon(
-                                isPlaying: localProvider.isPlaying,
-                                size: 27,
-                                color: palette.textPrimary,
+                              icon: Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: palette.nowPlayingPrimary,
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  localProvider.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 19,
+                                  color: palette.nowPlayingOnPrimary,
+                                ),
                               ),
                             ),
                           ),
                           PressableScale(
                             child: IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: 'Berikutnya',
+                              constraints: const BoxConstraints(
+                                minWidth: MusEveePalette.minTouchTargetSize,
+                                minHeight: MusEveePalette.minTouchTargetSize,
+                              ),
+                              tooltip: AppStrings.tr(
+                                'Berikutnya',
+                                'Next',
+                                context,
+                              ),
                               onPressed: localProvider.playNext,
-                              icon: Icon(
-                                Icons.skip_next_rounded,
-                                color: palette.textMuted,
-                                size: 22,
+                              icon: Image.asset(
+                                'assets/icons/play.png',
+                                width: 15,
+                                height: 15,
+                                color: palette.nowPlayingPrimary,
+                                colorBlendMode: BlendMode.srcIn,
                               ),
                             ),
                           ),
@@ -178,8 +230,8 @@ class MusicoletMiniPlayer extends StatelessWidget {
       alignment: Alignment.center,
       child: Icon(
         Icons.music_note_rounded,
-        color: palette.textMuted,
-        size: 18,
+        color: palette.nowPlayingSecondary,
+        size: 17,
       ),
     );
   }

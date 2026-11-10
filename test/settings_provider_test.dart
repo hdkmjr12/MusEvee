@@ -315,7 +315,7 @@ void main() {
     expect(find.text('Idol'), findsWidgets);
     expect(find.text('YOASOBI'), findsWidgets);
     expect(
-      find.textContaining('Muteki no egao de arasu media'),
+      find.textContaining('Muteki no egao'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

@@ -715,7 +715,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 style: TextStyle(
                                   color: context.palette.textPrimary,
                                   fontSize: 12,
-                                  fontFamily: 'monospace',
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1203,8 +1202,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             _selectTab(_tabDownloader),
                       ),
 
-                      // 1: Now Playing (`▶` in circle — 1:1 Musicolet)
+                      // 1: Now Playing (MusEvee Phase 1 Redesign)
                       NowPlayingView(
+                        isVisible: isOnNowPlaying,
                         onNavigateToDownloader: () =>
                             _selectTab(_tabDownloader),
                         onNavigateToFolders: () => _selectTab(_tabFolders),

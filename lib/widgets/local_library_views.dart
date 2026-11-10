@@ -58,18 +58,21 @@ class PlaybackQueueView extends StatelessWidget {
                       size: 19,
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      entries.isEmpty
-                          ? 'Now Playing Queue (0)'
-                          : 'Queue (${currentIdx >= 0 ? currentIdx + 1 : 0}/${entries.length})',
-                      style: TextStyle(
-                        color: context.palette.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
+                    Expanded(
+                      child: Text(
+                        entries.isEmpty
+                            ? 'Now Playing Queue (0)'
+                            : 'Queue (${currentIdx >= 0 ? currentIdx + 1 : 0}/${entries.length})',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.palette.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2,
+                        ),
                       ),
                     ),
-                    const Spacer(),
                     if (entries.isNotEmpty) ...[
                       IconButton(
                         visualDensity: VisualDensity.compact,
