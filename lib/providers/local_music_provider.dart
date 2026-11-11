@@ -159,7 +159,8 @@ class LocalMusicProvider extends ChangeNotifier {
     'com.spotmeta.downloader/system',
   );
 
-  static const List<double> fontSizePresets = [13.5, 15.5, 18.0, 20.5];
+  static const List<double> fontSizePresets = [11.5, 13.5, 15.5, 18.0, 20.5];
+  static const List<double> legacyFontSizePresets = [13.5, 15.5, 18.0, 20.5];
   static const String hiddenFoldersFileName = 'musevee_hidden_folders_v1.json';
   static const String playStatsFileName = 'musevee_play_stats_v1.json';
 
@@ -291,7 +292,42 @@ class LocalMusicProvider extends ChangeNotifier {
   EmbeddedLyricsDisplayMode _lyricsDisplayMode =
       EmbeddedLyricsDisplayMode.synced;
   bool _autoScrollLyrics = true;
-  int _fontSizeIndex = 1; // 15.5sp default
+  int _fontSizeIndex = 2; // 15.5sp default
+
+  @visibleForTesting
+  static int resolveFontSizeIndexFromSession(Map<dynamic, dynamic> sess) {
+    final savedPt = (sess['lyricsFontSizePt'] as num?)?.toDouble();
+    if (savedPt != null) {
+      int bestIdx = 2;
+      double minDiff = double.infinity;
+      for (int i = 0; i < fontSizePresets.length; i++) {
+        final diff = (fontSizePresets[i] - savedPt).abs();
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    }
+    final fIdx = (sess['fontSizeIndex'] as num?)?.toInt();
+    if (fIdx != null) {
+      if (fIdx >= 0 && fIdx < legacyFontSizePresets.length) {
+        final legacyPt = legacyFontSizePresets[fIdx];
+        final mappedIdx = fontSizePresets.indexOf(legacyPt);
+        if (mappedIdx >= 0) return mappedIdx;
+      }
+      if (fIdx >= 0 && fIdx < fontSizePresets.length) {
+        return fIdx;
+      }
+    }
+    return 2;
+  }
+
+  @visibleForTesting
+  void restoreFontSizeFromSessionMap(Map<dynamic, dynamic> sess) {
+    _fontSizeIndex = resolveFontSizeIndexFromSession(sess);
+    notifyListeners();
+  }
 
   // LRCLIB Candidates for currently playing local song
   List<LyricsCandidate> _localLyricsCandidates = const [];
@@ -3106,9 +3142,8 @@ class LocalMusicProvider extends ChangeNotifier {
           if (sess['autoScrollLyrics'] is bool) {
             _autoScrollLyrics = sess['autoScrollLyrics'] as bool;
           }
-          final fIdx = (sess['fontSizeIndex'] as num?)?.toInt();
-          if (fIdx != null && fIdx >= 0 && fIdx < fontSizePresets.length) {
-            _fontSizeIndex = fIdx;
+          if (sess['lyricsFontSizePt'] is num || sess['fontSizeIndex'] is num) {
+            _fontSizeIndex = resolveFontSizeIndexFromSession(sess);
           }
 
           final qPaths = (sess['queuePaths'] as List?)
@@ -3210,6 +3245,7 @@ class LocalMusicProvider extends ChangeNotifier {
         'lyricsDisplayMode': _lyricsDisplayMode.index,
         'autoScrollLyrics': _autoScrollLyrics,
         'fontSizeIndex': _fontSizeIndex,
+        'lyricsFontSizePt': lyricsFontSize,
         'currentIndex': _currentIndex,
         'positionMs': _positionMs,
         'queuePaths': _queueEntries.map((e) => e.song.filePath).toList(),

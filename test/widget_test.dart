@@ -4903,6 +4903,184 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Lyrics Font Size 11.5pt Preset: 5-step overflow cycle (11.5/13.5/15.5/18.0/20.5), smaller active line at 11.5pt vs 13.5pt across Home/Morph/Panel 0/Sheet, and legacy session migration',
+    (WidgetTester tester) async {
+      final localProvider = LocalMusicProvider();
+      final downloaderProvider = DownloaderProvider();
+      addTearDown(localProvider.dispose);
+      addTearDown(downloaderProvider.dispose);
+
+      // 1. Default preset & 5-element preset list
+      expect(
+        LocalMusicProvider.fontSizePresets,
+        const <double>[11.5, 13.5, 15.5, 18.0, 20.5],
+      );
+      expect(localProvider.lyricsFontSize, 15.5);
+
+      // 2. Legacy session migration: old 4-element indices 0..3 -> 13.5, 15.5, 18.0, 20.5
+      localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
+        'fontSizeIndex': 0,
+      });
+      expect(localProvider.lyricsFontSize, 13.5);
+      localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
+        'fontSizeIndex': 1,
+      });
+      expect(localProvider.lyricsFontSize, 15.5);
+      localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
+        'fontSizeIndex': 2,
+      });
+      expect(localProvider.lyricsFontSize, 18.0);
+      localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
+        'fontSizeIndex': 3,
+      });
+      expect(localProvider.lyricsFontSize, 20.5);
+      localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
+        'lyricsFontSizePt': 11.5,
+        'fontSizeIndex': 0,
+      });
+      expect(localProvider.lyricsFontSize, 11.5);
+      // Reset to default 15.5pt
+      localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
+        'lyricsFontSizePt': 15.5,
+      });
+      expect(localProvider.lyricsFontSize, 15.5);
+
+      final song = _mockSong(
+        701,
+        lyrics: '[00:05.00] First line\n'
+            '[00:10.00] Active lyric line\n'
+            '[00:15.00] Third line',
+      );
+      localProvider.seedSongsForTesting([song]);
+      await localProvider.playSong(song, queueContext: [song]);
+      await localProvider.togglePlayPause();
+
+      final npKey = GlobalKey<NowPlayingViewState>();
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LocalMusicProvider>.value(
+              value: localProvider,
+            ),
+            ChangeNotifierProvider<DownloaderProvider>.value(
+              value: downloaderProvider,
+            ),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.light().copyWith(
+              extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+            ),
+            home: Scaffold(
+              body: NowPlayingView(
+                key: npKey,
+                onNavigateToDownloader: () {},
+                onNavigateToFolders: () {},
+                onMoveLocalSongFolder: (_) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 950));
+      localProvider.handleNativePosition(
+        positionMs: 11000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pumpAndSettle();
+
+      double currentHomeActiveFontSize() {
+        return tester
+            .widget<Text>(
+              find.byKey(
+                const ValueKey<String>('lyric_line_active_1_Active lyric line'),
+              ),
+            )
+            .style!
+            .fontSize!;
+      }
+
+      // Default 15.5pt -> active line renders at 22.0pt
+      expect(currentHomeActiveFontSize(), 22.0);
+
+      // 3. Open overflow menu and cycle through all 5 presets: 15.5 -> 18.0 -> 20.5 -> 11.5 -> 13.5 -> 15.5
+      await tester.tap(
+        find.byKey(const ValueKey<String>('now_playing_overflow_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byType(SingleChildScrollView).last,
+        const Offset(0, -280),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('15.5 pt'), findsOneWidget);
+
+      await tester.tap(find.text('Ukuran Font Lirik'));
+      await tester.pump();
+      expect(localProvider.lyricsFontSize, 18.0);
+      expect(find.text('18.0 pt'), findsOneWidget);
+
+      await tester.tap(find.text('Ukuran Font Lirik'));
+      await tester.pump();
+      expect(localProvider.lyricsFontSize, 20.5);
+      expect(find.text('20.5 pt'), findsOneWidget);
+
+      await tester.tap(find.text('Ukuran Font Lirik'));
+      await tester.pump();
+      expect(localProvider.lyricsFontSize, 11.5);
+      expect(find.text('11.5 pt'), findsOneWidget);
+
+      Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
+      await tester.pumpAndSettle();
+
+      // At 11.5pt (offset -4.0), Home active line renders at 18.0pt
+      final homeFontAt115 = currentHomeActiveFontSize();
+      expect(homeFontAt115, 18.0);
+
+      // Panel 0 at 11.5pt also renders active line at 18.0pt
+      final state = npKey.currentState!;
+      state.debugSetPanelProgress(0.0);
+      await tester.pump();
+      final panel0FontAt115 = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+          )
+          .style!
+          .fontSize!;
+      expect(panel0FontAt115, 18.0);
+
+      // Cycle to 13.5pt (offset -2.0) -> Home & Panel 0 active line renders at 20.0pt (> 18.0pt at 11.5pt)
+      localProvider.cycleLyricsFontSize();
+      expect(localProvider.lyricsFontSize, 13.5);
+      await tester.pump();
+      final panel0FontAt135 = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+          )
+          .style!
+          .fontSize!;
+      expect(panel0FontAt135, 20.0);
+      expect(panel0FontAt115, lessThan(panel0FontAt135));
+
+      state.debugSetPanelProgress(1.0);
+      await tester.pump();
+      final homeFontAt135 = currentHomeActiveFontSize();
+      expect(homeFontAt135, 20.0);
+      expect(homeFontAt115, lessThan(homeFontAt135));
+
+      // Cycle back to 15.5pt -> 22.0pt
+      localProvider.cycleLyricsFontSize();
+      expect(localProvider.lyricsFontSize, 15.5);
+      await tester.pump();
+      expect(currentHomeActiveFontSize(), 22.0);
+    },
+  );
 }
 
 class _OfflineTestRomajiService extends RomajiService {

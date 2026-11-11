@@ -3603,7 +3603,7 @@ class NowPlayingViewState extends State<NowPlayingView>
         }
 
         final fontSizePrefOffset =
-            (localProvider.lyricsFontSize - 15.5).clamp(-1.5, 2.0);
+            (localProvider.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
         final edgeFadeHeight =
             zoneHeight * MusEveePalette.lyricsPanelEdgeFadeHeightFactor;
 
@@ -4723,7 +4723,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     }
 
     final fontSizePrefOffset =
-        (localProvider.lyricsFontSize - 15.5).clamp(-1.5, 2.0);
+        (localProvider.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
 
     if (localProvider.lyricsDisplayMode == EmbeddedLyricsDisplayMode.synced &&
         song.hasSyncedLyrics) {
@@ -5918,7 +5918,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     }
 
     final fontSizePrefOffset =
-        (localProvider.lyricsFontSize - 15.5).clamp(-1.5, 2.0);
+        (localProvider.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
 
     // 1. Synced USLT Lyrics Mode (3-line view: previous, active/upcoming, next)
     if (localProvider.lyricsDisplayMode == EmbeddedLyricsDisplayMode.synced &&
@@ -8895,7 +8895,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                 MediaQuery.of(ctx).size.width - 44.0,
                               );
                               final prefOffset =
-                                  (lp.lyricsFontSize - 15.5).clamp(-1.5, 2.0);
+                                  (lp.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
                               return ListView.builder(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 16),

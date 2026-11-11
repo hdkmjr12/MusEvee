@@ -6,6 +6,18 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.8 — Settled Lyrics Panel Line Change Matches Home/Morph Slide (`400 ms`) + `11.5 pt` Lyrics Font Size Preset (`offset -4.0`)] — 2026-11-11 (Pergantian Baris pada Panel `Lyrics` (`p = 0.0`) Meluncur Seragam dengan `Home` & `Morph` (`400 ms`, `Curves.easeOutCubic`) dengan Interpolasi Kontinu Ukuran Font, Tinggi Slot, Warna & Posisi + Preset Ukuran Font Lirik `11.5 pt`)
+
+### Ditambahkan & Diperbaiki (Added & Fixed)
+- **Part 1 — Pergantian Baris pada Panel `Lyrics` (`p = 0.0`) Meluncur Seragam dengan `Home` & `Morph` (`400 ms`, `Curves.easeOutCubic`) (`lib/widgets/now_playing_view.dart`):**
+  - Menyatukan animasi pergantian baris aktif dan *Tap-to-Seek* pada panel `Lyrics` yang sedang *settled* (`p = 0.0`, baik di *Rest mode* maupun *Explore mode* saat tidak disentuh) dengan mesin interpolasi snapshot `_syncSharedLineChangeAnimation` + `_resolveInterpolatedLineSnapshots` (`includeAllStageLines: true`) dan `_panel0TravelController` berdurasi `400 ms` (`_lyricSlideDuration`, `Curves.easeOutCubic`).
+  - Selama `400 ms`, seluruh daftar bergerak naik satu langkah baris secara simultan sambil menginterpolasikan `fontSize`, `slotHeight`, `colorBlend` (`Color.lerp(palette.nowPlayingSecondary, palette.nowPlayingPrimary, snap.colorBlend)`), dan `opacity` secara kontinu di setiap frame (`>= 4` frame intermediate pada sampling `20 fps` / `50 ms`), tanpa ada frame yang menampilkan kedua baris pada tipografi aktif akhir secara bersamaan, dengan `0.0 px` / `0.0 pt` lompatan pada Frame 0, `0%` tumpang tindih antar baris (`liveDocTop[i + 1] - (liveDocTop[i] + liveSlotH[i]) == 20.0 px`), serta *handover* `0.0 px` saat geseran horizontal dimulai di tengah animasi.
+- **Part 2 — Preset Ukuran Font Lirik `11.5 pt` (`fontSizePresets = [11.5, 13.5, 15.5, 18.0, 20.5]` & `offset` Floor `-4.0`) (`lib/providers/local_music_provider.dart`, `lib/widgets/now_playing_view.dart`):**
+  - Menambahkan preset `11.5 pt` ke `LocalMusicProvider.fontSizePresets` (`[11.5, 13.5, 15.5, 18.0, 20.5]`, default tetap `15.5 pt` pada indeks `2`) beserta migrasi sesi otomatis (`resolveFontSizeIndexFromSession` & penyimpanan `'lyricsFontSizePt'`) sehingga indeks sesi lama `0..3` tetap memetakan ke nilai `13.5`, `15.5`, `18.0`, dan `20.5 pt`.
+  - Memperluas batas bawah `fontSizePrefOffset` dari `.clamp(-1.5, 2.0)` menjadi `.clamp(-4.0, 2.0)` di keempat lokasi pembacaan (`_buildLyricsStagePanel`, `_buildFluidMorphLyricsScene`, `_buildLeftLyricsColumn`, dan `_showFullLyricsSheet`) sehingga preset `11.5 pt` menghasilkan `preferredOffset = -4.0` (baris aktif `18.0 pt`) dan `13.5 pt` menghasilkan `preferredOffset = -2.0` (`20.0 pt`).
+
+---
+
 ## [v4.8 — Home Lyric Column: Tap and Long-Press Both Open the Full Lyrics Sheet] — 2026-11-11 (Ketuk (`onTap`) dan Tekan Lama (`onLongPress`) pada Kolom Lirik `Home` Sama-sama Membuka `Full Lyrics Sheet`)
 
 ### Diubah (Changed)
