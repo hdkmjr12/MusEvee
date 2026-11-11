@@ -6,6 +6,15 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.8 — Lyrics Stage (`Panel 0`) Canonical Active Wrap Locking & Continuous Row Interpolation] — 2026-11-11 (Penguncian Pemenggalan Baris Sekunder ke Tipografi Aktif pada Panggung `Lyrics` (`p = 0.0`) agar Tidak Melompat `1 → 2 → 1` Baris Sebelum, Saat, dan Sesudah Diputar)
+
+### Diperbaiki (Fixed)
+- **Penguncian Pemenggalan Baris Kanonis (`wrappedLineCount` & `rows`) ke Tipografi Aktif pada Panggung `Lyrics` (`Panel 0`, `p = 0.0`) (`lib/widgets/now_playing_view.dart`, `test/widget_test.dart`):**
+  - Menambahkan `NowPlayingView.measureSecondaryLyricFromActiveMetrics` pada `_ensurePanel0LyricsMetricsCached`, `_computeRestLineSnapshotsForCenter`, `_buildLyricsStagePanel`, dan paruh panggung `_buildFluidMorphLyricsScene` (`t >= 0.5`) sehingga metrik sekunder (`14.5 pt`) setiap baris pada Panggung Lirik (`Panel 0`) mewarisi pemenggalan baris (`rows` dan `wrappedLineCount`) dari metrik aktifnya (`22 / 20 / 18 pt`). Baris lirik menengah-panjang yang membutuhkan 2 (atau 3) baris saat aktif kini sudah tampil sebagai 2 (atau 3) baris dengan kata-kata yang sama persis di setiap baris sebelum diputar (`nextIdx`), saat sedang aktif (`centerIdx`), maupun setelah selesai diputar dan naik ke atas (`prevIdx`), menghilangkan efek patah `1 baris → 2 baris → 1 baris`.
+  - Menambahkan `NowPlayingView.lerpPanel0RowMetrics` untuk menginterpolasikan lebar baris (`row.width`), tinggi baris (`row.height`), posisi vertikal lokal (`row.localTop`), `fontSize`, dan `letterSpacing` secara kontinu sepanjang animasi *slide* `400 ms` tanpa *switch* mendadak pada `colorBlend == 0.5`, sambil menjaga kolom lirik `Home` (`Panel 1`, `p = 1.0`) tetap tidak berubah.
+
+---
+
 ## [v4.8 — Settled Lyrics Panel: Positions Ride the Slide Clock (`handoverSnaps[i].top` During Slide, No Frame-1 Teleport)] — 2026-11-11 (Posisi Baris pada Panel `Lyrics` (`p = 0.0`) Berjalan di Atas Jam Interpolasi Snapshot yang Sama dengan Tipografi — Menghilangkan Lompatan Posisi Frame-1)
 
 ### Diperbaiki (Fixed)

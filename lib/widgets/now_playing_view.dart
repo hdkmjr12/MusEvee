@@ -1026,6 +1026,166 @@ class NowPlayingView extends StatefulWidget {
     );
   }
 
+  /// Derives the Panel 0 (Lyrics Stage) secondary (`14.5 pt`) metrics for a
+  /// lyric line by locking its wrapped row breakdown (`rows` and
+  /// `wrappedLineCount`) to [activeMetrics]. This guarantees that a line in the
+  /// Lyrics Stage never reflows between `1 -> 2 -> 1` rows before, during, or
+  /// after being played.
+  static CachedLyricLineMetrics measureSecondaryLyricFromActiveMetrics(
+    CachedLyricLineMetrics activeMetrics, {
+    required double containerWidth,
+    double fontSize = MusEveePalette.lyricPanelSecondaryFontSize,
+    double? devicePixelRatio,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) {
+    final cleaned = activeMetrics.text.trim();
+    final isEmptySecondary = cleaned.isEmpty;
+    const lineHeight = MusEveePalette.lyricLineHeight;
+    const letterSpacing = 0.0;
+    const fontWeight = FontWeight.w400;
+    final effectiveLayoutWidth = math.max(1.0, containerWidth);
+
+    final textStyle = TextStyle(
+      fontFamily: 'Poppins',
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      height: lineHeight,
+      letterSpacing: letterSpacing,
+    );
+
+    final sourceRows = activeMetrics.rows;
+    final wrappedCount = math.max(1, sourceRows.length);
+    final singleRowHeight = fontSize * lineHeight;
+    final rawSlotHeight = singleRowHeight * wrappedCount;
+    final slotHeight = devicePixelRatio != null
+        ? snapToPhysicalPixel(rawSlotHeight, devicePixelRatio)
+        : rawSlotHeight;
+
+    final List<LyricRowMetrics> rows = <LyricRowMetrics>[];
+    double maxLineW = 0.0;
+
+    if (isEmptySecondary || sourceRows.isEmpty) {
+      rows.add(
+        LyricRowMetrics(
+          rowIndex: 0,
+          text: '',
+          width: 0.0,
+          height: slotHeight,
+          localTop: 0.0,
+        ),
+      );
+    } else {
+      for (int r = 0; r < wrappedCount; r++) {
+        final rowText = sourceRows[r].text;
+        double rowW = 0.0;
+        if (rowText.isNotEmpty) {
+          final rowPainter = TextPainter(
+            text: TextSpan(text: rowText, style: textStyle),
+            textDirection: TextDirection.ltr,
+            textScaler: textScaler,
+            maxLines: 1,
+          )..layout(
+              maxWidth: math.max(effectiveLayoutWidth, containerWidth) * 2.0,
+            );
+          rowW = rowPainter.width.clamp(0.0, containerWidth);
+          rowPainter.dispose();
+        }
+        if (rowW > maxLineW) {
+          maxLineW = rowW;
+        }
+        final localTop = r * singleRowHeight;
+        final rowH = (r == wrappedCount - 1)
+            ? math.max(1.0, slotHeight - localTop)
+            : singleRowHeight;
+        rows.add(
+          LyricRowMetrics(
+            rowIndex: r,
+            text: rowText,
+            width: rowW,
+            height: rowH,
+            localTop: localTop,
+          ),
+        );
+      }
+    }
+
+    return CachedLyricLineMetrics(
+      text: cleaned,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      lineHeight: lineHeight,
+      letterSpacing: letterSpacing,
+      wrappedLineCount: wrappedCount,
+      slotHeight: slotHeight,
+      columnWidth: containerWidth,
+      measuredLineWidth: maxLineW.clamp(0.0, containerWidth),
+      rows: rows,
+    );
+  }
+
+  /// Smoothly interpolates row widths, row heights, local tops, font size, and
+  /// letter spacing between [secondaryMetrics] and [activeMetrics] when both
+  /// share the same canonical wrapped row count on the Lyrics Stage (`Panel 0`).
+  static CachedLyricLineMetrics lerpPanel0RowMetrics({
+    required CachedLyricLineMetrics secondaryMetrics,
+    required CachedLyricLineMetrics activeMetrics,
+    required double fontSize,
+    required double slotHeight,
+    required double colorBlend,
+    required double containerWidth,
+  }) {
+    if (secondaryMetrics.rows.length != activeMetrics.rows.length ||
+        secondaryMetrics.rows.isEmpty) {
+      return colorBlend >= 0.5 ? activeMetrics : secondaryMetrics;
+    }
+    final fontSpan = activeMetrics.fontSize - secondaryMetrics.fontSize;
+    final tRole = fontSpan.abs() > 1e-4
+        ? ((fontSize - secondaryMetrics.fontSize) / fontSpan).clamp(0.0, 1.0)
+        : colorBlend.clamp(0.0, 1.0);
+    final letterSpacing = secondaryMetrics.letterSpacing +
+        (activeMetrics.letterSpacing - secondaryMetrics.letterSpacing) * tRole;
+    final wrappedCount = activeMetrics.rows.length;
+    final singleRowHeight = slotHeight / math.max(1, wrappedCount);
+
+    final List<LyricRowMetrics> rows = <LyricRowMetrics>[];
+    double maxW = 0.0;
+    for (int r = 0; r < wrappedCount; r++) {
+      final secRow = secondaryMetrics.rows[r];
+      final actRow = activeMetrics.rows[r];
+      final rowW = (secRow.width + (actRow.width - secRow.width) * tRole)
+          .clamp(0.0, containerWidth);
+      if (rowW > maxW) {
+        maxW = rowW;
+      }
+      final localTop = r * singleRowHeight;
+      final rowH = (r == wrappedCount - 1)
+          ? math.max(1.0, slotHeight - localTop)
+          : singleRowHeight;
+      rows.add(
+        LyricRowMetrics(
+          rowIndex: r,
+          text: actRow.text,
+          width: rowW,
+          height: rowH,
+          localTop: localTop,
+        ),
+      );
+    }
+
+    return CachedLyricLineMetrics(
+      text: activeMetrics.text,
+      fontSize: fontSize,
+      fontWeight: activeMetrics.fontWeight,
+      lineHeight: activeMetrics.lineHeight,
+      letterSpacing: letterSpacing,
+      wrappedLineCount: wrappedCount,
+      slotHeight: slotHeight,
+      columnWidth: containerWidth,
+      measuredLineWidth: maxW.clamp(0.0, containerWidth),
+      rows: rows,
+    );
+  }
+
   @override
   State<NowPlayingView> createState() => NowPlayingViewState();
 }
@@ -1535,6 +1695,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     required bool isActiveRole,
     required double hysteresisMarginPx,
     required double devicePixelRatio,
+    CachedLyricLineMetrics? lockedMetricsOverride,
     bool allowTriggerGlide = true,
     bool recordAsRenderedState = true,
     bool animateRoleChange = false,
@@ -1563,16 +1724,24 @@ class NowPlayingViewState extends State<NowPlayingView>
         existing.isActiveRole != isActiveRole ||
         (existing.fontSize - fontSize).abs() > 1.5;
 
-    final metrics = NowPlayingView.measureLyricLineWithHysteresis(
-      rawText,
-      containerWidth: containerWidth,
-      fontSize: fontSize,
-      isActiveRole: isActiveRole,
-      previousWrapCount:
-          roleOrFontChanged ? null : existing.committedWrapCount,
-      hysteresisMarginPx: roleOrFontChanged ? 0.0 : hysteresisMarginPx,
-      devicePixelRatio: devicePixelRatio,
-    );
+    final CachedLyricLineMetrics metrics;
+    if (lockedMetricsOverride != null) {
+      metrics =
+          (lockedMetricsOverride.columnWidth - containerWidth).abs() <= 0.01
+              ? lockedMetricsOverride
+              : lockedMetricsOverride.copyWithContainerWidth(containerWidth);
+    } else {
+      metrics = NowPlayingView.measureLyricLineWithHysteresis(
+        rawText,
+        containerWidth: containerWidth,
+        fontSize: fontSize,
+        isActiveRole: isActiveRole,
+        previousWrapCount:
+            roleOrFontChanged ? null : existing.committedWrapCount,
+        hysteresisMarginPx: roleOrFontChanged ? 0.0 : hysteresisMarginPx,
+        devicePixelRatio: devicePixelRatio,
+      );
+    }
 
     final targetRowTops = _canonicalRowTopsForMetrics(metrics);
 
@@ -1736,6 +1905,14 @@ class NowPlayingViewState extends State<NowPlayingView>
       if (clampedT >= 1.0 - 1e-4 &&
           _cachedPanel0SecondaryMetrics.containsKey(k)) {
         return _cachedPanel0SecondaryMetrics[k]!.slotHeight;
+      }
+      if (clampedT >= 0.5 && _cachedPanel0ActiveMetrics.containsKey(k)) {
+        return NowPlayingView.measureSecondaryLyricFromActiveMetrics(
+          _cachedPanel0ActiveMetrics[k]!,
+          containerWidth: containerWidth,
+          fontSize: secFontSize,
+          devicePixelRatio: dpr,
+        ).slotHeight;
       }
       return NowPlayingView.measureLyricLineAtWidth(
         text,
@@ -2589,18 +2766,19 @@ class NowPlayingViewState extends State<NowPlayingView>
             maxWidth: homeColumnWidth,
             preferredOffset: preferredOffset,
           );
-      _cachedPanel0ActiveMetrics[i] = NowPlayingView.measureLyricLineAtWidth(
+      final activeMetrics = NowPlayingView.measureLyricLineAtWidth(
         text,
         containerWidth: columnWidth,
         fontSize: activeRoleFontSize,
         isActiveRole: true,
         devicePixelRatio: devicePixelRatio,
       );
-      _cachedPanel0SecondaryMetrics[i] = NowPlayingView.measureLyricLineAtWidth(
-        text,
+      _cachedPanel0ActiveMetrics[i] = activeMetrics;
+      _cachedPanel0SecondaryMetrics[i] =
+          NowPlayingView.measureSecondaryLyricFromActiveMetrics(
+        activeMetrics,
         containerWidth: columnWidth,
         fontSize: MusEveePalette.lyricPanelSecondaryFontSize,
-        isActiveRole: false,
         devicePixelRatio: devicePixelRatio,
       );
     }
@@ -3786,6 +3964,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                         hysteresisMarginPx:
                             NowPlayingView.wrapHysteresisMarginPx,
                         devicePixelRatio: dpr,
+                        lockedMetricsOverride:
+                            _cachedPanel0SecondaryMetrics[prevIdx],
                       )
                     : null;
                 final centerActiveRoleLayout = _resolveLineMorphMetricsAndGlide(
@@ -3799,6 +3979,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                   hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                   devicePixelRatio: dpr,
                   recordAsRenderedState: isCenterActive,
+                  lockedMetricsOverride:
+                      _cachedPanel0ActiveMetrics[centerIdx],
                 );
                 final centerRenderLayout = isCenterActive
                     ? centerActiveRoleLayout
@@ -3814,6 +3996,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                             NowPlayingView.wrapHysteresisMarginPx,
                         devicePixelRatio: dpr,
                         recordAsRenderedState: true,
+                        lockedMetricsOverride:
+                            _cachedPanel0SecondaryMetrics[centerIdx],
                       );
                 final _ResolvedLineRowLayout? nextLayout = hasNext
                     ? _resolveLineMorphMetricsAndGlide(
@@ -3827,6 +4011,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                         hysteresisMarginPx:
                             NowPlayingView.wrapHysteresisMarginPx,
                         devicePixelRatio: dpr,
+                        lockedMetricsOverride:
+                            _cachedPanel0SecondaryMetrics[nextIdx],
                       )
                     : null;
 
@@ -4357,16 +4543,15 @@ class NowPlayingViewState extends State<NowPlayingView>
                                         final actM =
                                             _cachedPanel0ActiveMetrics[i] ??
                                                 lineMetrics[i];
-                                        final isPureSec = (snap.fontSize -
-                                                    MusEveePalette
-                                                        .lyricPanelSecondaryFontSize)
-                                                .abs() <=
-                                            1e-3;
-                                        itemMetrics = isPureSec
-                                            ? secM
-                                            : (snap.colorBlend >= 0.5
-                                                ? actM
-                                                : secM);
+                                        itemMetrics = NowPlayingView
+                                            .lerpPanel0RowMetrics(
+                                          secondaryMetrics: secM,
+                                          activeMetrics: actM,
+                                          fontSize: snap.fontSize,
+                                          slotHeight: itemSlotH,
+                                          colorBlend: snap.colorBlend,
+                                          containerWidth: textColumnWidth,
+                                        );
                                         final canonicalTops =
                                             _canonicalRowTopsForMetrics(
                                                 itemMetrics);
@@ -4962,6 +5147,23 @@ class NowPlayingViewState extends State<NowPlayingView>
                     _frozenStageScrollOffsetAtDragStart!)
                 : 0.0;
 
+            CachedLyricLineMetrics? stageLockedSecMetricsFor(int lineIdx) {
+              if (clampedT < 0.5) return null;
+              final actM = _cachedPanel0ActiveMetrics[lineIdx];
+              if (actM == null) return null;
+              if (clampedT >= 1.0 - 1e-4 &&
+                  (containerWidth - stageWidth).abs() <= 0.01 &&
+                  _cachedPanel0SecondaryMetrics.containsKey(lineIdx)) {
+                return _cachedPanel0SecondaryMetrics[lineIdx];
+              }
+              return NowPlayingView.measureSecondaryLyricFromActiveMetrics(
+                actM,
+                containerWidth: containerWidth,
+                fontSize: morphSecondaryFontSize,
+                devicePixelRatio: dpr,
+              );
+            }
+
             // Section C: Intro stack (`effectiveIdx == -1`, including Demotion `0 -> -1`)
             if (!isCenterActive) {
               final has0 = entries.isNotEmpty;
@@ -5001,6 +5203,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       isActiveRole: false,
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
+                      lockedMetricsOverride: stageLockedSecMetricsFor(0),
                     )
                   : _ResolvedLineRowLayout(
                       metrics: emptySlotMetrics,
@@ -5034,6 +5237,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       isActiveRole: false,
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
+                      lockedMetricsOverride: stageLockedSecMetricsFor(1),
                     )
                   : _ResolvedLineRowLayout(
                       metrics: emptySlotMetrics,
@@ -5053,6 +5257,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       isActiveRole: false,
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
+                      lockedMetricsOverride: stageLockedSecMetricsFor(2),
                     )
                   : _ResolvedLineRowLayout(
                       metrics: emptySlotMetrics,
@@ -5382,6 +5587,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                     isActiveRole: false,
                     hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                     devicePixelRatio: dpr,
+                    lockedMetricsOverride: stageLockedSecMetricsFor(prevIdx),
                   )
                 : _ResolvedLineRowLayout(
                     metrics: emptySlotMetrics,
@@ -5402,6 +5608,10 @@ class NowPlayingViewState extends State<NowPlayingView>
               hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
               devicePixelRatio: dpr,
               recordAsRenderedState: true,
+              lockedMetricsOverride: (clampedT >= 1.0 - 1e-4 &&
+                      (containerWidth - stageWidth).abs() <= 0.01)
+                  ? _cachedPanel0ActiveMetrics[centerIdx]
+                  : null,
             );
             final centerRenderLayout = centerActiveRoleLayout;
             final nextLayout = hasNext
@@ -5415,6 +5625,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                     isActiveRole: false,
                     hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                     devicePixelRatio: dpr,
+                    lockedMetricsOverride: stageLockedSecMetricsFor(nextIdx),
                   )
                 : _ResolvedLineRowLayout(
                     metrics: emptySlotMetrics,
@@ -5616,6 +5827,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                 isActiveRole: false,
                 hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                 devicePixelRatio: dpr,
+                lockedMetricsOverride: stageLockedSecMetricsFor(outgoingTopIdx),
               );
               extraLineWidgets.add(
                 Positioned(
@@ -5668,6 +5880,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                 isActiveRole: false,
                 hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                 devicePixelRatio: dpr,
+                lockedMetricsOverride: stageLockedSecMetricsFor(2),
               );
               extraLineWidgets.add(
                 Positioned(

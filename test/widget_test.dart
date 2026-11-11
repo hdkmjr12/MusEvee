@@ -2734,7 +2734,7 @@ void main() {
     // Line 1 wraps into 2 rows at Home (~162px) and unwraps to 1 row at Stage (~326px)
     final morphSong = _mockSong(
       1,
-      lyrics: '[00:01.00] Tell me where the road goes tonight\n'
+      lyrics: '[00:01.00] Tell me where the road goes now\n'
           '[00:05.00] And you know\n'
           '[00:10.00] Silver lights\n'
           '[00:15.00] Fourth line',
@@ -5214,11 +5214,11 @@ void main() {
 
           if (step == 1) {
             // Criterion 1: In the first changed frame (~33ms), no visible line's screen top
-            // has moved more than ~8.5px (at u=easeOutCubic(33/400)=0.228, proportional to step),
-            // and outgoing line is NOWHERE near its destination slot (which is >= 34px away)!
+            // has moved more than u=easeOutCubic(33/400)=0.228 of total travel (~15.3px for a 3-row line),
+            // and outgoing line is NOWHERE near its destination slot (which is >= 34px–67px away)!
             // Crucially, typography has ALREADY moved in this very same first frame!
             expect((curOutTop - preOutTop).abs(), greaterThan(1.0));
-            expect((curOutTop - preOutTop).abs(), lessThan(15.0));
+            expect((curOutTop - preOutTop).abs(), lessThan(16.0));
             expect(curOutFont, lessThan(preOutFont - 0.1));
             expect(curInFont, greaterThan(preInFont + 0.1));
             expect(curOutColor, isNot(equals(preOutColor)));
@@ -5335,6 +5335,181 @@ void main() {
         outgoingIdx: 0,
         incomingIdx: 1,
         triggerPositionMs: 11000,
+      );
+    },
+  );
+
+  testWidgets(
+    'Panel 0 Canonical Active Wrap Locking: medium-long lyric line keeps 2 rows before playing, across all 400ms entrance/exit frames without mid-slide reflow jump, while active, and after moving up',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final localProvider = LocalMusicProvider();
+      final downloaderProvider = DownloaderProvider();
+
+      // Line 1 ("Aishiteru tte itte yo", 21 chars) fits in 1 row at 14.5pt (21 * 14.5 = 304.5 < 326px)
+      // when measured independently, but wraps into 2 rows at active 22pt (21 * 21.8 = 457.8 > 326px).
+      // With Panel 0 canonical active wrap locking, Line 1 must remain 2 rows with identical row texts
+      // before playing (nextIdx), throughout entrance, while active, throughout exit, and after finishing (prevIdx).
+      final wrapLockSong = _mockSong(
+        803,
+        lyrics: '[00:05.00] Short intro\n'
+            '[00:10.00] Aishiteru tte itte yo\n'
+            '[00:15.00] Outro line',
+      );
+
+      localProvider.seedSongsForTesting([wrapLockSong]);
+      await localProvider.playSong(wrapLockSong, queueContext: [wrapLockSong]);
+      await localProvider.togglePlayPause();
+
+      final npKey = GlobalKey<NowPlayingViewState>();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LocalMusicProvider>.value(
+              value: localProvider,
+            ),
+            ChangeNotifierProvider<DownloaderProvider>.value(
+              value: downloaderProvider,
+            ),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.light().copyWith(
+              extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+            ),
+            home: Scaffold(
+              body: NowPlayingView(
+                key: npKey,
+                onNavigateToDownloader: () {},
+                onNavigateToFolders: () {},
+                onMoveLocalSongFolder: (_) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 950));
+
+      final state = npKey.currentState!;
+      localProvider.handleNativePosition(
+        positionMs: 6000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pumpAndSettle();
+      state.debugSetPanelProgress(0.0);
+      await tester.pumpAndSettle();
+
+      // 1. Before playing (Line 1 is nextIdx at secondary 14.5pt): already 2 rows!
+      expect(state.debugCommittedWrapCountForLine(1), 2);
+      expect(
+        find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')),
+        findsOneWidget,
+      );
+      final preRow0Text = tester
+          .widget<Text>(find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')))
+          .data!;
+      final preRow1Text = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_text_1')),
+          )
+          .data!;
+
+      // 2. Entrance transition (0 -> 1) across 400ms: stays 2 rows with identical row text on EVERY frame
+      localProvider.handleNativePosition(
+        positionMs: 11000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pump();
+      expect(state.isPanel0SlideAnimating, isTrue);
+
+      double prevRow1LocalOffset = tester
+              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')))
+              .top -
+          tester
+              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_0')))
+              .top;
+      for (int step = 1; step <= 13; step++) {
+        await tester.pump(const Duration(milliseconds: 33));
+        expect(state.debugCommittedWrapCountForLine(1), 2);
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+              )
+              .data,
+          equals(preRow0Text),
+        );
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(
+                  const ValueKey<String>('lyrics_panel_line_1_row_text_1'),
+                ),
+              )
+              .data,
+          equals(preRow1Text),
+        );
+        final curRow1LocalOffset = tester
+                .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')),
+                )
+                .top -
+            tester
+                .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_0')),
+                )
+                .top;
+        // Row spacing expands monotonically with fontSize as Line 1 grows from 14.5pt -> 22pt
+        expect(curRow1LocalOffset, greaterThanOrEqualTo(prevRow1LocalOffset - 0.05));
+        prevRow1LocalOffset = curRow1LocalOffset;
+      }
+      await tester.pump();
+
+      // 3. While active (centerIdx == 1): 2 rows with identical row breakdown
+      expect(state.debugCommittedWrapCountForLine(1), 2);
+
+      // 4. Exit transition (1 -> 2) across 400ms & after moving up (prevIdx == 1): stays 2 rows!
+      localProvider.handleNativePosition(
+        positionMs: 16000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pump();
+      for (int step = 1; step <= 13; step++) {
+        await tester.pump(const Duration(milliseconds: 33));
+        expect(state.debugCommittedWrapCountForLine(1), 2);
+        expect(
+          find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')),
+          findsOneWidget,
+        );
+      }
+      await tester.pump();
+      expect(state.debugCommittedWrapCountForLine(1), 2);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+            )
+            .data,
+        equals(preRow0Text),
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(
+                const ValueKey<String>('lyrics_panel_line_1_row_text_1'),
+              ),
+            )
+            .data,
+        equals(preRow1Text),
       );
     },
   );
