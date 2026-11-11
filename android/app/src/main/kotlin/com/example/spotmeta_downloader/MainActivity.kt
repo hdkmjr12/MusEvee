@@ -202,7 +202,7 @@ class MainActivity : FlutterActivity() {
                         MediaScannerConnection.scanFile(
                             applicationContext,
                             arrayOf(path),
-                            arrayOf("audio/mpeg"),
+                            arrayOf(mimeTypeForAudioPath(path)),
                             null
                         )
                         result.success(true)
@@ -1302,7 +1302,9 @@ class MainActivity : FlutterActivity() {
         val album: String?,
         val year: String?,
         val usltLyrics: String?,
-        val apicBytes: ByteArray?
+        val apicBytes: ByteArray?,
+        val sampleRateHz: Int = 0,
+        val durationMs: Long = 0L
     )
 
     private fun extractTrackMetadataMap(
@@ -1334,9 +1336,7 @@ class MainActivity : FlutterActivity() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 sampleRateHz = retriever.extractMetadata(
                     MediaMetadataRetriever.METADATA_KEY_SAMPLERATE
-                )?.toIntOrNull() ?: 44100
-            } else {
-                sampleRateHz = 44100
+                )?.toIntOrNull() ?: 0
             }
             embeddedCover = retriever.embeddedPicture
         } catch (_: Exception) {
@@ -1347,8 +1347,48 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // Parse binary ID3v2 header for USLT lyrics and fallback text/APIC frames
-        val id3 = parseId3v2Tags(file, needApic = (embeddedCover == null))
+        // Parse binary FLAC metadata blocks (VORBIS_COMMENT + PICTURE + STREAMINFO) or ID3v2 header
+        val isFlacExt = file.extension.lowercase() == "flac"
+        val flacTags = if (isFlacExt) {
+            parseFlacTags(file, needApic = (embeddedCover == null))
+        } else {
+            null
+        }
+        val id3 = if (flacTags != null &&
+            (!flacTags.title.isNullOrBlank() ||
+                !flacTags.usltLyrics.isNullOrBlank() ||
+                flacTags.apicBytes != null ||
+                flacTags.sampleRateHz > 0)
+        ) {
+            flacTags
+        } else {
+            val parsedId3 = parseId3v2Tags(file, needApic = (embeddedCover == null))
+            if (!isFlacExt &&
+                parsedId3.title == null &&
+                parsedId3.usltLyrics == null &&
+                parsedId3.apicBytes == null
+            ) {
+                // Check if file without .flac extension still has a fLaC header
+                val fallbackFlac = parseFlacTags(file, needApic = (embeddedCover == null))
+                if (fallbackFlac.title != null || fallbackFlac.usltLyrics != null || fallbackFlac.apicBytes != null) {
+                    fallbackFlac
+                } else {
+                    parsedId3
+                }
+            } else {
+                parsedId3
+            }
+        }
+
+        if (sampleRateHz <= 0) {
+            sampleRateHz = if (id3.sampleRateHz > 0) id3.sampleRateHz else 44100
+        }
+        if (durationMs <= 0L && id3.durationMs > 0L) {
+            durationMs = id3.durationMs
+        }
+        if (bitrateBps <= 0L && durationMs > 0L) {
+            bitrateBps = (file.length() * 8L * 1000L) / durationMs
+        }
         val coverBytes = embeddedCover ?: id3.apicBytes
 
         // Fallback filename parser ("Artist - Title.mp3")
@@ -1502,10 +1542,19 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Reads full-resolution embedded APIC artwork bytes on-demand in memory
-     * for `NowPlayingView` without writing a large file to disk.
+     * Reads full-resolution embedded APIC / FLAC PICTURE artwork bytes on-demand
+     * in memory for `NowPlayingView` without writing a large file to disk.
      */
     private fun extractFullEmbeddedCoverBytes(file: File): ByteArray? {
+        if (file.extension.lowercase() == "flac") {
+            try {
+                val flacPic = parseFlacTags(file, needApic = true).apicBytes
+                if (flacPic != null && flacPic.isNotEmpty()) {
+                    return flacPic
+                }
+            } catch (_: Exception) {
+            }
+        }
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)
@@ -1522,6 +1571,7 @@ class MainActivity : FlutterActivity() {
         }
         return try {
             parseId3v2Tags(file, needApic = true).apicBytes
+                ?: parseFlacTags(file, needApic = true).apicBytes
         } catch (_: Exception) {
             null
         }
@@ -1575,6 +1625,7 @@ class MainActivity : FlutterActivity() {
                                 nameLower.startsWith("cover_") ||
                                 nameLower.startsWith("output_") ||
                                 nameLower.startsWith("retag_") ||
+                                nameLower.startsWith("hires_") ||
                                 nameLower.startsWith("yt_")
                             )
                     ) {
@@ -1787,6 +1838,226 @@ class MainActivity : FlutterActivity() {
         }
 
         return ParsedId3Tags(title, artist, album, year, usltLyrics, apicBytes)
+    }
+
+    /**
+     * Streams native FLAC (`fLaC`) metadata blocks via `RandomAccessFile`:
+     * - Block `0` (`STREAMINFO`): extracts `sampleRateHz` and `durationMs`
+     * - Block `4` (`VORBIS_COMMENT`): extracts UTF-8 `TITLE`, `ARTIST`/`ALBUMARTIST`,
+     *   `ALBUM`, `DATE`/`YEAR`, and `LYRICS`/`UNSYNCEDLYRICS` (into `usltLyrics`)
+     * - Block `6` (`PICTURE`): extracts embedded front cover image bytes when
+     *   `needApic == true`, or skips via `raf.seek()` when `needApic == false`.
+     */
+    private fun parseFlacTags(file: File, needApic: Boolean): ParsedId3Tags {
+        if (!file.exists() || file.length() < 42L) {
+            return ParsedId3Tags(null, null, null, null, null, null)
+        }
+
+        var title: String? = null
+        var artist: String? = null
+        var album: String? = null
+        var year: String? = null
+        var usltLyrics: String? = null
+        var apicBytes: ByteArray? = null
+        var sampleRateHz = 0
+        var durationMs = 0L
+
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                val magicBuf = ByteArray(10)
+                raf.readFully(magicBuf, 0, 4)
+
+                // Skip optional prepended ID3v2 header if present before 'fLaC'
+                if (magicBuf[0] == 0x49.toByte() &&
+                    magicBuf[1] == 0x44.toByte() &&
+                    magicBuf[2] == 0x33.toByte() &&
+                    file.length() >= 14L
+                ) {
+                    raf.readFully(magicBuf, 4, 6)
+                    val id3Size = readSyncsafeInt(magicBuf, 6)
+                    val afterId3 = 10L + id3Size.toLong()
+                    if (afterId3 + 4L >= file.length()) {
+                        return ParsedId3Tags(null, null, null, null, null, null)
+                    }
+                    raf.seek(afterId3)
+                    raf.readFully(magicBuf, 0, 4)
+                }
+
+                // Verify 'fLaC' magic bytes (0x66 0x4C 0x61 0x43)
+                if (magicBuf[0] != 0x66.toByte() ||
+                    magicBuf[1] != 0x4C.toByte() ||
+                    magicBuf[2] != 0x61.toByte() ||
+                    magicBuf[3] != 0x43.toByte()
+                ) {
+                    return ParsedId3Tags(null, null, null, null, null, null)
+                }
+
+                val bh = ByteArray(4)
+                var blocksRead = 0
+                while (raf.filePointer + 4L <= file.length() && blocksRead < 64) {
+                    blocksRead++
+                    raf.readFully(bh)
+                    val headerByte = bh[0].toInt() and 0xFF
+                    val isLast = (headerByte and 0x80) != 0
+                    val blockType = headerByte and 0x7F
+                    val blockLen = ((bh[1].toInt() and 0xFF) shl 16) or
+                        ((bh[2].toInt() and 0xFF) shl 8) or
+                        (bh[3].toInt() and 0xFF)
+                    val dataStart = raf.filePointer
+                    val nextBlockPos = dataStart + blockLen.toLong()
+                    if (blockLen < 0 || nextBlockPos > file.length()) break
+
+                    when (blockType) {
+                        0 -> {
+                            // STREAMINFO (34 bytes)
+                            if (blockLen >= 34) {
+                                val si = ByteArray(34)
+                                raf.readFully(si)
+                                val sr = ((si[10].toInt() and 0xFF) shl 12) or
+                                    ((si[11].toInt() and 0xFF) shl 4) or
+                                    ((si[12].toInt() and 0xF0) ushr 4)
+                                if (sr > 0) {
+                                    sampleRateHz = sr
+                                    val totalSamples =
+                                        ((si[13].toLong() and 0x0FL) shl 32) or
+                                            ((si[14].toLong() and 0xFFL) shl 24) or
+                                            ((si[15].toLong() and 0xFFL) shl 16) or
+                                            ((si[16].toLong() and 0xFFL) shl 8) or
+                                            (si[17].toLong() and 0xFFL)
+                                    if (totalSamples > 0L) {
+                                        durationMs = (totalSamples * 1000L) / sr.toLong()
+                                    }
+                                }
+                            }
+                            raf.seek(nextBlockPos)
+                        }
+                        4 -> {
+                            // VORBIS_COMMENT (little-endian lengths, UTF-8 strings)
+                            if (blockLen in 8..(2 * 1024 * 1024)) {
+                                val vc = ByteArray(blockLen)
+                                raf.readFully(vc)
+                                var p = 0
+                                if (p + 4 <= vc.size) {
+                                    val vendorLen = readLittleEndianInt(vc, p)
+                                    p += 4
+                                    if (vendorLen in 0..(vc.size - p)) {
+                                        p += vendorLen
+                                        if (p + 4 <= vc.size) {
+                                            val count = readLittleEndianInt(vc, p)
+                                            p += 4
+                                            var cIdx = 0
+                                            while (cIdx < count && cIdx < 512 && p + 4 <= vc.size) {
+                                                cIdx++
+                                                val cLen = readLittleEndianInt(vc, p)
+                                                p += 4
+                                                if (cLen < 0 || p + cLen > vc.size) break
+                                                val entry = String(vc, p, cLen, StandardCharsets.UTF_8)
+                                                p += cLen
+                                                val eqIdx = entry.indexOf('=')
+                                                if (eqIdx > 0) {
+                                                    val key = entry.substring(0, eqIdx).trim().uppercase()
+                                                    val value = entry.substring(eqIdx + 1)
+                                                        .replace("\u0000", "")
+                                                        .replace("\uFEFF", "")
+                                                        .trim()
+                                                    if (value.isNotEmpty()) {
+                                                        when (key) {
+                                                            "TITLE" -> title = value
+                                                            "ARTIST" -> if (artist.isNullOrBlank()) artist = value
+                                                            "ALBUMARTIST" -> if (artist.isNullOrBlank()) artist = value
+                                                            "ALBUM" -> album = value
+                                                            "DATE", "YEAR", "ORIGINALDATE" -> {
+                                                                if (year.isNullOrBlank()) year = value
+                                                            }
+                                                            "LYRICS", "UNSYNCEDLYRICS", "SYNCEDLYRICS" -> {
+                                                                if (usltLyrics.isNullOrBlank() ||
+                                                                    value.contains("[0")
+                                                                ) {
+                                                                    usltLyrics = value
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            raf.seek(nextBlockPos)
+                        }
+                        6 -> {
+                            // PICTURE (big-endian lengths + image bytes)
+                            if (needApic && apicBytes == null && blockLen in 32..(16 * 1024 * 1024)) {
+                                val pic = ByteArray(blockLen)
+                                raf.readFully(pic)
+                                var p = 4 // skip picture type
+                                if (p + 4 <= pic.size) {
+                                    val mimeLen = readBigEndianInt(pic, p)
+                                    p += 4
+                                    if (mimeLen in 0..(pic.size - p)) {
+                                        p += mimeLen
+                                        if (p + 4 <= pic.size) {
+                                            val descLen = readBigEndianInt(pic, p)
+                                            p += 4
+                                            if (descLen in 0..(pic.size - p)) {
+                                                p += descLen + 16 // skip width, height, depth, colors
+                                                if (p + 4 <= pic.size) {
+                                                    val dataLen = readBigEndianInt(pic, p)
+                                                    p += 4
+                                                    if (dataLen > 0 && p + dataLen <= pic.size) {
+                                                        apicBytes = pic.copyOfRange(p, p + dataLen)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (apicBytes == null) {
+                                    apicBytes = extractImageFromBytes(pic)
+                                }
+                            }
+                            raf.seek(nextBlockPos)
+                        }
+                        else -> {
+                            raf.seek(nextBlockPos)
+                        }
+                    }
+
+                    if (isLast) break
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        return ParsedId3Tags(
+            title = title,
+            artist = artist,
+            album = album,
+            year = year,
+            usltLyrics = usltLyrics,
+            apicBytes = apicBytes,
+            sampleRateHz = sampleRateHz,
+            durationMs = durationMs
+        )
+    }
+
+    private fun readLittleEndianInt(buf: ByteArray, offset: Int): Int {
+        return (buf[offset].toInt() and 0xFF) or
+            ((buf[offset + 1].toInt() and 0xFF) shl 8) or
+            ((buf[offset + 2].toInt() and 0xFF) shl 16) or
+            ((buf[offset + 3].toInt() and 0xFF) shl 24)
+    }
+
+    private fun mimeTypeForAudioPath(path: String?): String {
+        val lower = path?.trim()?.lowercase() ?: ""
+        return when {
+            lower.endsWith(".flac") -> "audio/flac"
+            lower.endsWith(".m4a") -> "audio/mp4"
+            lower.endsWith(".wav") -> "audio/wav"
+            lower.endsWith(".ogg") || lower.endsWith(".opus") -> "audio/ogg"
+            else -> "audio/mpeg"
+        }
     }
 
     private fun parseId3v2FromBuffer(
@@ -2312,7 +2583,7 @@ class MainActivity : FlutterActivity() {
                 out.flush()
             }
             if (targetFile.exists() && targetFile.length() > 0L) {
-                scanMediaPath(path, "audio/mpeg")
+                scanMediaPath(path, mimeTypeForAudioPath(path))
                 result.success(
                     mapOf(
                         "written" to true,
@@ -2333,7 +2604,7 @@ class MainActivity : FlutterActivity() {
                     out.flush()
                 }
                 if (targetFile.exists() && targetFile.length() > 0L) {
-                    scanMediaPath(path, "audio/mpeg")
+                    scanMediaPath(path, mimeTypeForAudioPath(path))
                     result.success(
                         mapOf(
                             "written" to true,
@@ -2608,7 +2879,7 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     if (written) {
-                        scanMediaPath(path, "audio/mpeg")
+                        scanMediaPath(path, mimeTypeForAudioPath(path))
                     }
                     val needsAllFiles = !written &&
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
@@ -2784,6 +3055,7 @@ class MainActivity : FlutterActivity() {
                 File(appFlutterDir, "musevee_hidden_folders_v1.json") to File(backupDir, "musevee_hidden_folders_v1.json"),
                 File(appFlutterDir, "musevee_play_stats_v1.json") to File(backupDir, "musevee_play_stats_v1.json"),
                 File(appFlutterDir, "musevee_custom_folders_v1.json") to File(backupDir, "musevee_custom_folders_v1.json"),
+                File(appFlutterDir, "musevee_settings_v1.json") to File(backupDir, "musevee_settings_v1.json"),
                 File(appFlutterDir, "last_selected_folder.txt") to File(backupDir, "last_selected_folder.txt"),
                 File(sharedPrefsDir, "FlutterSharedPreferences.xml") to File(backupDir, "FlutterSharedPreferences.xml")
             )

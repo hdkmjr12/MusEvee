@@ -68,31 +68,51 @@ class PlaybackQueueView extends StatelessWidget {
                         style: TextStyle(
                           color: context.palette.textPrimary,
                           fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: -0.2,
                         ),
                       ),
                     ),
                     if (entries.isNotEmpty) ...[
                       IconButton(
+                        key: const ValueKey('queue_header_shuffle_button'),
                         visualDensity: VisualDensity.compact,
-                        tooltip: 'Acak (Shuffle)',
+                        tooltip: localProvider.isShuffle
+                            ? AppStrings.tr(
+                                'Shuffle Aktif',
+                                'Shuffle On',
+                                context,
+                              )
+                            : AppStrings.tr(
+                                'Acak (Shuffle)',
+                                'Shuffle',
+                                context,
+                              ),
                         onPressed: localProvider.toggleShuffle,
-                        icon: Icon(
-                          Icons.shuffle_rounded,
-                          size: 18,
-                          color: localProvider.isShuffle ? context.palette.accent : context.palette.textMuted,
+                        icon: Image.asset(
+                          'assets/icons/arrow.png',
+                          width: 19,
+                          height: 19,
+                          fit: BoxFit.contain,
+                          color: localProvider.isShuffle
+                              ? context.palette.nowPlayingPrimary
+                              : context.palette.nowPlayingInactiveIcon,
+                          colorBlendMode: BlendMode.srcIn,
                         ),
                       ),
                       TextButton(
+                        key: const ValueKey('queue_header_clear_button'),
                         style: TextButton.styleFrom(
-                          foregroundColor: context.palette.textMuted,
+                          foregroundColor: context.palette.nowPlayingSecondary,
                           visualDensity: VisualDensity.compact,
                         ),
                         onPressed: localProvider.clearQueue,
-                        child: const Text(
-                          'Bersihkan',
-                          style: TextStyle(fontSize: 12),
+                        child: Text(
+                          AppStrings.tr('Bersihkan', 'Clear', context),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],
@@ -181,7 +201,9 @@ class PlaybackQueueView extends StatelessWidget {
                           return Material(
                             key: ValueKey(entry.queueId),
                             color: isCurrent
-                                ? context.palette.accent.withValues(alpha: 0.12)
+                                ? context.palette.nowPlayingPrimary.withValues(
+                                    alpha: context.isDarkMode ? 0.08 : 0.06,
+                                  )
                                 : Colors.transparent,
                             child: InkWell(
                               onTap: () {
@@ -203,13 +225,17 @@ class PlaybackQueueView extends StatelessWidget {
                                                 isPlaying:
                                                     localProvider.isPlaying,
                                                 size: 17,
-                                                color: context.palette.accent,
+                                                color: context
+                                                    .palette
+                                                    .nowPlayingPrimary,
                                               ),
                                             )
                                           : Text(
                                               '${index + 1}',
                                               style: TextStyle(
-                                                color: context.palette.textMuted,
+                                                color: context
+                                                    .palette
+                                                    .nowPlayingSecondary,
                                                 fontSize: 12,
                                               ),
                                             ),
@@ -229,11 +255,15 @@ class PlaybackQueueView extends StatelessWidget {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: context.palette.textPrimary,
+                                              color: isCurrent
+                                                  ? context
+                                                      .palette
+                                                      .nowPlayingPrimary
+                                                  : context.palette.textPrimary,
                                               fontSize: 13.5,
                                               fontWeight: isCurrent
-                                                  ? FontWeight.w700
-                                                  : FontWeight.w600,
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w500,
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -242,7 +272,9 @@ class PlaybackQueueView extends StatelessWidget {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: context.palette.textMuted,
+                                              color: context
+                                                  .palette
+                                                  .nowPlayingSecondary,
                                               fontSize: 11.5,
                                             ),
                                           ),
@@ -2914,11 +2946,19 @@ class _LocalSongTile extends StatelessWidget {
     final hairline = context.palette.hairline;
 
     return Material(
-      color: isCurrent ? context.palette.accent.withValues(alpha: 0.14) : context.palette.surfaceCard,
+      color: isCurrent
+          ? context.palette.nowPlayingPrimary.withValues(
+              alpha: context.isDarkMode ? 0.08 : 0.06,
+            )
+          : context.palette.surfaceCard,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(
-          color: isCurrent ? context.palette.accent.withValues(alpha: 0.45) : hairline,
+          color: isCurrent
+              ? context.palette.nowPlayingPrimary.withValues(
+                  alpha: context.isDarkMode ? 0.28 : 0.22,
+                )
+              : hairline,
           width: 0.8,
         ),
       ),
@@ -2944,7 +2984,7 @@ class _LocalSongTile extends StatelessWidget {
                           AnimatedEqualizerIcon(
                             isPlaying: localProvider.isPlaying,
                             size: 15,
-                            color: context.palette.accent,
+                            color: context.palette.nowPlayingPrimary,
                           ),
                           const SizedBox(width: 6),
                         ],

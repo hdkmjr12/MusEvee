@@ -296,6 +296,25 @@ class FolderService {
     }
   }
 
+  /// Returns `true` if [pathOrName] ends with `.mp3` or `.flac` (case-insensitive).
+  static bool isSupportedAudioFilePath(String pathOrName) {
+    final lower = pathOrName.trim().toLowerCase();
+    return lower.endsWith('.mp3') || lower.endsWith('.flac');
+  }
+
+  /// Strips `.mp3` or `.flac` extension from [fileName] (case-insensitive).
+  static String stripAudioExtension(String fileName) {
+    final trimmed = fileName.trim();
+    final lower = trimmed.toLowerCase();
+    if (lower.endsWith('.flac')) {
+      return trimmed.substring(0, trimmed.length - 5);
+    }
+    if (lower.endsWith('.mp3')) {
+      return trimmed.substring(0, trimmed.length - 4);
+    }
+    return trimmed;
+  }
+
   /// Lists subdirectories inside [parentPath] (defaults to `/storage/emulated/0/Music`)
   /// for the in-app Interactive Folder Picker / Explorer modal.
   Future<List<BrowsedDirectoryEntry>> browseStorageDirectories(
@@ -327,7 +346,7 @@ class FolderService {
         int mp3Count = 0;
         try {
           await for (final child in entity.list(followLinks: false)) {
-            if (child is File && child.path.toLowerCase().endsWith('.mp3')) {
+            if (child is File && isSupportedAudioFilePath(child.path)) {
               mp3Count++;
             }
           }
@@ -443,7 +462,7 @@ class FolderService {
     } catch (_) {}
   }
 
-  /// Checks whether [fileName] (e.g. `Artist - Title.mp3`) already exists inside
+  /// Checks whether [fileName] (e.g. `Artist - Title.mp3` or `.flac`) already exists inside
   /// any of the [folders] under `/storage/emulated/0/Music/`.
   /// Returns the folder name where it was found, or `null` if not found.
   Future<String?> findDuplicateFolder(
@@ -453,19 +472,23 @@ class FolderService {
     if (!Platform.isAndroid) return null;
 
     final targetLower = fileName.toLowerCase();
-    final baseWithoutExt = targetLower.endsWith('.mp3')
-        ? targetLower.substring(0, targetLower.length - 4)
-        : targetLower;
+    final baseWithoutExt = stripAudioExtension(targetLower);
 
     for (final folder in folders) {
       try {
         final dir = Directory(resolveFolderDirectoryPath(folder));
         if (!await dir.exists()) continue;
 
-        final exactFile = File('${dir.path}/$fileName');
-        if (await exactFile.exists() &&
-            await exactFile.length() >= _minValidMusicBytes) {
-          return folder;
+        for (final candidateName in <String>[
+          fileName,
+          '$baseWithoutExt.mp3',
+          '$baseWithoutExt.flac',
+        ]) {
+          final exactFile = File('${dir.path}/$candidateName');
+          if (await exactFile.exists() &&
+              await exactFile.length() >= _minValidMusicBytes) {
+            return folder;
+          }
         }
 
         await for (final entity in dir.list(followLinks: false)) {
@@ -474,9 +497,11 @@ class FolderService {
                 .split(Platform.pathSeparator)
                 .last
                 .toLowerCase();
+            if (!isSupportedAudioFilePath(name)) continue;
+            final entityBase = stripAudioExtension(name);
             if ((name == targetLower ||
-                    (name.endsWith('.mp3') &&
-                        name.startsWith('$baseWithoutExt ('))) &&
+                    entityBase == baseWithoutExt ||
+                    entityBase.startsWith('$baseWithoutExt (')) &&
                 await entity.length() >= _minValidMusicBytes) {
               return folder;
             }
@@ -489,7 +514,7 @@ class FolderService {
   }
 
   /// Checks across all [folders] (plus any extra subdirectories in `/storage/emulated/0/Music/`)
-  /// whether an `.mp3` matching [track] already exists on disk (by exact filename OR
+  /// whether an `.mp3` or `.flac` matching [track] already exists on disk (by exact filename OR
   /// normalized `Artist - Title` stem) and returns its full file path if found.
   Future<String?> checkDuplicateAcrossFolders(
     TrackMetadata track,
@@ -504,9 +529,8 @@ class FolderService {
     } catch (_) {}
 
     final targetFileLower = track.sanitizedFileName.toLowerCase();
-    final baseWithoutExt = targetFileLower.endsWith('.mp3')
-        ? targetFileLower.substring(0, targetFileLower.length - 4)
-        : targetFileLower;
+    final targetFlacLower = track.sanitizedFlacFileName.toLowerCase();
+    final baseWithoutExt = stripAudioExtension(targetFileLower);
     final targetIdentity = TrackMetadata.normalizeTrackIdentity(
       track.title,
       track.artist,
@@ -528,27 +552,35 @@ class FolderService {
         final dir = Directory(resolveFolderDirectoryPath(folder));
         if (!await dir.exists()) continue;
 
-        final exactFile = File('${dir.path}/${track.sanitizedFileName}');
-        if (await exactFile.exists() &&
-            await exactFile.length() >= _minValidMusicBytes) {
-          return exactFile.path;
+        for (final candidateName in <String>[
+          track.sanitizedFlacFileName,
+          track.sanitizedFileName,
+        ]) {
+          final exactFile = File('${dir.path}/$candidateName');
+          if (await exactFile.exists() &&
+              await exactFile.length() >= _minValidMusicBytes) {
+            return exactFile.path;
+          }
         }
 
         await for (final entity in dir.list(followLinks: false)) {
           if (entity is! File) continue;
           final rawName = entity.path.split(Platform.pathSeparator).last;
           final lower = rawName.toLowerCase();
-          if (!lower.endsWith('.mp3')) continue;
+          if (!isSupportedAudioFilePath(lower)) continue;
           if (await entity.length() < _minValidMusicBytes) continue;
 
+          final rawWithoutExt = stripAudioExtension(rawName);
+          final lowerWithoutExt = rawWithoutExt.toLowerCase();
+
           if (lower == targetFileLower ||
-              lower.startsWith('$baseWithoutExt (')) {
+              lower == targetFlacLower ||
+              lowerWithoutExt == baseWithoutExt ||
+              lowerWithoutExt.startsWith('$baseWithoutExt (')) {
             return entity.path;
           }
 
-          final stem = rawName
-              .substring(0, rawName.length - 4)
-              .replaceFirst(RegExp(r'\s\(\d+\)$'), '');
+          final stem = rawWithoutExt.replaceFirst(RegExp(r'\s\(\d+\)$'), '');
           final dashIdx = stem.indexOf(' - ');
           if (dashIdx > 0) {
             final fArtist = stem.substring(0, dashIdx);
@@ -576,7 +608,7 @@ class FolderService {
     return null;
   }
 
-  /// Counts the number of `.mp3` files inside each folder in [folders].
+  /// Counts the number of `.mp3` and `.flac` files inside each folder in [folders].
   Future<Map<String, int>> getFolderSongCounts(List<String> folders) async {
     final counts = <String, int>{};
     if (!Platform.isAndroid) return counts;
@@ -588,7 +620,7 @@ class FolderService {
         if (await dir.exists()) {
           await for (final entity in dir.list(followLinks: false)) {
             if (entity is File &&
-                entity.path.toLowerCase().endsWith('.mp3') &&
+                isSupportedAudioFilePath(entity.path) &&
                 await entity.length() >= _minValidMusicBytes) {
               count++;
             }

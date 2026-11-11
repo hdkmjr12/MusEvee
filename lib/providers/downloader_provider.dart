@@ -8,6 +8,7 @@ import '../models/local_song.dart';
 import '../models/track_metadata.dart';
 import '../services/audio_service.dart';
 import '../services/folder_service.dart';
+import '../services/hires_addon_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/metadata_service.dart';
 import '../services/romaji_service.dart';
@@ -39,6 +40,7 @@ class DownloaderProvider extends ChangeNotifier {
   final TaggingService _taggingService;
   final FolderService _folderService;
   final RomajiService _romajiService;
+  final HiResAddonService _hiResAddonService;
   final SettingsProvider? _settingsProvider;
 
   DownloaderProvider({
@@ -48,6 +50,7 @@ class DownloaderProvider extends ChangeNotifier {
     TaggingService? taggingService,
     FolderService? folderService,
     RomajiService? romajiService,
+    HiResAddonService? hiResAddonService,
     SettingsProvider? settingsProvider,
   })  : _metadataService = metadataService ?? MetadataService(),
         _lyricsService = lyricsService ?? LyricsService(),
@@ -55,12 +58,23 @@ class DownloaderProvider extends ChangeNotifier {
         _taggingService = taggingService ?? TaggingService(),
         _folderService = folderService ?? FolderService(),
         _romajiService = romajiService ?? RomajiService(),
+        _hiResAddonService = hiResAddonService ?? HiResAddonService(),
         _settingsProvider = settingsProvider {
     _initFolders();
   }
 
   int get activeDownloadBitrateKbps =>
       _settingsProvider?.downloadQuality.bitrateKbps ?? 320;
+
+  bool get isHiResFlacSelected =>
+      (_settingsProvider?.downloadQuality ?? DownloadQuality.best) ==
+      DownloadQuality.hiResFlac;
+
+  List<HiResAddonSource> get enabledHiResAddons =>
+      _settingsProvider?.enabledHiResAddons ??
+      SettingsProvider.defaultHiResAddonPresets;
+
+  HiResAddonService get hiResAddonService => _hiResAddonService;
 
   DownloaderState _state = DownloaderState.idle;
   TrackMetadata? _trackMetadata;
@@ -564,13 +578,17 @@ class DownloaderProvider extends ChangeNotifier {
           .split('/')
           .last
           .toLowerCase();
-      if (fileName.endsWith('.mp3') && s.folderName.isNotEmpty) {
+      if (FolderService.isSupportedAudioFilePath(fileName) &&
+          s.folderName.isNotEmpty) {
         final exactKey = fileName;
         dupMap.putIfAbsent(exactKey, () => s.folderName);
-        final stem = fileName.substring(0, fileName.length - 4);
+        final stem = FolderService.stripAudioExtension(fileName);
+        dupMap.putIfAbsent('$stem.mp3', () => s.folderName);
+        dupMap.putIfAbsent('$stem.flac', () => s.folderName);
         final baseStem = stem.replaceFirst(suffixRegex, '');
         if (baseStem != stem) {
           dupMap.putIfAbsent('$baseStem.mp3', () => s.folderName);
+          dupMap.putIfAbsent('$baseStem.flac', () => s.folderName);
         }
       }
     }
@@ -1325,45 +1343,129 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.downloadingAudio,
         progress: 0.20,
-        message: 'Mengunduh lagu...',
+        message: isHiResFlacSelected
+            ? 'Mencari sumber Hi-Res FLAC...'
+            : 'Mengunduh lagu...',
       );
 
-      final rawAudioFile = await _audioService.downloadBestAudioStream(
-        workingMeta,
-        onProgress: (subProgress, _) {
-          final overall = 0.20 + (subProgress.clamp(0.0, 1.0) * 0.60);
-          _setState(
-            DownloaderState.downloadingAudio,
-            progress: overall,
-            message: 'Mengunduh lagu...',
-          );
-        },
-      );
+      String outputPath;
+      String completedDetail = 'Selesai';
 
-      _setState(
-        DownloaderState.taggingAudio,
-        progress: 0.80,
-        message: 'Menyimpan...',
-      );
+      if (isHiResFlacSelected) {
+        final hiResResult = await _hiResAddonService.resolveAndDownloadHiResFlac(
+          workingMeta,
+          enabledHiResAddons,
+          onProgress: (subProgress, statusMsg) {
+            final overall = 0.20 + (subProgress.clamp(0.0, 1.0) * 0.60);
+            _setState(
+              DownloaderState.downloadingAudio,
+              progress: overall,
+              message: statusMsg,
+            );
+          },
+        );
 
-      final outputPath = await _taggingService.convertAndTagAudio(
-        rawAudioFile: rawAudioFile,
-        metadata: workingMeta,
-        targetFolderName: targetFolder,
-        preferSyncedLyrics: useSynced,
-        bitrateKbps: activeDownloadBitrateKbps,
-        onProgress: (subProgress, _) {
-          final overall = 0.80 + (subProgress.clamp(0.0, 1.0) * 0.19);
+        if (hiResResult != null) {
           _setState(
             DownloaderState.taggingAudio,
-            progress: overall,
-            message: 'Menyimpan...',
+            progress: 0.80,
+            message: 'Menyimpan Hi-Res FLAC...',
           );
-        },
-      );
+          outputPath = await _taggingService.tagFlacAudio(
+            rawFlacFile: hiResResult.flacFile,
+            metadata: workingMeta,
+            targetFolderName: targetFolder,
+            preferSyncedLyrics: useSynced,
+            onProgress: (subProgress, _) {
+              final overall = 0.80 + (subProgress.clamp(0.0, 1.0) * 0.19);
+              _setState(
+                DownloaderState.taggingAudio,
+                progress: overall,
+                message: 'Menyimpan Hi-Res FLAC...',
+              );
+            },
+          );
+          completedDetail = 'Selesai • Hi-Res FLAC (${hiResResult.addonSource.name})';
+        } else {
+          // Smart Fallback to YouTube MP3 320 kbps
+          _setState(
+            DownloaderState.downloadingAudio,
+            progress: 0.24,
+            message: 'Hi-Res tidak tersedia, fallback ke MP3 320 kbps...',
+          );
+          final rawAudioFile = await _audioService.downloadBestAudioStream(
+            workingMeta,
+            onProgress: (subProgress, _) {
+              final overall = 0.24 + (subProgress.clamp(0.0, 1.0) * 0.56);
+              _setState(
+                DownloaderState.downloadingAudio,
+                progress: overall,
+                message: 'Mengunduh fallback MP3 320 kbps...',
+              );
+            },
+          );
+          _setState(
+            DownloaderState.taggingAudio,
+            progress: 0.80,
+            message: 'Menyimpan fallback MP3 320 kbps...',
+          );
+          outputPath = await _taggingService.convertAndTagAudio(
+            rawAudioFile: rawAudioFile,
+            metadata: workingMeta,
+            targetFolderName: targetFolder,
+            preferSyncedLyrics: useSynced,
+            bitrateKbps: 320,
+            onProgress: (subProgress, _) {
+              final overall = 0.80 + (subProgress.clamp(0.0, 1.0) * 0.19);
+              _setState(
+                DownloaderState.taggingAudio,
+                progress: overall,
+                message: 'Menyimpan fallback MP3 320 kbps...',
+              );
+            },
+          );
+          completedDetail = 'Selesai (Fallback MP3 320 kbps)';
+        }
+      } else {
+        final rawAudioFile = await _audioService.downloadBestAudioStream(
+          workingMeta,
+          onProgress: (subProgress, _) {
+            final overall = 0.20 + (subProgress.clamp(0.0, 1.0) * 0.60);
+            _setState(
+              DownloaderState.downloadingAudio,
+              progress: overall,
+              message: 'Mengunduh lagu...',
+            );
+          },
+        );
+
+        _setState(
+          DownloaderState.taggingAudio,
+          progress: 0.80,
+          message: 'Menyimpan...',
+        );
+
+        outputPath = await _taggingService.convertAndTagAudio(
+          rawAudioFile: rawAudioFile,
+          metadata: workingMeta,
+          targetFolderName: targetFolder,
+          preferSyncedLyrics: useSynced,
+          bitrateKbps: activeDownloadBitrateKbps,
+          onProgress: (subProgress, _) {
+            final overall = 0.80 + (subProgress.clamp(0.0, 1.0) * 0.19);
+            _setState(
+              DownloaderState.taggingAudio,
+              progress: overall,
+              message: 'Menyimpan...',
+            );
+          },
+        );
+      }
 
       _savedFilePath = outputPath;
       _duplicateFolderMap[workingMeta.sanitizedFileName.toLowerCase()] =
+          targetFolder;
+      _duplicateFolderMap[workingMeta.sanitizedFlacFileName.toLowerCase()] =
           targetFolder;
       await _refreshFolderCountsOnly();
       await onSongSaved?.call(outputPath);
@@ -1375,7 +1477,7 @@ class DownloaderProvider extends ChangeNotifier {
         targetFolderName: targetFolder,
         status: DownloadItemStatus.completed,
         progress: 1.0,
-        statusDetail: 'Selesai',
+        statusDetail: completedDetail,
         savedFilePath: outputPath,
         createdAt: DateTime.now(),
         preferSyncedLyrics: useSynced,
@@ -1385,7 +1487,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.completed,
         progress: 1.0,
-        message: 'Selesai',
+        message: completedDetail,
       );
       unawaited(_cleanupNativeTempCacheFiles());
       debugPrint(
@@ -1452,42 +1554,123 @@ class DownloaderProvider extends ChangeNotifier {
             );
           }
 
-          final rawFile = await _audioService.downloadBestAudioStream(
-            meta,
-            onProgress: (sub, _) {
-              _updateQueueItem(
-                currentItem.id,
-                status: DownloadItemStatus.downloading,
-                progress: 0.12 + (sub.clamp(0.0, 1.0) * 0.62),
-                detail: 'Mengunduh lagu...',
-              );
-            },
-          );
+          String savedPath;
+          String completedDetail = 'Selesai';
 
-          _updateQueueItem(
-            currentItem.id,
-            status: DownloadItemStatus.tagging,
-            progress: 0.78,
-            detail: 'Menyimpan...',
-          );
+          if (isHiResFlacSelected) {
+            final hiResResult =
+                await _hiResAddonService.resolveAndDownloadHiResFlac(
+              meta,
+              enabledHiResAddons,
+              onProgress: (sub, statusMsg) {
+                _updateQueueItem(
+                  currentItem.id,
+                  status: DownloadItemStatus.downloading,
+                  progress: 0.12 + (sub.clamp(0.0, 1.0) * 0.62),
+                  detail: statusMsg,
+                );
+              },
+            );
 
-          final savedPath = await _taggingService.convertAndTagAudio(
-            rawAudioFile: rawFile,
-            metadata: meta,
-            targetFolderName: currentItem.targetFolderName,
-            preferSyncedLyrics: currentItem.preferSyncedLyrics,
-            bitrateKbps: activeDownloadBitrateKbps,
-            onProgress: (sub, _) {
+            if (hiResResult != null) {
               _updateQueueItem(
                 currentItem.id,
                 status: DownloadItemStatus.tagging,
-                progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
-                detail: 'Menyimpan...',
+                progress: 0.78,
+                detail: 'Menyimpan Hi-Res FLAC...',
               );
-            },
-          );
+              savedPath = await _taggingService.tagFlacAudio(
+                rawFlacFile: hiResResult.flacFile,
+                metadata: meta,
+                targetFolderName: currentItem.targetFolderName,
+                preferSyncedLyrics: currentItem.preferSyncedLyrics,
+                onProgress: (sub, _) {
+                  _updateQueueItem(
+                    currentItem.id,
+                    status: DownloadItemStatus.tagging,
+                    progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
+                    detail: 'Menyimpan Hi-Res FLAC...',
+                  );
+                },
+              );
+              completedDetail =
+                  'Selesai • Hi-Res FLAC (${hiResResult.addonSource.name})';
+            } else {
+              // Smart Fallback to YouTube MP3 320 kbps
+              final rawFile = await _audioService.downloadBestAudioStream(
+                meta,
+                onProgress: (sub, _) {
+                  _updateQueueItem(
+                    currentItem.id,
+                    status: DownloadItemStatus.downloading,
+                    progress: 0.16 + (sub.clamp(0.0, 1.0) * 0.58),
+                    detail: 'Mengunduh fallback MP3 320 kbps...',
+                  );
+                },
+              );
+              _updateQueueItem(
+                currentItem.id,
+                status: DownloadItemStatus.tagging,
+                progress: 0.78,
+                detail: 'Menyimpan fallback MP3 320 kbps...',
+              );
+              savedPath = await _taggingService.convertAndTagAudio(
+                rawAudioFile: rawFile,
+                metadata: meta,
+                targetFolderName: currentItem.targetFolderName,
+                preferSyncedLyrics: currentItem.preferSyncedLyrics,
+                bitrateKbps: 320,
+                onProgress: (sub, _) {
+                  _updateQueueItem(
+                    currentItem.id,
+                    status: DownloadItemStatus.tagging,
+                    progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
+                    detail: 'Menyimpan fallback MP3 320 kbps...',
+                  );
+                },
+              );
+              completedDetail = 'Selesai (Fallback MP3 320 kbps)';
+            }
+          } else {
+            final rawFile = await _audioService.downloadBestAudioStream(
+              meta,
+              onProgress: (sub, _) {
+                _updateQueueItem(
+                  currentItem.id,
+                  status: DownloadItemStatus.downloading,
+                  progress: 0.12 + (sub.clamp(0.0, 1.0) * 0.62),
+                  detail: 'Mengunduh lagu...',
+                );
+              },
+            );
+
+            _updateQueueItem(
+              currentItem.id,
+              status: DownloadItemStatus.tagging,
+              progress: 0.78,
+              detail: 'Menyimpan...',
+            );
+
+            savedPath = await _taggingService.convertAndTagAudio(
+              rawAudioFile: rawFile,
+              metadata: meta,
+              targetFolderName: currentItem.targetFolderName,
+              preferSyncedLyrics: currentItem.preferSyncedLyrics,
+              bitrateKbps: activeDownloadBitrateKbps,
+              onProgress: (sub, _) {
+                _updateQueueItem(
+                  currentItem.id,
+                  status: DownloadItemStatus.tagging,
+                  progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
+                  detail: 'Menyimpan...',
+                );
+              },
+            );
+          }
 
           _duplicateFolderMap[meta.sanitizedFileName.toLowerCase()] =
+              currentItem.targetFolderName;
+          _duplicateFolderMap[meta.sanitizedFlacFileName.toLowerCase()] =
               currentItem.targetFolderName;
           await _refreshFolderCountsOnly();
           await onSongSaved?.call(savedPath);
@@ -1503,7 +1686,7 @@ class DownloaderProvider extends ChangeNotifier {
             metadata: meta,
             status: DownloadItemStatus.completed,
             progress: 1.0,
-            detail: 'Selesai',
+            detail: completedDetail,
             savedFilePath: savedPath,
           );
         } catch (e) {

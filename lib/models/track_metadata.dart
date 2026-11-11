@@ -146,14 +146,25 @@ class TrackMetadata {
     return lines.take(4).toList();
   }
 
-  String get sanitizedFileName {
+  String get sanitizedBaseName {
     final rawName = '$artist - $title';
     final cleaned = rawName
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    final safeBase = cleaned.isEmpty ? 'SpotMeta_Track' : cleaned;
-    return '$safeBase.mp3';
+    return cleaned.isEmpty ? 'SpotMeta_Track' : cleaned;
+  }
+
+  String get sanitizedFileName => '$sanitizedBaseName.mp3';
+
+  String get sanitizedFlacFileName => '$sanitizedBaseName.flac';
+
+  String sanitizedFileNameForExtension(String extension) {
+    final ext = extension.trim().toLowerCase().replaceFirst(RegExp(r'^\.'), '');
+    if (ext == 'flac') {
+      return sanitizedFlacFileName;
+    }
+    return sanitizedFileName;
   }
 
   /// Normalizes a single title or artist string (lowercase, macron/accent folding,

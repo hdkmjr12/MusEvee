@@ -116,10 +116,11 @@ void main() {
     expect(find.text('Tampilan'), findsOneWidget);
     expect(find.text('Gelap'), findsOneWidget);
     expect(find.text('Terang'), findsOneWidget);
+    expect(find.text('Hi-Res Lossless — FLAC'), findsOneWidget);
     expect(find.text('Terbaik — 320 kbps'), findsOneWidget);
     expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
     expect(find.text('Hemat — 128 kbps'), findsOneWidget);
-    expect(find.text('MusEvee v4.8'), findsOneWidget);
+    expect(find.text('MusEvee v4.9'), findsOneWidget);
 
     // Switch to Light Mode (`theme_mode_light`) and verify all 6 tabs render cleanly without error
     await tester.tap(find.byKey(const ValueKey('theme_mode_light')));

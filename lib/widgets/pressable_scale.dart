@@ -213,7 +213,7 @@ class _AnimatedEqualizerIconState extends State<AnimatedEqualizerIcon>
 
   @override
   Widget build(BuildContext context) {
-    final resolvedColor = widget.color ?? context.palette.accent;
+    final resolvedColor = widget.color ?? context.palette.nowPlayingPrimary;
     return RepaintBoundary(
       child: SizedBox(
         width: widget.size,

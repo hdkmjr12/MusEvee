@@ -37,8 +37,9 @@ jobs:
           path: |
             ~/.gradle/wrapper
             ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-v4.8-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
+          key: ${{ runner.os }}-gradle-v4.9-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/build.gradle.kts', 'android/app/build.gradle.kts', 'pubspec.lock') }}
           restore-keys: |
+            ${{ runner.os }}-gradle-v4.9-
             ${{ runner.os }}-gradle-v4.8-
             ${{ runner.os }}-gradle-v4.7-
             ${{ runner.os }}-gradle-v4.6-
@@ -92,29 +93,29 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare Named APK (`MusEvee-v4.8-arm64.apk`)
+      - name: Prepare Named APK (`MusEvee-v4.9-arm64.apk`)
         run: |
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.8-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk MusEvee-v4.9-arm64.apk
 
       - name: Upload MusEvee-APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusEvee-v4.8-arm64-APK
-          path: MusEvee-v4.8-arm64.apk
+          name: MusEvee-v4.9-arm64-APK
+          path: MusEvee-v4.9-arm64.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release (`v4.8.0`)
+      - name: Publish GitHub Release (`v4.9.0`)
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.8.0
-          name: "MusEvee v4.8 (Centralized MusEveePalette + Dark/Light Theme Toggle in Settings)"
+          tag_name: v4.9.0
+          name: "MusEvee v4.9 (Hi-Res Lossless FLAC Downloads + Add-on Source Manager)"
           body: |
-            ### MusEvee v4.8 — Release APK (Android ARM64 ~20 MB)
-            - **Sentralisasi Token Warna `MusEveePalette` (`lib/theme/musevee_palette.dart`):** Menyatukan seluruh token permukaan, teks, aksen, dan garis batas (`bgCanvas`, `bottomBar`, `surfaceCard`, `surfaceSubtle`, `accent`, `textPrimary`, `textMuted`, `hairline`, `appBar`) ke dalam `ThemeExtension<MusEveePalette>` (`context.palette` & `context.isDarkMode`) tanpa mengubah tampilan Mode Gelap (`MusEveePalette.dark`) sedikit pun.
-            - **Toggle Tema Gelap / Terang di Tab `Settings` (`SettingsView` & `SettingsProvider`):** Menambahkan bagian **"Tampilan" / "Appearance"** di atas **"Unduhan" / "Downloads"** dengan 2 pilihan tema persisten di `musevee_settings_v1.json`: **Gelap / Dark** (`ThemeMode.dark`, default) dan **Terang / Light** (`ThemeMode.light`), lengkap dengan sinkronisasi `SystemChrome.setSystemUIOverlayStyle` dan kompatibilitas mundur terhadap file JSON `v4.7`.
-            - **Adaptasi `NowPlayingView` & Lirik di Mode Terang (`lib/widgets/now_playing_view.dart`):** Menyesuaikan Dynamic Ambient Background pada Mode Terang (`Color.lerp(raw, Colors.white, 0.82)!` menuju `#F6F7F9`) dan pita baris lirik aktif (`Colors.white.withValues(alpha: 0.65)` dengan teks tebal `#181A1F`), sembari menjaga scrim & teks di atas Cover Art tetap kontras.
-          files: MusEvee-v4.8-arm64.apk
+            ### MusEvee v4.9 — Release APK (Android ARM64 ~20 MB)
+            - **Unduhan Hi-Res Lossless `.flac` (`DownloadQuality.hiResFlac` & `HiResAddonService`):** Menambahkan opsi kualitas unduhan tertinggi **Hi-Res Lossless — FLAC (16/24-bit)** dengan *waterfall resolver* cepat ber-timeout ketat (`6s`), verifikasi *magic header* biner `fLaC` (`0x66 0x4C 0x61 0x43`), serta *Smart Fallback* otomatis ke **MP3 320 kbps** jika lagu tidak tersedia di katalog Hi-Res.
+            - **Pengelola Sumber Add-on Hi-Res (`SettingsProvider` & `SettingsView`):** Menanamkan preset bawaan (`https://tracks.monochrome.st` pada urutan `#1` + 7 preset modul BitChord/8spine) lengkap dengan Modal Bottom Sheet **Kelola Sumber Add-on Hi-Res** (`ReorderableListView`, prioritas drag-and-drop, toggle ON/OFF, cek status ping, reset preset, dan tambah URL add-on manual).
+            - **Tagging Lossless `.flac` (`TaggingService`) & Parser Biner `fLaC` Native (`MainActivity.kt`):** Menyematkan blok biner `VORBIS_COMMENT` (termasuk `LYRICS` & `UNSYNCEDLYRICS`) dan `METADATA_BLOCK_PICTURE` (`1000x1000` sampul album) tanpa *re-encoding* (`-c:a copy`), serta pembaca native blok `fLaC` di Android untuk menampilkan lirik berjalan `.flac` di panggung 3-panel `NowPlayingView`.
+          files: MusEvee-v4.9-arm64.apk
           draft: false
           prerelease: false
           make_latest: "true"

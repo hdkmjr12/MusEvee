@@ -100,22 +100,59 @@ class AppStrings {
       isIndonesian ? 'Unduhan' : 'Downloads';
   static String get settingsDownloadQualityTitle =>
       isIndonesian ? 'Kualitas Audio Unduhan' : 'Download Audio Quality';
+  static String get qualityHiResTitle => 'Hi-Res Lossless — FLAC';
+  static String get qualityHiResSubtitle => isIndonesian
+      ? '16/24-bit · ~25–50 MB per lagu · Otomatis fallback ke 320 kbps jika tidak tersedia'
+      : '16/24-bit · ~25–50 MB per song · Auto fallback to 320 kbps if unavailable';
   static String get qualityBestTitle =>
       isIndonesian ? 'Terbaik — 320 kbps' : 'Best — 320 kbps';
-  static String get qualityBestSubtitle =>
-      isIndonesian ? '~9-10 MB per lagu 4 menit' : '~9-10 MB per 4-min song';
+  static String get qualityBestSubtitle => isIndonesian
+      ? 'MP3 · ~9-10 MB per lagu 4 menit'
+      : 'MP3 · ~9-10 MB per 4-min song';
   static String get qualityBalancedTitle =>
       isIndonesian ? 'Seimbang — 192 kbps' : 'Balanced — 192 kbps';
-  static String get qualityBalancedSubtitle =>
-      isIndonesian ? '~5-6 MB per lagu 4 menit' : '~5-6 MB per 4-min song';
+  static String get qualityBalancedSubtitle => isIndonesian
+      ? 'MP3 · ~5-6 MB per lagu 4 menit'
+      : 'MP3 · ~5-6 MB per 4-min song';
   static String get qualityEfficientTitle =>
       isIndonesian ? 'Hemat — 128 kbps' : 'Efficient — 128 kbps';
-  static String get qualityEfficientSubtitle =>
-      isIndonesian ? '~3-4 MB per lagu 4 menit' : '~3-4 MB per 4-min song';
+  static String get qualityEfficientSubtitle => isIndonesian
+      ? 'MP3 · ~3-4 MB per lagu 4 menit'
+      : 'MP3 · ~3-4 MB per 4-min song';
   static String get settingsDownloadQualityNote => isIndonesian
       ? 'Pengaturan ini hanya memengaruhi ukuran file hasil unduhan, bukan penggunaan data saat mengunduh.'
       : 'This setting only affects the downloaded output file size, not data usage during download.';
-  static String get appVersionFooter => 'MusEvee v4.8';
+  static String hiResAddonCardTitle(int activeCount) => isIndonesian
+      ? 'Sumber Add-on Hi-Res ($activeCount Aktif)'
+      : 'Hi-Res Add-on Sources ($activeCount Active)';
+  static String get hiResAddonCardSubtitle => isIndonesian
+      ? 'Prioritas modul lossless FLAC & urutan pencocokan'
+      : 'Lossless FLAC module priority & waterfall order';
+  static String get hiResAddonManageButton =>
+      isIndonesian ? 'Kelola' : 'Manage';
+  static String get hiResAddonModalTitle => isIndonesian
+      ? 'Kelola Sumber Add-on Hi-Res'
+      : 'Manage Hi-Res Add-on Sources';
+  static String get hiResAddonModalSubtitle => isIndonesian
+      ? 'Dicoba berurutan dari atas ke bawah (Tried in this order)'
+      : 'Tried sequentially from top to bottom (Tried in this order)';
+  static String get hiResAddonRefreshStatus =>
+      isIndonesian ? 'Cek Status' : 'Check Status';
+  static String get hiResAddonResetPresets =>
+      isIndonesian ? 'Reset Preset' : 'Reset Presets';
+  static String get hiResAddonAddUrlButton =>
+      isIndonesian ? '+ Tambah URL Add-on' : '+ Add Add-on URL';
+  static String get hiResAddonAddDialogTitle =>
+      isIndonesian ? 'Tambah URL Add-on Hi-Res' : 'Add Hi-Res Add-on URL';
+  static String get hiResAddonAddDialogHint =>
+      'https://tracks.monochrome.st / https://.../index.json';
+  static String get hiResAddonCancelButton =>
+      isIndonesian ? 'Batal' : 'Cancel';
+  static String get hiResAddonSaveButton =>
+      isIndonesian ? 'Tambah' : 'Add';
+  static String get hiResAddonDownloadsAllowed => 'Downloads allowed';
+  static String get hiResAddonStreamingOnly => 'Streaming only';
+  static String get appVersionFooter => 'MusEvee v4.9';
 
   // ===========================================================================
   // SMART PLAYLISTS & PLAYLISTS TAB

@@ -6,6 +6,35 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.9 — Hi-Res Lossless (`.flac`) Downloads & Add-on Source Manager] — 2026-11-11 (Unduhan Hi-Res Lossless `.flac` 16/24-bit + Waterfall Resolver `HiResAddonService` + Preset `Monochrome` & 7 Modul BitChord + Tagging Biner `VORBIS_COMMENT` & `PICTURE` `.flac` + Parser Biner `fLaC` Native di `MainActivity.kt` + Modal `Kelola Sumber Add-on Hi-Res`)
+
+### Ditambahkan (Added)
+- **1. Ekspansi `DownloadQuality` (4 Opsi) & Penyimpanan Persisten `HiResAddonSource` (`lib/providers/settings_provider.dart`):**
+  - Memperluas enum `DownloadQuality` menjadi 4 opsi dengan kompatibilitas mundur penuh pada `musevee_settings_v1.json`:
+    1. `hiResFlac` — **Hi-Res Lossless — FLAC (16/24-bit)** (`~25–50 MB per lagu`)
+    2. `best(320)` — **Terbaik — 320 kbps** (`MP3 · ~9–10 MB per lagu`)
+    3. `balanced(192)` — **Seimbang — 192 kbps** (`MP3 · ~5–6 MB per lagu`)
+    4. `efficient(128)` — **Hemat — 128 kbps** (`MP3 · ~3–4 MB per lagu`)
+  - Menambahkan model `HiResAddonSource` (`id`, `url`, `name`, `version`, `capabilities`, `downloadsAllowed`, `enabled`, `isHealthy`) beserta daftar preset bawaan `defaultHiResAddonPresets` (aktif sejak awal tanpa perlu ketik manual: `https://tracks.monochrome.st` pada prioritas `#1` + 7 preset URL modul BitChord/8spine) dan metode `toggleAddonEnabled`, `reorderAddons`, `addAddonUrl`, `removeAddon`, serta `resetAddonsToDefaultPresets`.
+- **2. `HiResAddonService` & Mesin Resolusi Waterfall Otomatis dengan Smart Fallback (`lib/services/hires_addon_service.dart`, `lib/providers/downloader_provider.dart`):**
+  - Mencoba setiap add-on yang `enabled == true` secara berurutan dari urutan `#1` ke bawah dengan *timeout* ketat per-request (`6 detik`) agar tidak menggantung jika salah satu server sedang offline.
+  - Mendukung protokol katalog terbuka `https://tracks.monochrome.st` (`/search/tracks` + `/track/{trackId}`), endpoint standar modul BitChord (`/manifest.json`, `/info`, `/search`, `/track`, `/stream`, `/download`), serta ekspansi otomatis sub-modul dari katalog `index.json`.
+  - Memverifikasi *magic header* biner `fLaC` (`0x66 0x4C 0x61 0x43`) langsung pada paket byte pertama stream unduhan, dilengkapi **HTTP `Range: bytes=<offset>-` Auto-Resume (`206 Partial Content`)** menggunakan `RandomAccessFile` (menyambung otomatis dari posisi byte terakhir saat stream file `.flac` besar `40–85 MB` terputus di tengah jalan tanpa mengulang dari `0 MB`, dengan proteksi `truncate(0)` jika server mengabaikan `Range` dan membalas `200 OK`, serta menghentikan pengulangan kandidat `recordingId` / Strategy B apabila header `fLaC` sudah terverifikasi), dan menyediakan **Smart Fallback otomatis ke YouTube MP3 320 kbps** apabila lagu tidak ditemukan di katalog Hi-Res atau seluruh server add-on sedang tidak dapat dijangkau.
+- **3. Dukungan Penuh Tagging `.flac` Lossless (`TaggingService`) & Pembaca Lokal `.flac` (`MainActivity.kt`, `FolderService`):**
+  - Menambahkan `TaggingService.tagFlacAudio`, `retagExistingAudio`, dan `writeCompleteFlacMetadataBlocks` yang mengekstrak frame audio `.flac` secara bit-perfect (`-c:a copy`) lalu menyematkan blok biner `METADATA_BLOCK_VORBIS_COMMENT` (type `4`: `TITLE`, `ARTIST`, `ALBUMARTIST`, `ALBUM`, `DATE`, `YEAR`, `LYRICS`, `UNSYNCEDLYRICS`) dan `METADATA_BLOCK_PICTURE` (type `6`: sampul album `1000x1000`).
+  - Menambahkan parser biner native `parseFlacTags` di `MainActivity.kt` untuk membaca `STREAMINFO` (type `0`), `VORBIS_COMMENT` (type `4` termasuk lirik berjalan `LYRICS` / `UNSYNCEDLYRICS`), dan `METADATA_BLOCK_PICTURE` (type `6`), sehingga file `.flac` menampilkan lirik tersinkronisasi dan sampul resolusi penuh secara identik dengan `.mp3` di layar 3-panel `NowPlayingView`.
+  - Memperbarui `FolderService` (`isSupportedAudioFilePath`, `stripAudioExtension`) dan `DownloaderProvider.syncWithLocalLibrary` agar mendukung `.flac` dan `.mp3` secara setara pada fitur Edit Tag & Lirik, Auto-Romaji, Pindah Folder, dan Smart Deduplication.
+- **4. Desain UI di `SettingsView` & Modal Bottom Sheet `Kelola Sumber Add-on Hi-Res` (`lib/widgets/settings_view.dart`, `lib/utils/app_strings.dart`):**
+  - Menampilkan 4 opsi radio kualitas unduhan beserta kartu pintasan *progressive disclosure* **`Sumber Add-on Hi-Res (X Aktif)` — `[Kelola ›]`**.
+  - Menambahkan Modal Bottom Sheet **Kelola Sumber Add-on Hi-Res** dengan `ReorderableListView` (nomor prioritas `1, 2, 3...`, ikon ekstensi modul, nama & versi + badge `FLAC · Lossless · Hi-Res`, status `Downloads allowed` / `Streaming only` + indikator ping kesehatan, `Switch` hijau `MusEveePalette.emerald`, drag handle `≡`), tombol **Cek Status**, **Reset Preset**, dan **`+ Tambah URL Add-on`**.
+- **5. Penyelarasan Tampilan Menu `Queue` (`PlaybackQueueView`) dengan Palet & Tipografi `Now Playing` (`lib/widgets/local_library_views.dart`, `lib/widgets/pressable_scale.dart`):**
+  - Mengganti ikon tombol Shuffle di header Queue dengan aset `assets/icons/arrow.png` (`nowPlayingPrimary` saat aktif, `nowPlayingInactiveIcon` saat nonaktif) agar seragam dengan halaman `Now Playing`.
+  - Melokalisasi tombol **`Bersihkan`** di header Queue menjadi **`"Clear"`** saat bahasa perangkat menggunakan bahasa Inggris (`AppStrings.tr('Bersihkan', 'Clear', context)`).
+  - Menyesuaikan hierarki bobot font `Poppins` pada menu Queue: header `"Queue"` menggunakan **SemiBold (`w600`)**, judul lagu yang sedang diputar menggunakan **SemiBold (`w600`)**, dan judul lagu yang tidak sedang diputar menggunakan **Medium (`w500`)**.
+  - Mengubah warna animasi `AnimatedEqualizerIcon` serta latar *highlight* baris lagu yang sedang diputar dari biru samar (`accent`) menjadi warna palet `Now Playing` (`nowPlayingPrimary` hitam `#000000` di Mode Terang / `#F2F4F7` di Mode Gelap dengan *highlight* netral `nowPlayingPrimary.withValues(alpha: 0.06 / 0.08)`).
+
+---
+
 ## [v4.8 — Lyrics Stage (`Panel 0`) Canonical Active Wrap Locking & Continuous Row Interpolation] — 2026-11-11 (Penguncian Pemenggalan Baris Sekunder ke Tipografi Aktif pada Panggung `Lyrics` (`p = 0.0`) agar Tidak Melompat `1 → 2 → 1` Baris Sebelum, Saat, dan Sesudah Diputar)
 
 ### Diperbaiki (Fixed)
