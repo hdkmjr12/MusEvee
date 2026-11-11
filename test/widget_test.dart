@@ -5081,6 +5081,263 @@ void main() {
       expect(currentHomeActiveFontSize(), 22.0);
     },
   );
+
+  testWidgets(
+    'Settled Lyrics Panel Frame-1 Teleport Fix (30fps / 33ms): positions ride snapshot clock with typography on "propose" ("Wagamamana kimi no naka de kirei ni kusatta batsu" entrance & exit), short-line "Memories", and 0.0px mid-slide swipe handover',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final localProvider = LocalMusicProvider();
+      final downloaderProvider = DownloaderProvider();
+
+      final proposeSong = _mockSong(
+        801,
+        lyrics: '[00:05.00] Nee kikoeteru desho\n'
+            '[00:10.00] Wagamamana kimi no naka de kirei ni kusatta batsu\n'
+            '[00:15.00] Aishiteru tte itte yo\n'
+            '[00:20.00] Saigo made odori mashou',
+      );
+      final memoriesSong = _mockSong(
+        802,
+        lyrics: '[00:05.00] Please stay\n'
+            '[00:10.00] In my memories\n'
+            '[00:15.00] All night long\n'
+            '[00:20.00] Let me go',
+      );
+      localProvider.seedSongsForTesting([proposeSong, memoriesSong]);
+      await localProvider.playSong(
+        proposeSong,
+        queueContext: [proposeSong, memoriesSong],
+      );
+      await localProvider.togglePlayPause();
+
+      final npKey = GlobalKey<NowPlayingViewState>();
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LocalMusicProvider>.value(
+              value: localProvider,
+            ),
+            ChangeNotifierProvider<DownloaderProvider>.value(
+              value: downloaderProvider,
+            ),
+          ],
+          child: MaterialApp(
+            theme: ThemeData.light().copyWith(
+              extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+            ),
+            home: Scaffold(
+              body: NowPlayingView(
+                key: npKey,
+                onNavigateToDownloader: () {},
+                onNavigateToFolders: () {},
+                onMoveLocalSongFolder: (_) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 950));
+
+      final state = npKey.currentState!;
+      // Settle on Lyrics panel (p = 0.0) at line 0 ("Nee kikoeteru desho")
+      localProvider.handleNativePosition(
+        positionMs: 6000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pumpAndSettle();
+      state.debugSetPanelProgress(0.0);
+      await tester.pumpAndSettle();
+
+      double lineTop(int idx) => tester
+          .getRect(find.byKey(ValueKey<String>('lyrics_panel_line_$idx')))
+          .top;
+      double lineFont(int idx) => tester
+          .widget<Text>(
+            find.byKey(ValueKey<String>('lyrics_panel_line_text_$idx')),
+          )
+          .style!
+          .fontSize!;
+      Color lineColor(int idx) => tester
+          .widget<Text>(
+            find.byKey(ValueKey<String>('lyrics_panel_line_text_$idx')),
+          )
+          .style!
+          .color!;
+
+      Future<void> verify30FpsTransition({
+        required int outgoingIdx,
+        required int incomingIdx,
+        required int triggerPositionMs,
+      }) async {
+        final preOutTop = lineTop(outgoingIdx);
+        final preInTop = lineTop(incomingIdx);
+        final preOutFont = lineFont(outgoingIdx);
+        final preInFont = lineFont(incomingIdx);
+        final preOutColor = lineColor(outgoingIdx);
+        final preInColor = lineColor(incomingIdx);
+
+        // Trigger line change (Frame 0: build before animation ticks)
+        localProvider.handleNativePosition(
+          positionMs: triggerPositionMs,
+          durationMs: 180000,
+          isPlaying: false,
+        );
+        await tester.pump();
+
+        // Snapshot slide is active; travel controller is NOT started
+        expect(state.isPanel0SlideAnimating, isTrue);
+        expect(state.isPanel0ScrollTravelControllerAnimating, isFalse);
+
+        // Frame 0: 0.0px displacement
+        expect((lineTop(outgoingIdx) - preOutTop).abs(), lessThanOrEqualTo(0.05));
+        expect((lineTop(incomingIdx) - preInTop).abs(), lessThanOrEqualTo(0.05));
+
+        // Sample at 30fps (~33ms per frame) across 400ms (13 steps = 429ms)
+        double prevOutTop = lineTop(outgoingIdx);
+        double prevInTop = lineTop(incomingIdx);
+        int consecutiveIntermediateFrames = 0;
+        int maxConsecutiveIntermediateFrames = 0;
+
+        // First compute settled destination top of outgoingIdx by checking where prev slot lands
+        for (int step = 1; step <= 13; step++) {
+          await tester.pump(const Duration(milliseconds: 33));
+          final curOutTop = lineTop(outgoingIdx);
+          final curInTop = lineTop(incomingIdx);
+          final curOutFont = lineFont(outgoingIdx);
+          final curInFont = lineFont(incomingIdx);
+          final curOutColor = lineColor(outgoingIdx);
+          final curInColor = lineColor(incomingIdx);
+
+          if (step == 1) {
+            // Criterion 1: In the first changed frame (~33ms), no visible line's screen top
+            // has moved more than ~8.5px (at u=easeOutCubic(33/400)=0.228, proportional to step),
+            // and outgoing line is NOWHERE near its destination slot (which is >= 34px away)!
+            // Crucially, typography has ALREADY moved in this very same first frame!
+            expect((curOutTop - preOutTop).abs(), greaterThan(1.0));
+            expect((curOutTop - preOutTop).abs(), lessThan(15.0));
+            expect(curOutFont, lessThan(preOutFont - 0.1));
+            expect(curInFont, greaterThan(preInFont + 0.1));
+            expect(curOutColor, isNot(equals(preOutColor)));
+            expect(curInColor, isNot(equals(preInColor)));
+          }
+
+          // Monotonic upward travel
+          expect(curOutTop, lessThanOrEqualTo(prevOutTop + 0.05));
+          expect(curInTop, lessThanOrEqualTo(prevInTop + 0.05));
+
+          final isIntermediatePos = (curOutTop - preOutTop).abs() > 1.0 &&
+              state.isPanel0SlideAnimating;
+          final isIntermediateTypo = curOutFont < preOutFont - 0.05 &&
+              curOutFont > MusEveePalette.lyricPanelSecondaryFontSize + 0.05 &&
+              curInFont > preInFont + 0.05 &&
+              curOutColor != preOutColor &&
+              curInColor != preInColor;
+
+          if (isIntermediatePos && isIntermediateTypo) {
+            consecutiveIntermediateFrames++;
+            if (consecutiveIntermediateFrames >
+                maxConsecutiveIntermediateFrames) {
+              maxConsecutiveIntermediateFrames = consecutiveIntermediateFrames;
+            }
+          } else {
+            consecutiveIntermediateFrames = 0;
+          }
+
+          // Criterion 3: Never at final position while still at initial full-size/full-black typography
+          if ((curOutFont - preOutFont).abs() < 0.05) {
+            expect((curOutTop - preOutTop).abs(), lessThan(1.0));
+          }
+
+          prevOutTop = curOutTop;
+          prevInTop = curInTop;
+        }
+
+        // Criterion 2: At least 5 consecutive 30fps frames show intermediate position AND typography simultaneously
+        expect(maxConsecutiveIntermediateFrames, greaterThanOrEqualTo(5));
+
+        // Criterion 3: Finished at ~400ms (step 13 = 429ms), re-anchored cleanly with 0.0px jump
+        final postFinishOutTop = lineTop(outgoingIdx);
+        final postFinishInTop = lineTop(incomingIdx);
+        expect(state.isPanel0SlideAnimating, isFalse);
+        await tester.pump();
+        expect((lineTop(outgoingIdx) - postFinishOutTop).abs(), lessThanOrEqualTo(0.05));
+        expect((lineTop(incomingIdx) - postFinishInTop).abs(), lessThanOrEqualTo(0.05));
+      }
+
+      // 1. Entrance transition of "Wagamamana kimi no naka de kirei ni kusatta batsu" (0 -> 1)
+      await verify30FpsTransition(
+        outgoingIdx: 0,
+        incomingIdx: 1,
+        triggerPositionMs: 11000,
+      );
+
+      // 2. Exit transition of "Wagamamana kimi no naka de kirei ni kusatta batsu" (1 -> 2)
+      await verify30FpsTransition(
+        outgoingIdx: 1,
+        incomingIdx: 2,
+        triggerPositionMs: 16000,
+      );
+
+      // 3. Criterion 5: Mid-slide swipe handover starts from exact rendered positions (0.0px jump)
+      localProvider.handleNativePosition(
+        positionMs: 21000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 132)); // ~4 frames into 2 -> 3 slide
+      expect(state.isPanel0SlideAnimating, isTrue);
+
+      final midSlideRow0Rect = tester.getRect(
+        find.byKey(const ValueKey<String>('lyrics_panel_line_2_row_0')),
+      );
+      final midSlideLine3Row0Rect = tester.getRect(
+        find.byKey(const ValueKey<String>('lyrics_panel_line_3_row_0')),
+      );
+
+      state.debugRenderMorphAtSettledEndpoints = true;
+      state.debugSetPanelProgress(0.0, resetRowGlideAtEndpoints: false);
+      await tester.pump();
+
+      final morphHandoverLine2Row0 = tester.getRect(
+        find.byKey(const ValueKey<String>('morph_lyric_2_row_0')),
+      );
+      final morphHandoverLine3Row0 = tester.getRect(
+        find.byKey(const ValueKey<String>('morph_lyric_3_row_0')),
+      );
+      expect(morphHandoverLine2Row0.top, closeTo(midSlideRow0Rect.top, 0.05));
+      expect(morphHandoverLine3Row0.top, closeTo(midSlideLine3Row0Rect.top, 0.05));
+      state.debugRenderMorphAtSettledEndpoints = false;
+      await tester.pumpAndSettle();
+
+      // 4. Criterion 4: Short-line song ("Memories" by Conan Gray)
+      await localProvider.playSong(
+        memoriesSong,
+        queueContext: [proposeSong, memoriesSong],
+      );
+      await localProvider.togglePlayPause();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 950));
+      localProvider.handleNativePosition(
+        positionMs: 6000,
+        durationMs: 180000,
+        isPlaying: false,
+      );
+      await tester.pumpAndSettle();
+      state.debugSetPanelProgress(0.0);
+      await tester.pumpAndSettle();
+
+      await verify30FpsTransition(
+        outgoingIdx: 0,
+        incomingIdx: 1,
+        triggerPositionMs: 11000,
+      );
+    },
+  );
 }
 
 class _OfflineTestRomajiService extends RomajiService {

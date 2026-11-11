@@ -6,6 +6,15 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.8 — Settled Lyrics Panel: Positions Ride the Slide Clock (`handoverSnaps[i].top` During Slide, No Frame-1 Teleport)] — 2026-11-11 (Posisi Baris pada Panel `Lyrics` (`p = 0.0`) Berjalan di Atas Jam Interpolasi Snapshot yang Sama dengan Tipografi — Menghilangkan Lompatan Posisi Frame-1)
+
+### Diperbaiki (Fixed)
+- **Posisi Baris pada Panel `Lyrics` (`p = 0.0`) Mengikuti Jam Snapshot `handoverSnaps[i].top` Selama Slide `400 ms` (`lib/widgets/now_playing_view.dart`, `test/widget_test.dart`):**
+  - Selama `isPanel0SlideAnimating` bernilai `true` pada panel `Lyrics` yang sedang *settled* (`p = 0.0` — baik langkah pemutaran alami, promosi `-1 → 0`, demosi `>= 0 → -1`, maupun *Tap-to-Seek* di dalam panel), posisi dokumen setiap baris (`liveDocTop`) dan tinggi slot (`slotH`) kini diambil langsung dari snapshot terinterpolasi (`handoverSnaps[i].top` dan `handoverSnaps[i].slotHeight` yang dikendalikan oleh `_lyricSlideController` `400 ms` `Curves.easeOutCubic`), bukan dari `restScreenTop[i] + liveLineExtraDy`.
+  - Mengunci jangkar *scroll* (`effectiveAnchorOffset = _panel0SlideAnchorOffset`) dan menghentikan pemicuan `_panel0TravelController` selama slide berlangsung sehingga offset *viewport* tidak melawan posisi snapshot, kemudian melakukan *re-anchor* `jumpTo` satu kali secara sinkron pada `_onLyricSlideControllerTick` tepat ketika slide mencapai `u = 1.0` (`0.0 px` lompatan pada Frame 0, Frame 1, maupun frame selesai, serta `0.0 px` *handover* saat geseran horizontal dimulai di tengah slide).
+
+---
+
 ## [v4.8 — Settled Lyrics Panel Line Change Matches Home/Morph Slide (`400 ms`) + `11.5 pt` Lyrics Font Size Preset (`offset -4.0`)] — 2026-11-11 (Pergantian Baris pada Panel `Lyrics` (`p = 0.0`) Meluncur Seragam dengan `Home` & `Morph` (`400 ms`, `Curves.easeOutCubic`) dengan Interpolasi Kontinu Ukuran Font, Tinggi Slot, Warna & Posisi + Preset Ukuran Font Lirik `11.5 pt`)
 
 ### Ditambahkan & Diperbaiki (Added & Fixed)

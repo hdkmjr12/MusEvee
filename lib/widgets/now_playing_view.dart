@@ -1059,6 +1059,7 @@ class NowPlayingViewState extends State<NowPlayingView>
   int _slideAnimatedLyricIndex = -999;
   int _slideFromCenterIdx = -999;
   bool _slideInterpolateRoleSize = false;
+  bool _slideStartedInSettledPanel0 = false;
   final Map<int, double> _slideResidualTop = <int, double>{};
   final Map<int, double> _slideResidualSlotH = <int, double>{};
   final Map<int, double> _slideResidualFontSize = <int, double>{};
@@ -1107,6 +1108,10 @@ class NowPlayingViewState extends State<NowPlayingView>
   double _panel0TravelToScrollOffset = 0.0;
   final Map<int, double> _panel0TravelExtraDyByLine = <int, double>{};
   final Map<int, double> _lastPanel0RenderedDocTops = <int, double>{};
+  double? _panel0SlideAnchorOffset;
+  double? _panel0SlideTargetAnchorOffset;
+  bool _panel0SlideWasTapSeek = false;
+  double? _lastPanel0RenderedAnchorOffset;
   double? _returnGlideStartScrollOffset;
   double? _returnGlideTargetScrollOffset;
   bool _isLyricsPanelPointerDown = false;
@@ -1146,7 +1151,16 @@ class NowPlayingViewState extends State<NowPlayingView>
 
   @visibleForTesting
   bool get isPanel0TravelAnimating =>
+      (_isPanel0Traveling && _panel0TravelController.isAnimating) ||
+      isPanel0SlideAnimating;
+
+  @visibleForTesting
+  bool get isPanel0ScrollTravelControllerAnimating =>
       _isPanel0Traveling && _panel0TravelController.isAnimating;
+
+  @visibleForTesting
+  bool get isPanel0SlideAnimating =>
+      _slideInterpolateRoleSize && _lyricSlideController.value < 1.0;
 
   @visibleForTesting
   bool isLineRowGliding(int lineIndex) =>
@@ -1232,6 +1246,11 @@ class NowPlayingViewState extends State<NowPlayingView>
       _isPanel0Traveling = false;
       _panel0TravelExtraDyByLine.clear();
       _lastPanel0RenderedDocTops.clear();
+      _panel0SlideAnchorOffset = null;
+      _panel0SlideTargetAnchorOffset = null;
+      _panel0SlideWasTapSeek = false;
+      _lastPanel0RenderedAnchorOffset = null;
+      _slideStartedInSettledPanel0 = false;
       if (_panel0TravelController.isAnimating) {
         _panel0TravelController.stop();
       }
@@ -1338,7 +1357,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       vsync: this,
       duration: _lyricSlideDuration,
       value: 1.0,
-    );
+    )..addListener(_onLyricSlideControllerTick);
     _lyricSlideProgress = CurvedAnimation(
       parent: _lyricSlideController,
       curve: _lyricSlideCurve,
@@ -1366,6 +1385,37 @@ class NowPlayingViewState extends State<NowPlayingView>
       duration: _lyricSlideDuration,
       value: 1.0,
     )..addListener(_onPanel0TravelTick);
+  }
+
+  void _onLyricSlideControllerTick() {
+    if (!mounted) return;
+    if (_lyricSlideController.value >= 1.0 &&
+        _panel0SlideAnchorOffset != null) {
+      final startAnchor = _panel0SlideAnchorOffset!;
+      final targetAnchor = _panel0SlideTargetAnchorOffset ?? startAnchor;
+      final wasTapSeek = _panel0SlideWasTapSeek;
+      _panel0SlideAnchorOffset = null;
+      _panel0SlideTargetAnchorOffset = null;
+      _panel0SlideWasTapSeek = false;
+      if (_panelProgressController.value <= 1e-4 &&
+          _lyricsPanelScrollController.hasClients) {
+        final pos = _lyricsPanelScrollController.position;
+        final rawDesired = (!wasTapSeek &&
+                _isLyricsPanelExploreMode &&
+                _isLyricsPanelUserScrollPaused)
+            ? (pos.pixels + (targetAnchor - startAnchor))
+            : targetAnchor;
+        final clampedTarget = rawDesired
+            .clamp(
+              pos.minScrollExtent,
+              math.max(pos.minScrollExtent, pos.maxScrollExtent),
+            )
+            .toDouble();
+        if ((pos.pixels - clampedTarget).abs() > 1e-4) {
+          _lyricsPanelScrollController.jumpTo(clampedTarget);
+        }
+      }
+    }
   }
 
   void _onPanel0TravelTick() {
@@ -1961,6 +2011,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       _slideAnimatedLyricIndex = -999;
       _slideFromCenterIdx = -999;
       _slideInterpolateRoleSize = false;
+      _slideStartedInSettledPanel0 = false;
       _slideResidualTop.clear();
       _slideResidualSlotH.clear();
       _slideResidualFontSize.clear();
@@ -1977,6 +2028,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       }
       if (_lyricSlideController.value >= 1.0 && _slideInterpolateRoleSize) {
         _slideInterpolateRoleSize = false;
+        _slideStartedInSettledPanel0 = false;
         _slideResidualTop.clear();
         _slideResidualSlotH.clear();
         _slideResidualFontSize.clear();
@@ -2015,6 +2067,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       _slideAnimatedLyricIndex = -999;
       _slideFromCenterIdx = -999;
       _slideInterpolateRoleSize = false;
+      _slideStartedInSettledPanel0 = false;
       _slideResidualTop.clear();
       _slideResidualSlotH.clear();
       _slideResidualFontSize.clear();
@@ -2040,6 +2093,7 @@ class NowPlayingViewState extends State<NowPlayingView>
         (isDemotion && !isSettledPanel0) ? 0 : prevObservedIdx;
     _slideFromCenterIdx = effectiveFromIdx;
     _slideAnimatedLyricIndex = effectiveIdx;
+    _slideStartedInSettledPanel0 = isSettledPanel0;
     _slideInterpolateRoleSize = isPromotion ||
         isDemotion ||
         isInFluidMorph ||
@@ -2079,7 +2133,14 @@ class NowPlayingViewState extends State<NowPlayingView>
       final prevLive = _lastRenderedLineSnapshots[k];
       final oldRest = restOld[k];
       if (prevLive != null && oldRest != null) {
-        _slideResidualTop[k] = prevLive.top - oldRest.top;
+        final double prevTop = (isSettledPanel0 &&
+                isPanel0TapSeek &&
+                _lastPanel0RenderedDocTops.containsKey(k) &&
+                _lyricsPanelScrollController.hasClients)
+            ? (_lastPanel0RenderedDocTops[k]! -
+                _lyricsPanelScrollController.offset)
+            : prevLive.top;
+        _slideResidualTop[k] = prevTop - oldRest.top;
         _slideResidualSlotH[k] = prevLive.slotHeight - oldRest.slotHeight;
         _slideResidualFontSize[k] = prevLive.fontSize - oldRest.fontSize;
         _slideResidualColorBlend[k] = prevLive.colorBlend - oldRest.colorBlend;
@@ -2190,6 +2251,11 @@ class NowPlayingViewState extends State<NowPlayingView>
     if (p > 0.001) {
       _lastPanel0ResolvedEffectiveIdx = -999;
       _lastPanel0RenderedDocTops.clear();
+      _panel0SlideAnchorOffset = null;
+      _panel0SlideTargetAnchorOffset = null;
+      _panel0SlideWasTapSeek = false;
+      _lastPanel0RenderedAnchorOffset = null;
+      _slideStartedInSettledPanel0 = false;
       if (_lyricsPanelScrollController.hasClients &&
           _frozenStageScrollOffsetAtDragStart == null) {
         if (!_isLyricsPanelUserScrollPaused &&
@@ -3769,11 +3835,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                 final isPanel0SlideAnimating = _slideInterpolateRoleSize &&
                     _slideAnimatedLyricIndex == effectiveIdx &&
                     _lyricSlideController.value < 1.0;
-                final isMorphHandoverOnly = isPanel0SlideAnimating &&
-                    !_isPanel0Traveling &&
-                    !isPanel0LineChange &&
-                    centerIdx == _lastLyricsPanelScrolledLineIndex &&
-                    !_pendingPanel0TapSeek;
+                final isMorphHandoverOnly =
+                    isPanel0SlideAnimating && !_slideStartedInSettledPanel0;
                 final isPanel0TravelingNow =
                     _isPanel0Traveling && _panel0TravelController.isAnimating;
                 final snapPositions = !isRowGlideAnimating &&
@@ -3910,7 +3973,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                   includeAllStageLines: true,
                 );
 
-                if (isMorphHandoverOnly) {
+                if (isPanel0SlideAnimating) {
                   for (final entry in handoverSnaps.entries) {
                     final idx = entry.key;
                     if (idx >= 0 && idx < count) {
@@ -3920,20 +3983,16 @@ class NowPlayingViewState extends State<NowPlayingView>
                   }
                 }
 
-                // Pure document-coordinate anchoring: every line's settled document top is
-                // unconditionally `targetScrollOffset + restScreenTop[i]` (never
-                // dependent on scroll-controller state or `isActivelyScrolling`).
-                final effectiveAnchorOffset = targetScrollOffset;
-
-                _lyricsPanelScrollController.initialOffsetResolver = () =>
-                    _frozenStageScrollOffsetAtDragStart ?? targetScrollOffset;
-
                 final isDifferentSong =
                     _lastLyricsPanelScrolledSongPath != song.filePath;
                 if (isDifferentSong) {
                   _lastLyricsPanelScrolledSongPath = song.filePath;
                   _lastLyricsPanelScrolledLineIndex = centerIdx;
                   _frozenStageScrollOffsetAtDragStart = null;
+                  _panel0SlideAnchorOffset = null;
+                  _panel0SlideTargetAnchorOffset = null;
+                  _panel0SlideWasTapSeek = false;
+                  _lastPanel0RenderedAnchorOffset = null;
                   _isPanel0Traveling = false;
                   _panel0TravelExtraDyByLine.clear();
                   _lastPanel0RenderedDocTops.clear();
@@ -3959,125 +4018,204 @@ class NowPlayingViewState extends State<NowPlayingView>
                       isCenterActive: isCenterActive,
                     );
                   });
-                } else if (isPanel0LineChange ||
-                    centerIdx != _lastLyricsPanelScrolledLineIndex ||
-                    _pendingPanel0TapSeek) {
-                  final prevScrolledCenterIdx =
-                      _lastLyricsPanelScrolledLineIndex;
-                  _lastLyricsPanelScrolledLineIndex = centerIdx;
+                } else if (isPanel0SlideAnimating) {
                   final wasTapSeek = _pendingPanel0TapSeek;
                   _pendingPanel0TapSeek = false;
-                  if (wasTapSeek ||
-                      (!_isLyricsPanelPointerDown &&
-                          (localProvider.autoScrollLyrics ||
-                              effectiveIdx == -1))) {
-                    _frozenStageScrollOffsetAtDragStart = null;
-                    final settledTarget = _computePanel0TargetScrollOffset(
-                      centerIdx,
-                      zoneHeight,
-                      centerIdx: centerIdx,
-                      isCenterActive: isCenterActive,
-                      devicePixelRatio: dpr,
-                    );
-                    final oldCenterIdx = (prevPanel0EffectiveIdx != -999 &&
-                            prevPanel0EffectiveIdx >= 0)
-                        ? prevPanel0EffectiveIdx.clamp(0, count - 1)
-                        : (prevScrolledCenterIdx >= 0
-                            ? prevScrolledCenterIdx.clamp(0, count - 1)
-                            : 0);
-                    final oldIsCenterActive = prevPanel0EffectiveIdx == -999
-                        ? isCenterActive
-                        : (prevPanel0EffectiveIdx >= 0);
-                    final oldLayout = _computePanel0LayoutSnapshot(
-                      centerIdx: oldCenterIdx,
-                      isCenterActive: oldIsCenterActive,
-                      zoneHeight: zoneHeight,
-                      devicePixelRatio: dpr,
-                    );
-                    final List<double> startDocTop = List<double>.generate(
-                      count,
-                      (i) =>
-                          _lastPanel0RenderedDocTops[i] ??
-                          (oldLayout.targetScrollOffset +
-                              (i < oldLayout.restScreenTop.length
-                                  ? oldLayout.restScreenTop[i]
-                                  : 0.0)),
-                      growable: false,
-                    );
-                    _panel0TravelExtraDyByLine.clear();
-                    bool anyExtraDy = false;
-                    for (int i = 0; i < count; i++) {
-                      final targetDocTopI =
-                          effectiveAnchorOffset + restScreenTop[i];
-                      final deltaI = startDocTop[i] - targetDocTopI;
-                      _panel0TravelExtraDyByLine[i] = deltaI;
-                      if (deltaI.abs() > 0.05) {
-                        anyExtraDy = true;
-                      }
-                    }
-
-                    final currentPixels =
+                  _lastLyricsPanelScrolledLineIndex = centerIdx;
+                  _frozenStageScrollOffsetAtDragStart = null;
+                  _isPanel0Traveling = false;
+                  _panel0TravelExtraDyByLine.clear();
+                  if (_panel0TravelController.isAnimating) {
+                    _panel0TravelController.stop();
+                  }
+                  if (wasTapSeek) {
+                    _panel0SlideAnchorOffset =
                         _lyricsPanelScrollController.hasClients
                             ? _lyricsPanelScrollController.offset
-                            : oldLayout.targetScrollOffset;
-                    final baseExploreRefOffset = (_isPanel0Traveling &&
-                            _panel0TravelController.isAnimating)
-                        ? _panel0TravelToScrollOffset
-                        : currentPixels;
-                    final rawDesiredTarget = (!wasTapSeek &&
-                            _isLyricsPanelExploreMode &&
-                            _isLyricsPanelUserScrollPaused)
-                        ? (baseExploreRefOffset +
-                            (settledTarget - oldLayout.targetScrollOffset))
-                        : settledTarget;
-                    final settledLastOff = _computePanel0TargetScrollOffset(
-                      count - 1,
-                      zoneHeight,
-                      centerIdx: centerIdx,
-                      isCenterActive: isCenterActive,
-                      devicePixelRatio: dpr,
-                    );
-                    final maxPreScroll = math.max(
-                      0.0,
-                      math.max(
-                            effectiveAnchorOffset +
-                                restScreenTop[count - 1] +
-                                slotH[count - 1] +
-                                bottomSpacer,
-                            settledLastOff + zoneHeight,
-                          ) -
-                          zoneHeight,
-                    );
-                    final clampedTarget =
-                        rawDesiredTarget.clamp(0.0, maxPreScroll).toDouble();
-                    if ((clampedTarget - currentPixels).abs() > 0.05 ||
-                        anyExtraDy) {
-                      _isPanel0Traveling = true;
-                      _panel0TravelFromScrollOffset = currentPixels;
-                      _panel0TravelToScrollOffset = clampedTarget;
-                      _panel0TravelController.forward(from: 0.0);
-                    } else {
-                      _isPanel0Traveling = false;
-                      _panel0TravelExtraDyByLine.clear();
-                      if (_panel0TravelController.isAnimating) {
-                        _panel0TravelController.stop();
+                            : (_lastPanel0RenderedAnchorOffset ??
+                                targetScrollOffset);
+                    _panel0SlideWasTapSeek = true;
+                  } else if (isMorphHandoverOnly &&
+                      _panel0SlideAnchorOffset == null) {
+                    _panel0SlideAnchorOffset = targetScrollOffset;
+                    if (_lyricsPanelScrollController.hasClients &&
+                        (_lyricsPanelScrollController.offset -
+                                    targetScrollOffset)
+                                .abs() >
+                            0.5) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _scrollLyricsPanelToIndex(
+                          centerIdx,
+                          animate: false,
+                          centerIdx: centerIdx,
+                          isCenterActive: isCenterActive,
+                        );
+                      });
+                    }
+                  } else {
+                    _panel0SlideAnchorOffset ??=
+                        _lastPanel0RenderedAnchorOffset ??
+                            (_lyricsPanelScrollController.hasClients
+                                ? _lyricsPanelScrollController.offset
+                                : targetScrollOffset);
+                  }
+                  _panel0SlideTargetAnchorOffset = targetScrollOffset;
+                } else {
+                  if (_panel0SlideAnchorOffset != null) {
+                    final startAnchor = _panel0SlideAnchorOffset!;
+                    final targetAnchor =
+                        _panel0SlideTargetAnchorOffset ?? targetScrollOffset;
+                    final wasSlideTapSeek = _panel0SlideWasTapSeek;
+                    _panel0SlideAnchorOffset = null;
+                    _panel0SlideTargetAnchorOffset = null;
+                    _panel0SlideWasTapSeek = false;
+                    if (_lyricsPanelScrollController.hasClients) {
+                      final pos = _lyricsPanelScrollController.position;
+                      final rawDesired = (!wasSlideTapSeek &&
+                              _isLyricsPanelExploreMode &&
+                              _isLyricsPanelUserScrollPaused)
+                          ? (pos.pixels + (targetAnchor - startAnchor))
+                          : targetScrollOffset;
+                      if ((pos.pixels - rawDesired).abs() > 0.5) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted ||
+                              !_lyricsPanelScrollController.hasClients) {
+                            return;
+                          }
+                          final p = _lyricsPanelScrollController.position;
+                          final clamped = rawDesired
+                              .clamp(
+                                p.minScrollExtent,
+                                math.max(p.minScrollExtent, p.maxScrollExtent),
+                              )
+                              .toDouble();
+                          if ((p.pixels - clamped).abs() > 0.05) {
+                            _lyricsPanelScrollController.jumpTo(clamped);
+                          }
+                        });
                       }
                     }
                   }
-                } else if (isMorphHandoverOnly &&
-                    _lyricsPanelScrollController.hasClients &&
-                    (_lyricsPanelScrollController.offset - targetScrollOffset)
-                            .abs() >
-                        0.5) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _scrollLyricsPanelToIndex(
-                      centerIdx,
-                      animate: false,
-                      centerIdx: centerIdx,
-                      isCenterActive: isCenterActive,
-                    );
-                  });
+                  if (isPanel0LineChange ||
+                      centerIdx != _lastLyricsPanelScrolledLineIndex ||
+                      _pendingPanel0TapSeek) {
+                    final prevScrolledCenterIdx =
+                        _lastLyricsPanelScrolledLineIndex;
+                    _lastLyricsPanelScrolledLineIndex = centerIdx;
+                    final wasTapSeek = _pendingPanel0TapSeek;
+                    _pendingPanel0TapSeek = false;
+                    if (wasTapSeek ||
+                        (!_isLyricsPanelPointerDown &&
+                            (localProvider.autoScrollLyrics ||
+                                effectiveIdx == -1))) {
+                      _frozenStageScrollOffsetAtDragStart = null;
+                      final settledTarget = _computePanel0TargetScrollOffset(
+                        centerIdx,
+                        zoneHeight,
+                        centerIdx: centerIdx,
+                        isCenterActive: isCenterActive,
+                        devicePixelRatio: dpr,
+                      );
+                      final oldCenterIdx = (prevPanel0EffectiveIdx != -999 &&
+                              prevPanel0EffectiveIdx >= 0)
+                          ? prevPanel0EffectiveIdx.clamp(0, count - 1)
+                          : (prevScrolledCenterIdx >= 0
+                              ? prevScrolledCenterIdx.clamp(0, count - 1)
+                              : 0);
+                      final oldIsCenterActive = prevPanel0EffectiveIdx == -999
+                          ? isCenterActive
+                          : (prevPanel0EffectiveIdx >= 0);
+                      final oldLayout = _computePanel0LayoutSnapshot(
+                        centerIdx: oldCenterIdx,
+                        isCenterActive: oldIsCenterActive,
+                        zoneHeight: zoneHeight,
+                        devicePixelRatio: dpr,
+                      );
+                      final List<double> startDocTop = List<double>.generate(
+                        count,
+                        (i) =>
+                            _lastPanel0RenderedDocTops[i] ??
+                            (oldLayout.targetScrollOffset +
+                                (i < oldLayout.restScreenTop.length
+                                    ? oldLayout.restScreenTop[i]
+                                    : 0.0)),
+                        growable: false,
+                      );
+                      _panel0TravelExtraDyByLine.clear();
+                      bool anyExtraDy = false;
+                      for (int i = 0; i < count; i++) {
+                        final targetDocTopI =
+                            targetScrollOffset + restScreenTop[i];
+                        final deltaI = startDocTop[i] - targetDocTopI;
+                        _panel0TravelExtraDyByLine[i] = deltaI;
+                        if (deltaI.abs() > 0.05) {
+                          anyExtraDy = true;
+                        }
+                      }
+
+                      final currentPixels =
+                          _lyricsPanelScrollController.hasClients
+                              ? _lyricsPanelScrollController.offset
+                              : oldLayout.targetScrollOffset;
+                      final baseExploreRefOffset = (_isPanel0Traveling &&
+                              _panel0TravelController.isAnimating)
+                          ? _panel0TravelToScrollOffset
+                          : currentPixels;
+                      final rawDesiredTarget = (!wasTapSeek &&
+                              _isLyricsPanelExploreMode &&
+                              _isLyricsPanelUserScrollPaused)
+                          ? (baseExploreRefOffset +
+                              (settledTarget - oldLayout.targetScrollOffset))
+                          : settledTarget;
+                      final settledLastOff = _computePanel0TargetScrollOffset(
+                        count - 1,
+                        zoneHeight,
+                        centerIdx: centerIdx,
+                        isCenterActive: isCenterActive,
+                        devicePixelRatio: dpr,
+                      );
+                      final maxPreScroll = math.max(
+                        0.0,
+                        math.max(
+                              targetScrollOffset +
+                                  restScreenTop[count - 1] +
+                                  slotH[count - 1] +
+                                  bottomSpacer,
+                              settledLastOff + zoneHeight,
+                            ) -
+                            zoneHeight,
+                      );
+                      final clampedTarget =
+                          rawDesiredTarget.clamp(0.0, maxPreScroll).toDouble();
+                      if ((clampedTarget - currentPixels).abs() > 0.05 ||
+                          anyExtraDy) {
+                        _isPanel0Traveling = true;
+                        _panel0TravelFromScrollOffset = currentPixels;
+                        _panel0TravelToScrollOffset = clampedTarget;
+                        _panel0TravelController.forward(from: 0.0);
+                      } else {
+                        _isPanel0Traveling = false;
+                        _panel0TravelExtraDyByLine.clear();
+                        if (_panel0TravelController.isAnimating) {
+                          _panel0TravelController.stop();
+                        }
+                      }
+                    }
+                  }
                 }
+
+                // Pure document-coordinate anchoring: while `isPanel0SlideAnimating` is true,
+                // keep `effectiveAnchorOffset` locked to the viewport scroll anchor (`_panel0SlideAnchorOffset`)
+                // so every line's document top comes purely from `handoverSnaps[i].top` on the same clock
+                // as typography, then re-anchor to `targetScrollOffset` at `u = 1.0`.
+                final effectiveAnchorOffset = isPanel0SlideAnimating
+                    ? (_panel0SlideAnchorOffset ?? targetScrollOffset)
+                    : targetScrollOffset;
+                _lastPanel0RenderedAnchorOffset = effectiveAnchorOffset;
+
+                _lyricsPanelScrollController.initialOffsetResolver = () =>
+                    _frozenStageScrollOffsetAtDragStart ??
+                    effectiveAnchorOffset;
 
                 final double travelRemainingFactor =
                     (_isPanel0Traveling && _panel0TravelController.isAnimating)
@@ -4085,8 +4223,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                             Curves.easeOutCubic
                                 .transform(_panel0TravelController.value))
                         : 0.0;
-                final double lastLineExtraDy = travelRemainingFactor *
-                    (_panel0TravelExtraDyByLine[count - 1] ?? 0.0);
+                final double lastLineExtraDy = isPanel0SlideAnimating
+                    ? 0.0
+                    : (travelRemainingFactor *
+                        (_panel0TravelExtraDyByLine[count - 1] ?? 0.0));
                 final double lastLineSlotH =
                     (isPanel0SlideAnimating &&
                             handoverSnaps.containsKey(count - 1))
@@ -4114,11 +4254,17 @@ class NowPlayingViewState extends State<NowPlayingView>
                             _panel0TravelToScrollOffset + zoneHeight,
                           )
                         : 0.0;
+                final slideRequiredHeight = isPanel0SlideAnimating
+                    ? math.max(
+                        effectiveAnchorOffset + zoneHeight,
+                        targetScrollOffset + zoneHeight,
+                      )
+                    : 0.0;
                 final totalScrollContentHeight = math.max(
                   zoneHeight,
                   math.max(
                     math.max(liveContentHeight, settledContentHeight),
-                    travelRequiredHeight,
+                    math.max(travelRequiredHeight, slideRequiredHeight),
                   ),
                 );
 
@@ -4278,7 +4424,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                                               .animatedRowTops
                                                           : null)));
                                       final double liveLineExtraDy =
-                                          isMorphHandoverOnly
+                                          isPanel0SlideAnimating
                                               ? 0.0
                                               : (travelRemainingFactor *
                                                   (_panel0TravelExtraDyByLine[
@@ -4286,7 +4432,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                                       0.0));
                                       final double liveDocTop =
                                           effectiveAnchorOffset +
-                                              (isMorphHandoverOnly
+                                              (isPanel0SlideAnimating
                                                   ? (snap?.top ??
                                                       restScreenTop[i])
                                                   : (restScreenTop[i] +
