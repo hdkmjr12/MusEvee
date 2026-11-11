@@ -1200,17 +1200,22 @@ class NowPlayingViewState extends State<NowPlayingView>
     final clamped = progress.clamp(0.0, 2.0);
     if (_panelProgressController.value <= 1e-4 &&
         _lyricsPanelScrollController.hasClients) {
-      final centerExtraDy =
-          (_isPanel0Traveling && _panel0TravelController.isAnimating)
-              ? (1.0 -
-                      Curves.easeOutCubic
-                          .transform(_panel0TravelController.value)) *
-                  (_panel0TravelExtraDyByLine[
-                          _lastLyricsPanelScrolledLineIndex] ??
-                      0.0)
-              : 0.0;
-      _frozenStageScrollOffsetAtDragStart =
-          _lyricsPanelScrollController.offset - centerExtraDy;
+      if (!_isLyricsPanelUserScrollPaused &&
+          (_lyricSlideController.isAnimating || _isPanel0Traveling)) {
+        _frozenStageScrollOffsetAtDragStart = null;
+      } else {
+        final centerExtraDy =
+            (_isPanel0Traveling && _panel0TravelController.isAnimating)
+                ? (1.0 -
+                        Curves.easeOutCubic
+                            .transform(_panel0TravelController.value)) *
+                    (_panel0TravelExtraDyByLine[
+                            _lastLyricsPanelScrolledLineIndex] ??
+                        0.0)
+                : 0.0;
+        _frozenStageScrollOffsetAtDragStart =
+            _lyricsPanelScrollController.offset - centerExtraDy;
+      }
     }
     if ((clamped - 1.0).abs() <= 1e-4 ||
         clamped >= 2.0 - 1e-4 ||
@@ -1358,9 +1363,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       });
     _panel0TravelController = AnimationController(
       vsync: this,
-      duration: const Duration(
-        milliseconds: MusEveePalette.lyricsAutoScrollDurationMs,
-      ),
+      duration: _lyricSlideDuration,
       value: 1.0,
     )..addListener(_onPanel0TravelTick);
   }
@@ -1664,6 +1667,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     double? resolvedPrevSlotH,
     double? resolvedCenterSlotH,
     double? resolvedNextSlotH,
+    bool includeAllStageLines = false,
   }) {
     final count = entries.length;
     if (count == 0) return const <int, _LyricLineAnimSnapshot>{};
@@ -1760,6 +1764,20 @@ class NowPlayingViewState extends State<NowPlayingView>
           opacity: op2,
         );
       }
+      if (includeAllStageLines && count > 3) {
+        double runningBelow = top2 + h2 + gap;
+        for (int k = 3; k < count; k++) {
+          final hk = secSlotHeightFor(k);
+          introResult[k] = _LyricLineAnimSnapshot(
+            top: runningBelow,
+            slotHeight: hk,
+            fontSize: secFontSize,
+            colorBlend: 0.0,
+            opacity: 0.0,
+          );
+          runningBelow += hk + gap;
+        }
+      }
       return introResult;
     }
 
@@ -1836,6 +1854,20 @@ class NowPlayingViewState extends State<NowPlayingView>
         colorBlend: 0.0,
         opacity: 0.0,
       );
+      if (includeAllStageLines && c - 3 >= 0) {
+        double runningAbove = outTop;
+        for (int k = c - 3; k >= 0; k--) {
+          final hk = slotHeightFor(k);
+          runningAbove -= (gap + hk);
+          result[k] = _LyricLineAnimSnapshot(
+            top: runningAbove,
+            slotHeight: hk,
+            fontSize: secFontSize,
+            colorBlend: 0.0,
+            opacity: 0.0,
+          );
+        }
+      }
     }
 
     if (c - 1 >= 0) {
@@ -1882,6 +1914,20 @@ class NowPlayingViewState extends State<NowPlayingView>
         colorBlend: 0.0,
         opacity: inNextOp,
       );
+      if (includeAllStageLines && c + 3 < count) {
+        double runningBelow = inNextTop + inNextH + gap;
+        for (int k = c + 3; k < count; k++) {
+          final hk = slotHeightFor(k);
+          result[k] = _LyricLineAnimSnapshot(
+            top: runningBelow,
+            slotHeight: hk,
+            fontSize: secFontSize,
+            colorBlend: 0.0,
+            opacity: 0.0,
+          );
+          runningBelow += hk + gap;
+        }
+      }
     }
 
     return result;
@@ -1901,6 +1947,8 @@ class NowPlayingViewState extends State<NowPlayingView>
     required double dpr,
     required double emptySlotHeight,
     required bool isInFluidMorph,
+    bool allowSettledPanel0Slide = false,
+    bool isPanel0TapSeek = false,
   }) {
     final isDifferentSong = _lastTrackedLyricSongPath != song.filePath ||
         _lastObservedActiveLyricIndex == -999;
@@ -1942,21 +1990,26 @@ class NowPlayingViewState extends State<NowPlayingView>
     _lastObservedActiveLyricIndex = effectiveIdx;
 
     // Section C: Promotion (-1 -> 0) and Demotion (>= 0 -> -1) always animate
-    // on Home and during the Fluid Morph (400ms Curves.easeOutCubic).
+    // on Home, during the Fluid Morph, and in the settled Lyrics panel (400ms Curves.easeOutCubic).
     final isPromotion = prevObservedIdx == -1 &&
         effectiveIdx == 0 &&
-        !_suppressNextLyricSlideFromSeek &&
+        (!_suppressNextLyricSlideFromSeek || isPanel0TapSeek) &&
         autoScrollLyrics;
     final isDemotion = prevObservedIdx >= 0 && effectiveIdx == -1;
     final isNaturalStep = !_suppressNextLyricSlideFromSeek &&
         prevObservedIdx >= 0 &&
         effectiveIdx == prevObservedIdx + 1 &&
         autoScrollLyrics;
+    final isSettledPanel0 = !isInFluidMorph && currentT >= 1.0 - 1e-4;
+    final isSettledPanel0SeekStep =
+        isSettledPanel0 && isPanel0TapSeek && prevObservedIdx != effectiveIdx;
     _suppressNextLyricSlideFromSeek = false;
 
-    final isSettledPanel0Step = !isInFluidMorph && currentT >= 1.0 - 1e-4;
-    if ((!isNaturalStep && !isPromotion && !isDemotion) ||
-        isSettledPanel0Step) {
+    if ((!isNaturalStep &&
+            !isPromotion &&
+            !isDemotion &&
+            !isSettledPanel0SeekStep) ||
+        (isSettledPanel0 && !allowSettledPanel0Slide)) {
       _outgoingTopLyricText = '';
       _outgoingTopLyricIndex = -1;
       _slideAnimatedLyricIndex = -999;
@@ -1983,12 +2036,14 @@ class NowPlayingViewState extends State<NowPlayingView>
     }
 
     final wasAnimating = _lyricSlideController.value < 1.0;
-    final effectiveFromIdx = isDemotion ? 0 : prevObservedIdx;
+    final effectiveFromIdx =
+        (isDemotion && !isSettledPanel0) ? 0 : prevObservedIdx;
     _slideFromCenterIdx = effectiveFromIdx;
     _slideAnimatedLyricIndex = effectiveIdx;
     _slideInterpolateRoleSize = isPromotion ||
         isDemotion ||
         isInFluidMorph ||
+        (isSettledPanel0 && allowSettledPanel0Slide) ||
         (wasAnimating && _slideInterpolateRoleSize);
 
     final restOld = _computeRestLineSnapshotsForCenter(
@@ -2002,6 +2057,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       stageScrollDelta: 0.0,
       dpr: dpr,
       emptySlotHeight: emptySlotHeight,
+      includeAllStageLines: isSettledPanel0,
     );
 
     _slideResidualTop.clear();
@@ -2010,11 +2066,15 @@ class NowPlayingViewState extends State<NowPlayingView>
     _slideResidualColorBlend.clear();
     _slideResidualOpacity.clear();
 
-    final minK = math.max(0, math.min(effectiveIdx, effectiveFromIdx) - 2);
-    final maxK = math.min(
-      entries.length - 1,
-      math.max(effectiveIdx, effectiveFromIdx) + 2,
-    );
+    final minK = isSettledPanel0
+        ? 0
+        : math.max(0, math.min(effectiveIdx, effectiveFromIdx) - 2);
+    final maxK = isSettledPanel0
+        ? (entries.length - 1)
+        : math.min(
+            entries.length - 1,
+            math.max(effectiveIdx, effectiveFromIdx) + 2,
+          );
     for (int k = minK; k <= maxK; k++) {
       final prevLive = _lastRenderedLineSnapshots[k];
       final oldRest = restOld[k];
@@ -2027,9 +2087,9 @@ class NowPlayingViewState extends State<NowPlayingView>
       }
     }
 
-    if (isInFluidMorph) {
+    if (isInFluidMorph || isSettledPanel0) {
       // Re-target the morph's frozen stage scroll offset to the new active line
-      // over the ~400ms animation so settling at p = 0 never jumps.
+      // over the ~400ms animation so settling at p = 0 or starting a swipe mid-slide never jumps.
       _frozenStageScrollOffsetAtDragStart = null;
     }
 
@@ -2051,6 +2111,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     double? resolvedPrevSlotH,
     double? resolvedCenterSlotH,
     double? resolvedNextSlotH,
+    bool includeAllStageLines = false,
   }) {
     final restNew = _computeRestLineSnapshotsForCenter(
       entries: entries,
@@ -2066,6 +2127,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       resolvedPrevSlotH: resolvedPrevSlotH,
       resolvedCenterSlotH: resolvedCenterSlotH,
       resolvedNextSlotH: resolvedNextSlotH,
+      includeAllStageLines: includeAllStageLines,
     );
 
     if (u >= 1.0 - 1e-5 || _slideFromCenterIdx < -1) {
@@ -2086,6 +2148,7 @@ class NowPlayingViewState extends State<NowPlayingView>
       stageScrollDelta: 0.0,
       dpr: dpr,
       emptySlotHeight: emptySlotHeight,
+      includeAllStageLines: includeAllStageLines,
     );
 
     final clampedU = u.clamp(0.0, 1.0);
@@ -2129,17 +2192,22 @@ class NowPlayingViewState extends State<NowPlayingView>
       _lastPanel0RenderedDocTops.clear();
       if (_lyricsPanelScrollController.hasClients &&
           _frozenStageScrollOffsetAtDragStart == null) {
-        final centerExtraDy =
-            (_isPanel0Traveling && _panel0TravelController.isAnimating)
-                ? (1.0 -
-                        Curves.easeOutCubic
-                            .transform(_panel0TravelController.value)) *
-                    (_panel0TravelExtraDyByLine[
-                            _lastLyricsPanelScrolledLineIndex] ??
-                        0.0)
-                : 0.0;
-        _frozenStageScrollOffsetAtDragStart =
-            _lyricsPanelScrollController.offset - centerExtraDy;
+        if (!_isLyricsPanelUserScrollPaused &&
+            (_lyricSlideController.isAnimating || _isPanel0Traveling)) {
+          _frozenStageScrollOffsetAtDragStart = null;
+        } else {
+          final centerExtraDy =
+              (_isPanel0Traveling && _panel0TravelController.isAnimating)
+                  ? (1.0 -
+                          Curves.easeOutCubic
+                              .transform(_panel0TravelController.value)) *
+                      (_panel0TravelExtraDyByLine[
+                              _lastLyricsPanelScrolledLineIndex] ??
+                          0.0)
+                  : 0.0;
+          _frozenStageScrollOffsetAtDragStart =
+              _lyricsPanelScrollController.offset - centerExtraDy;
+        }
       }
       if (_isPanel0Traveling || _panel0TravelController.isAnimating) {
         _isPanel0Traveling = false;
@@ -3065,17 +3133,22 @@ class NowPlayingViewState extends State<NowPlayingView>
             _lockedDragAxis = _MiddleDragAxis.undecided;
             if (_panelProgressController.value <= 1e-4 &&
                 _lyricsPanelScrollController.hasClients) {
-              final centerExtraDy =
-                  (_isPanel0Traveling && _panel0TravelController.isAnimating)
-                      ? (1.0 -
-                              Curves.easeOutCubic
-                                  .transform(_panel0TravelController.value)) *
-                          (_panel0TravelExtraDyByLine[
-                                  _lastLyricsPanelScrolledLineIndex] ??
-                              0.0)
-                      : 0.0;
-              _frozenStageScrollOffsetAtDragStart =
-                  _lyricsPanelScrollController.offset - centerExtraDy;
+              if (!_isLyricsPanelUserScrollPaused &&
+                  (_lyricSlideController.isAnimating || _isPanel0Traveling)) {
+                _frozenStageScrollOffsetAtDragStart = null;
+              } else {
+                final centerExtraDy = (_isPanel0Traveling &&
+                        _panel0TravelController.isAnimating)
+                    ? (1.0 -
+                            Curves.easeOutCubic
+                                .transform(_panel0TravelController.value)) *
+                        (_panel0TravelExtraDyByLine[
+                                _lastLyricsPanelScrolledLineIndex] ??
+                            0.0)
+                    : 0.0;
+                _frozenStageScrollOffsetAtDragStart =
+                    _lyricsPanelScrollController.offset - centerExtraDy;
+              }
             }
             _dragStartSettledIndex = _panelProgressController.value
                 .round()
@@ -3111,17 +3184,22 @@ class NowPlayingViewState extends State<NowPlayingView>
               _lockedDragAxis = _MiddleDragAxis.horizontal;
               if (_panelProgressController.value <= 1e-4 &&
                   _lyricsPanelScrollController.hasClients) {
-                final centerExtraDy =
-                    (_isPanel0Traveling && _panel0TravelController.isAnimating)
-                        ? (1.0 -
-                                Curves.easeOutCubic.transform(
-                                    _panel0TravelController.value)) *
-                            (_panel0TravelExtraDyByLine[
-                                    _lastLyricsPanelScrolledLineIndex] ??
-                                0.0)
-                        : 0.0;
-                _frozenStageScrollOffsetAtDragStart =
-                    _lyricsPanelScrollController.offset - centerExtraDy;
+                if (!_isLyricsPanelUserScrollPaused &&
+                    (_lyricSlideController.isAnimating || _isPanel0Traveling)) {
+                  _frozenStageScrollOffsetAtDragStart = null;
+                } else {
+                  final centerExtraDy = (_isPanel0Traveling &&
+                          _panel0TravelController.isAnimating)
+                      ? (1.0 -
+                              Curves.easeOutCubic
+                                  .transform(_panel0TravelController.value)) *
+                          (_panel0TravelExtraDyByLine[
+                                  _lastLyricsPanelScrolledLineIndex] ??
+                              0.0)
+                      : 0.0;
+                  _frozenStageScrollOffsetAtDragStart =
+                      _lyricsPanelScrollController.offset - centerExtraDy;
+                }
               }
               _panelProgressController.stop();
               final prevX = _lastHorizontalDragX;
@@ -3586,6 +3664,11 @@ class NowPlayingViewState extends State<NowPlayingView>
                   dpr: dpr,
                   emptySlotHeight: 22.0,
                   isInFluidMorph: false,
+                  allowSettledPanel0Slide: _pendingPanel0TapSeek ||
+                      (!_isLyricsPanelPointerDown &&
+                          (localProvider.autoScrollLyrics ||
+                              effectiveIdx == -1)),
+                  isPanel0TapSeek: _pendingPanel0TapSeek,
                 );
 
                 final centerIdx = effectiveIdx >= 0 ? effectiveIdx : 0;
@@ -3683,14 +3766,18 @@ class NowPlayingViewState extends State<NowPlayingView>
 
                 final count = entries.length;
                 const gap = NowPlayingView.lyricSlotVerticalGap;
-                final isHandoverMidMorphSlide = _slideInterpolateRoleSize &&
-                    isCenterActive &&
+                final isPanel0SlideAnimating = _slideInterpolateRoleSize &&
                     _slideAnimatedLyricIndex == effectiveIdx &&
                     _lyricSlideController.value < 1.0;
+                final isMorphHandoverOnly = isPanel0SlideAnimating &&
+                    !_isPanel0Traveling &&
+                    !isPanel0LineChange &&
+                    centerIdx == _lastLyricsPanelScrolledLineIndex &&
+                    !_pendingPanel0TapSeek;
                 final isPanel0TravelingNow =
                     _isPanel0Traveling && _panel0TravelController.isAnimating;
                 final snapPositions = !isRowGlideAnimating &&
-                    !isHandoverMidMorphSlide &&
+                    !isPanel0SlideAnimating &&
                     !isPanel0TravelingNow;
                 final List<double> slotH = List<double>.filled(count, 22.0);
                 final List<CachedLyricLineMetrics> lineMetrics =
@@ -3808,7 +3895,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                   entries: entries,
                   centerIdx: effectiveIdx,
                   t: 1.0,
-                  u: isHandoverMidMorphSlide ? _lyricSlideProgress.value : 1.0,
+                  u: isPanel0SlideAnimating ? _lyricSlideProgress.value : 1.0,
                   containerWidth: textColumnWidth,
                   homeWidth: homeWidthSnapped,
                   zoneHeight: zoneHeight,
@@ -3820,29 +3907,15 @@ class NowPlayingViewState extends State<NowPlayingView>
                   resolvedCenterSlotH:
                       centerActiveRoleLayout.animatedSlotHeight,
                   resolvedNextSlotH: nextLayout?.animatedSlotHeight,
+                  includeAllStageLines: true,
                 );
 
-                if (isHandoverMidMorphSlide) {
+                if (isMorphHandoverOnly) {
                   for (final entry in handoverSnaps.entries) {
                     final idx = entry.key;
                     if (idx >= 0 && idx < count) {
                       restScreenTop[idx] = entry.value.top;
                       slotH[idx] = entry.value.slotHeight;
-                    }
-                  }
-                  if (prevIdx >= 0) {
-                    double runningAbove = restScreenTop[prevIdx];
-                    for (int i = centerIdx - 2; i >= 0; i--) {
-                      runningAbove -= (gap + slotH[i]);
-                      restScreenTop[i] = runningAbove;
-                    }
-                  }
-                  if (hasNext) {
-                    double runningBelow =
-                        restScreenTop[nextIdx] + slotH[nextIdx] + gap;
-                    for (int i = centerIdx + 2; i < count; i++) {
-                      restScreenTop[i] = runningBelow;
-                      runningBelow += slotH[i] + gap;
                     }
                   }
                 }
@@ -3896,7 +3969,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                   _pendingPanel0TapSeek = false;
                   if (wasTapSeek ||
                       (!_isLyricsPanelPointerDown &&
-                          localProvider.autoScrollLyrics)) {
+                          (localProvider.autoScrollLyrics ||
+                              effectiveIdx == -1))) {
                     _frozenStageScrollOffsetAtDragStart = null;
                     final settledTarget = _computePanel0TargetScrollOffset(
                       centerIdx,
@@ -3905,122 +3979,92 @@ class NowPlayingViewState extends State<NowPlayingView>
                       isCenterActive: isCenterActive,
                       devicePixelRatio: dpr,
                     );
-                    if (isHandoverMidMorphSlide) {
+                    final oldCenterIdx = (prevPanel0EffectiveIdx != -999 &&
+                            prevPanel0EffectiveIdx >= 0)
+                        ? prevPanel0EffectiveIdx.clamp(0, count - 1)
+                        : (prevScrolledCenterIdx >= 0
+                            ? prevScrolledCenterIdx.clamp(0, count - 1)
+                            : 0);
+                    final oldIsCenterActive = prevPanel0EffectiveIdx == -999
+                        ? isCenterActive
+                        : (prevPanel0EffectiveIdx >= 0);
+                    final oldLayout = _computePanel0LayoutSnapshot(
+                      centerIdx: oldCenterIdx,
+                      isCenterActive: oldIsCenterActive,
+                      zoneHeight: zoneHeight,
+                      devicePixelRatio: dpr,
+                    );
+                    final List<double> startDocTop = List<double>.generate(
+                      count,
+                      (i) =>
+                          _lastPanel0RenderedDocTops[i] ??
+                          (oldLayout.targetScrollOffset +
+                              (i < oldLayout.restScreenTop.length
+                                  ? oldLayout.restScreenTop[i]
+                                  : 0.0)),
+                      growable: false,
+                    );
+                    _panel0TravelExtraDyByLine.clear();
+                    bool anyExtraDy = false;
+                    for (int i = 0; i < count; i++) {
+                      final targetDocTopI =
+                          effectiveAnchorOffset + restScreenTop[i];
+                      final deltaI = startDocTop[i] - targetDocTopI;
+                      _panel0TravelExtraDyByLine[i] = deltaI;
+                      if (deltaI.abs() > 0.05) {
+                        anyExtraDy = true;
+                      }
+                    }
+
+                    final currentPixels =
+                        _lyricsPanelScrollController.hasClients
+                            ? _lyricsPanelScrollController.offset
+                            : oldLayout.targetScrollOffset;
+                    final baseExploreRefOffset = (_isPanel0Traveling &&
+                            _panel0TravelController.isAnimating)
+                        ? _panel0TravelToScrollOffset
+                        : currentPixels;
+                    final rawDesiredTarget = (!wasTapSeek &&
+                            _isLyricsPanelExploreMode &&
+                            _isLyricsPanelUserScrollPaused)
+                        ? (baseExploreRefOffset +
+                            (settledTarget - oldLayout.targetScrollOffset))
+                        : settledTarget;
+                    final settledLastOff = _computePanel0TargetScrollOffset(
+                      count - 1,
+                      zoneHeight,
+                      centerIdx: centerIdx,
+                      isCenterActive: isCenterActive,
+                      devicePixelRatio: dpr,
+                    );
+                    final maxPreScroll = math.max(
+                      0.0,
+                      math.max(
+                            effectiveAnchorOffset +
+                                restScreenTop[count - 1] +
+                                slotH[count - 1] +
+                                bottomSpacer,
+                            settledLastOff + zoneHeight,
+                          ) -
+                          zoneHeight,
+                    );
+                    final clampedTarget =
+                        rawDesiredTarget.clamp(0.0, maxPreScroll).toDouble();
+                    if ((clampedTarget - currentPixels).abs() > 0.05 ||
+                        anyExtraDy) {
+                      _isPanel0Traveling = true;
+                      _panel0TravelFromScrollOffset = currentPixels;
+                      _panel0TravelToScrollOffset = clampedTarget;
+                      _panel0TravelController.forward(from: 0.0);
+                    } else {
                       _isPanel0Traveling = false;
                       _panel0TravelExtraDyByLine.clear();
                       if (_panel0TravelController.isAnimating) {
                         _panel0TravelController.stop();
                       }
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        _scrollLyricsPanelToIndex(
-                          centerIdx,
-                          animate: false,
-                          centerIdx: centerIdx,
-                          isCenterActive: isCenterActive,
-                        );
-                      });
-                    } else {
-                      final oldCenterIdx = (prevPanel0EffectiveIdx != -999 &&
-                              prevPanel0EffectiveIdx >= 0)
-                          ? prevPanel0EffectiveIdx.clamp(0, count - 1)
-                          : (prevScrolledCenterIdx >= 0
-                              ? prevScrolledCenterIdx.clamp(0, count - 1)
-                              : 0);
-                      final oldIsCenterActive = prevPanel0EffectiveIdx == -999
-                          ? isCenterActive
-                          : (prevPanel0EffectiveIdx >= 0);
-                      final oldLayout = _computePanel0LayoutSnapshot(
-                        centerIdx: oldCenterIdx,
-                        isCenterActive: oldIsCenterActive,
-                        zoneHeight: zoneHeight,
-                        devicePixelRatio: dpr,
-                      );
-                      final List<double> prevDocTop = List<double>.generate(
-                        count,
-                        (i) =>
-                            _lastPanel0RenderedDocTops[i] ??
-                            (oldLayout.targetScrollOffset +
-                                (i < oldLayout.restScreenTop.length
-                                    ? oldLayout.restScreenTop[i]
-                                    : 0.0)),
-                        growable: false,
-                      );
-                      final List<double> startDocTop =
-                          List<double>.from(prevDocTop, growable: false);
-                      // Enforce strict non-overlap on Frame 0 (and therefore on every
-                      // convex-combination frame u ∈ [0, 1]) while keeping line
-                      // positions anchored at their exact pre-transition coordinates.
-                      const minClearance = 4.0;
-                      for (int i = centerIdx - 1; i >= 0; i--) {
-                        startDocTop[i] = math.min(
-                          startDocTop[i],
-                          startDocTop[i + 1] - slotH[i] - minClearance,
-                        );
-                      }
-                      for (int i = centerIdx + 1; i < count; i++) {
-                        startDocTop[i] = math.max(
-                          startDocTop[i],
-                          startDocTop[i - 1] + slotH[i - 1] + minClearance,
-                        );
-                      }
-                      _panel0TravelExtraDyByLine.clear();
-                      bool anyExtraDy = false;
-                      for (int i = 0; i < count; i++) {
-                        final targetDocTopI =
-                            effectiveAnchorOffset + restScreenTop[i];
-                        final deltaI = startDocTop[i] - targetDocTopI;
-                        _panel0TravelExtraDyByLine[i] = deltaI;
-                        if (deltaI.abs() > 0.05) {
-                          anyExtraDy = true;
-                        }
-                      }
-
-                      final currentPixels =
-                          _lyricsPanelScrollController.hasClients
-                              ? _lyricsPanelScrollController.offset
-                              : oldLayout.targetScrollOffset;
-                      final rawDesiredTarget = (!wasTapSeek &&
-                              _isLyricsPanelExploreMode &&
-                              _isLyricsPanelUserScrollPaused)
-                          ? (currentPixels +
-                              (settledTarget - oldLayout.targetScrollOffset))
-                          : settledTarget;
-                      final settledLastOff = _computePanel0TargetScrollOffset(
-                        count - 1,
-                        zoneHeight,
-                        centerIdx: centerIdx,
-                        isCenterActive: isCenterActive,
-                        devicePixelRatio: dpr,
-                      );
-                      final maxPreScroll = math.max(
-                        0.0,
-                        math.max(
-                              effectiveAnchorOffset +
-                                  restScreenTop[count - 1] +
-                                  slotH[count - 1] +
-                                  bottomSpacer,
-                              settledLastOff + zoneHeight,
-                            ) -
-                            zoneHeight,
-                      );
-                      final clampedTarget =
-                          rawDesiredTarget.clamp(0.0, maxPreScroll).toDouble();
-                      if ((clampedTarget - currentPixels).abs() > 0.05 ||
-                          anyExtraDy) {
-                        _isPanel0Traveling = true;
-                        _panel0TravelFromScrollOffset = currentPixels;
-                        _panel0TravelToScrollOffset = clampedTarget;
-                        _panel0TravelController.forward(from: 0.0);
-                      } else {
-                        _isPanel0Traveling = false;
-                        _panel0TravelExtraDyByLine.clear();
-                        if (_panel0TravelController.isAnimating) {
-                          _panel0TravelController.stop();
-                        }
-                      }
                     }
                   }
-                } else if (isHandoverMidMorphSlide &&
+                } else if (isMorphHandoverOnly &&
                     _lyricsPanelScrollController.hasClients &&
                     (_lyricsPanelScrollController.offset - targetScrollOffset)
                             .abs() >
@@ -4043,10 +4087,15 @@ class NowPlayingViewState extends State<NowPlayingView>
                         : 0.0;
                 final double lastLineExtraDy = travelRemainingFactor *
                     (_panel0TravelExtraDyByLine[count - 1] ?? 0.0);
+                final double lastLineSlotH =
+                    (isPanel0SlideAnimating &&
+                            handoverSnaps.containsKey(count - 1))
+                        ? handoverSnaps[count - 1]!.slotHeight
+                        : slotH[count - 1];
                 final liveContentHeight = effectiveAnchorOffset +
                     restScreenTop[count - 1] +
                     math.max(0.0, lastLineExtraDy) +
-                    slotH[count - 1] +
+                    lastLineSlotH +
                     bottomSpacer;
                 final settledLastLineTargetOffset =
                     _computePanel0TargetScrollOffset(
@@ -4134,36 +4183,114 @@ class NowPlayingViewState extends State<NowPlayingView>
                                 for (int i = 0; i < count; i++)
                                   Builder(
                                     builder: (context) {
-                                      final CachedLyricLineMetrics itemMetrics =
-                                          lineMetrics[i];
+                                      final _LyricLineAnimSnapshot? snap =
+                                          isPanel0SlideAnimating
+                                              ? handoverSnaps[i]
+                                              : null;
+                                      final double itemSlotH = snap != null
+                                          ? snap.slotHeight
+                                          : slotH[i];
                                       final double? itemFontOverride =
-                                          isHandoverMidMorphSlide
-                                              ? handoverSnaps[i]?.fontSize
-                                              : null;
+                                          snap?.fontSize;
                                       final double? itemSlotHOverride =
-                                          isHandoverMidMorphSlide
-                                              ? handoverSnaps[i]?.slotHeight
+                                          snap?.slotHeight;
+                                      final Color? itemColorOverride =
+                                          snap != null
+                                              ? Color.lerp(
+                                                  palette.nowPlayingSecondary,
+                                                  palette.nowPlayingPrimary,
+                                                  snap.colorBlend,
+                                                )
                                               : null;
+                                      CachedLyricLineMetrics itemMetrics =
+                                          lineMetrics[i];
+                                      if (snap != null) {
+                                        final secM =
+                                            _cachedPanel0SecondaryMetrics[i] ??
+                                                lineMetrics[i];
+                                        final actM =
+                                            _cachedPanel0ActiveMetrics[i] ??
+                                                lineMetrics[i];
+                                        final isPureSec = (snap.fontSize -
+                                                    MusEveePalette
+                                                        .lyricPanelSecondaryFontSize)
+                                                .abs() <=
+                                            1e-3;
+                                        itemMetrics = isPureSec
+                                            ? secM
+                                            : (snap.colorBlend >= 0.5
+                                                ? actM
+                                                : secM);
+                                        final canonicalTops =
+                                            _canonicalRowTopsForMetrics(
+                                                itemMetrics);
+                                        _lastRenderedLineMorphStates[i] =
+                                            _LineMorphRowState(
+                                          rawText: itemMetrics.text,
+                                          committedWrapCount:
+                                              itemMetrics.wrappedLineCount,
+                                          isActiveRole: snap.colorBlend >= 0.5,
+                                          fontSize: snap.fontSize,
+                                          fromSlotHeight: itemSlotH,
+                                          toSlotHeight: itemSlotH,
+                                          fromRowTops: canonicalTops,
+                                          toRowTops: canonicalTops,
+                                          glideDurationMs: NowPlayingView
+                                              .lyricRowGlideDurationMs,
+                                          glideProgress: 1.0,
+                                          isGliding: false,
+                                        );
+                                      }
+                                      double? itemOpacityOverride;
+                                      if (snap != null) {
+                                        final int distance = isCenterActive
+                                            ? (i - effectiveIdx).abs()
+                                            : (i + 1);
+                                        final int stageDistance =
+                                            (i - centerIdx).abs();
+                                        final double ladderOp = NowPlayingView
+                                            .lyricPanelOpacityForDistance(
+                                                distance);
+                                        final double restOp =
+                                            (!isMorphHandoverOnly &&
+                                                    stageDistance > 1)
+                                                ? 0.0
+                                                : snap.opacity;
+                                        final double clampedExplore =
+                                            exploreBlend.clamp(0.0, 1.0);
+                                        itemOpacityOverride = restOp +
+                                            (ladderOp - restOp) *
+                                                clampedExplore;
+                                      }
                                       final List<double>? itemRowTops =
-                                          i == centerIdx
-                                              ? centerRenderLayout
-                                                  .animatedRowTops
-                                              : (i == prevIdx &&
-                                                      prevLayout != null
-                                                  ? prevLayout.animatedRowTops
-                                                  : (i == nextIdx &&
-                                                          nextLayout != null
-                                                      ? nextLayout
+                                          snap != null
+                                              ? null
+                                              : (i == centerIdx
+                                                  ? centerRenderLayout
+                                                      .animatedRowTops
+                                                  : (i == prevIdx &&
+                                                          prevLayout != null
+                                                      ? prevLayout
                                                           .animatedRowTops
-                                                      : null));
+                                                      : (i == nextIdx &&
+                                                              nextLayout != null
+                                                          ? nextLayout
+                                                              .animatedRowTops
+                                                          : null)));
                                       final double liveLineExtraDy =
-                                          travelRemainingFactor *
-                                              (_panel0TravelExtraDyByLine[i] ??
-                                                  0.0);
+                                          isMorphHandoverOnly
+                                              ? 0.0
+                                              : (travelRemainingFactor *
+                                                  (_panel0TravelExtraDyByLine[
+                                                          i] ??
+                                                      0.0));
                                       final double liveDocTop =
                                           effectiveAnchorOffset +
-                                              restScreenTop[i] +
-                                              liveLineExtraDy;
+                                              (isMorphHandoverOnly
+                                                  ? (snap?.top ??
+                                                      restScreenTop[i])
+                                                  : (restScreenTop[i] +
+                                                      liveLineExtraDy));
                                       _lastPanel0RenderedDocTops[i] =
                                           liveDocTop;
 
@@ -4171,7 +4298,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                         left: stageLeftSnapped,
                                         top: liveDocTop,
                                         width: textColumnWidth,
-                                        height: slotH[i],
+                                        height: itemSlotH,
                                         child: _buildPanel0SyncedLyricItem(
                                           index: i,
                                           effectiveIndex: effectiveIdx,
@@ -4181,29 +4308,15 @@ class NowPlayingViewState extends State<NowPlayingView>
                                           localProvider: localProvider,
                                           palette: palette,
                                           columnWidth: textColumnWidth,
-                                          itemHeight: slotH[i],
+                                          itemHeight: itemSlotH,
                                           renderMetrics: itemMetrics,
                                           animatedRowTops: itemRowTops,
                                           snapRowPositions: snapPositions,
                                           devicePixelRatio: dpr,
                                           fontSizeOverride: itemFontOverride,
                                           slotHeightOverride: itemSlotHOverride,
-                                          colorOverride:
-                                              (isHandoverMidMorphSlide &&
-                                                      handoverSnaps
-                                                          .containsKey(i))
-                                                  ? Color.lerp(
-                                                      palette
-                                                          .nowPlayingSecondary,
-                                                      palette.nowPlayingPrimary,
-                                                      handoverSnaps[i]!
-                                                          .colorBlend,
-                                                    )
-                                                  : null,
-                                          opacityOverride:
-                                              isHandoverMidMorphSlide
-                                                  ? handoverSnaps[i]?.opacity
-                                                  : null,
+                                          colorOverride: itemColorOverride,
+                                          opacityOverride: itemOpacityOverride,
                                         ),
                                       );
                                     },

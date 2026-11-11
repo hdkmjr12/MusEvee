@@ -3028,14 +3028,14 @@ void main() {
     expect(settledLine1ActiveHeight, greaterThan(settledLine2SecondaryHeight));
 
     // =========================================================================
-    // 1. Frame 0 of centerIdx change (1 -> 2): 0.0px screenY teleport & locked typography travel
+    // 1. Frame 0 of centerIdx change (1 -> 2): 0.0px screenY teleport & 400ms interpolated slide
     // =========================================================================
     localProvider.handleNativePosition(
       positionMs: 17100,
       durationMs: 180000,
       isPlaying: true,
     );
-    // Pump Frame 0 (build runs BEFORE travel advances a single pixel)
+    // Pump Frame 0 (build runs BEFORE travel/slide advances a single pixel)
     await tester.pump();
 
     final line0Frame0 = tester.getRect(
@@ -3051,33 +3051,56 @@ void main() {
       find.byKey(const ValueKey<String>('lyrics_panel_line_3')),
     );
 
-    // Lines 0, 1, 2 have 0.0px Frame-0 screen displacement (no 42-60px upward teleport!),
-    // and line 3 sits cleanly below line 2's locked 2-row active height with zero overlap
+    // Lines 0, 1, 2, 3 have 0.0px Frame-0 screen displacement and 0.0pt font jump!
     expect((line0Frame0.top - line0Before.top).abs(), lessThanOrEqualTo(0.01));
     expect((line1Frame0.top - line1Before.top).abs(), lessThanOrEqualTo(0.01));
     expect((line2Frame0.top - line2Before.top).abs(), lessThanOrEqualTo(0.01));
+    expect((line3Frame0.top - line3Before.top).abs(), lessThanOrEqualTo(0.01));
     expect(line3Frame0.top, greaterThanOrEqualTo(line2Frame0.bottom));
-    expect(line3Before.top, greaterThan(line2Before.top));
 
-    // Typography & wrap counts lock immediately on Frame 0 (no in-place font-size or rewrap glide),
-    // while the whole list travels upward over 300ms (Curves.easeOutCubic)
+    // On Frame 0 (u = 0.0), outgoing line 1 still starts at its active height and incoming line 2 starts at its secondary height
     expect(state.isPanel0TravelAnimating, isTrue);
-    expect(state.isRowGlideAnimating, isFalse);
-    final lockedLine1SecHeight = state.debugAnimatedSlotHeightForLine(1)!;
-    final lockedLine2ActHeight = state.debugAnimatedSlotHeightForLine(2)!;
-    final lockedLine1Wrap = state.debugCommittedWrapCountForLine(1)!;
-    final lockedLine2Wrap = state.debugCommittedWrapCountForLine(2)!;
-    expect(lockedLine1SecHeight, lessThan(settledLine1ActiveHeight));
-    expect(lockedLine2ActHeight, greaterThan(settledLine2SecondaryHeight));
+    expect(
+      state.debugAnimatedSlotHeightForLine(1)!,
+      closeTo(settledLine1ActiveHeight, 0.01),
+    );
+    expect(
+      state.debugAnimatedSlotHeightForLine(2)!,
+      closeTo(settledLine2SecondaryHeight, 0.01),
+    );
 
-    // Step through the 300ms easeOutCubic upward list travel in 16ms frames,
-    // including a 200ms progressNotifier tick mid-scroll, verifying strictly monotonic motion,
-    // locked typography (constant slot height & wrap count on every frame), and zero snap!
+    // Step through the 400ms easeOutCubic upward slide in 50ms (20fps) frames,
+    // including a 200ms progressNotifier tick mid-slide, verifying strictly monotonic motion,
+    // >= 4 intermediate frames with interpolated font size/color/height/position, and zero overlap!
     double prevLine2Top = line2Frame0.top;
     int intermediateFramesCount = 0;
+    final line1StartFont = tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+        )
+        .style!
+        .fontSize!;
+    final line2StartFont = tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+        )
+        .style!
+        .fontSize!;
+    final line2StartColor = tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+        )
+        .style!
+        .color!;
+    final line1StartColor = tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+        )
+        .style!
+        .color!;
 
-    for (int step = 1; step <= 22; step++) {
-      if (step == 12) {
+    for (int step = 1; step <= 8; step++) {
+      if (step == 4) {
         // Simulate ~200ms progressNotifier tick mid-travel
         localProvider.handleNativePosition(
           positionMs: 17300,
@@ -3085,37 +3108,58 @@ void main() {
           isPlaying: true,
         );
       }
-      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 50));
       final curLine2Top = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_2')))
           .top;
-      final curLine2SlotH = state.debugAnimatedSlotHeightForLine(2)!;
-      final curLine1SlotH = state.debugAnimatedSlotHeightForLine(1)!;
+      final curLine1Font = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+          )
+          .style!
+          .fontSize!;
+      final curLine2Font = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+          )
+          .style!
+          .fontSize!;
+      final curLine2Color = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+          )
+          .style!
+          .color!;
 
-      // Strictly monotonic upward travel toward stageCenterTop (no wrong-way drift, no 200ms snap!)
+      // Strictly monotonic upward travel toward stageCenterTop
       expect(curLine2Top, lessThanOrEqualTo(prevLine2Top + 0.01));
-      // Typography stays 100% locked across every frame of the transition
-      expect(curLine1SlotH, closeTo(lockedLine1SecHeight, 0.01));
-      expect(curLine2SlotH, closeTo(lockedLine2ActHeight, 0.01));
-      expect(state.debugCommittedWrapCountForLine(1), lockedLine1Wrap);
-      expect(state.debugCommittedWrapCountForLine(2), lockedLine2Wrap);
+      // No frame may show both incoming and outgoing lines at final active typography
+      expect(
+        curLine1Font >= line1StartFont - 0.05 &&
+            curLine2Font >= line1StartFont - 0.05,
+        isFalse,
+      );
 
       if (curLine2Top < line2Frame0.top - 1.0 &&
-          state.isPanel0TravelAnimating) {
+          curLine2Font > line2StartFont + 0.05 &&
+          curLine1Font < line1StartFont - 0.05 &&
+          curLine2Color != line2StartColor &&
+          curLine2Color != line1StartColor) {
         intermediateFramesCount++;
       }
 
       prevLine2Top = curLine2Top;
     }
 
-    // At rest after 300ms: travel completed cleanly with >= 3 intermediate frames
+    // At rest after 400ms: slide completed cleanly with >= 4 intermediate 20fps frames
+    await tester.pump(const Duration(milliseconds: 50));
     expect(state.isPanel0TravelAnimating, isFalse);
-    expect(intermediateFramesCount, greaterThanOrEqualTo(3));
+    expect(intermediateFramesCount, greaterThanOrEqualTo(4));
     final settledLine2ActiveHeight = state.debugAnimatedSlotHeightForLine(2)!;
     final settledLine1SecondaryHeight =
         state.debugAnimatedSlotHeightForLine(1)!;
-    expect(settledLine2ActiveHeight, closeTo(lockedLine2ActHeight, 0.01));
-    expect(settledLine1SecondaryHeight, closeTo(lockedLine1SecHeight, 0.01));
+    expect(settledLine2ActiveHeight, greaterThan(settledLine2SecondaryHeight));
+    expect(settledLine1SecondaryHeight, lessThan(settledLine1ActiveHeight));
 
     // =========================================================================
     // 2. Document coordinates independent of scroll state & 0.0px handover after manual scroll
@@ -4484,40 +4528,74 @@ void main() {
       await tester.pumpAndSettle();
 
       // =======================================================================
-      // (f) Lyrics-panel line-change travel + locked typography + no-overlap in BOTH Rest & Explore
+      // (f) Lyrics-panel line-change 400ms interpolated slide + no-overlap in BOTH Rest & Explore
       // =======================================================================
-      // 1. In Rest mode: advance active line 2 -> 3 (at 25200ms) and sample at ~12fps (60ms intervals)
+      // 1. In Rest mode: advance active line 2 -> 3 (at 25200ms) and sample at 20fps (50ms intervals)
       final startY2Rest = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_2')))
           .top;
       final startY3Rest = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
           .top;
+      final startFont2Rest = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+          )
+          .style!
+          .fontSize!;
+      final startFont3Rest = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+          )
+          .style!
+          .fontSize!;
+      final startColor2Rest = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+          )
+          .style!
+          .color!;
+      final startColor3Rest = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+          )
+          .style!
+          .color!;
 
       localProvider.handleNativePosition(
         positionMs: 25200,
         durationMs: 240000,
         isPlaying: false,
       );
-      await tester.pump(); // Frame 0 (0ms): 0.0px jump & locked role typography!
+      await tester.pump(); // Frame 0 (0ms): 0.0px jump & 0.0pt font jump!
       final frame0Y2Rest = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_2')))
           .top;
       final frame0Y3Rest = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
           .top;
+      final frame0Font2Rest = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+          )
+          .style!
+          .fontSize!;
+      final frame0Font3Rest = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+          )
+          .style!
+          .fontSize!;
       expect((frame0Y2Rest - startY2Rest).abs(), lessThan(0.5));
       expect((frame0Y3Rest - startY3Rest).abs(), lessThan(0.5));
-
-      final lockedWrap2Rest = state.debugCommittedWrapCountForLine(2)!;
-      final lockedWrap3Rest = state.debugCommittedWrapCountForLine(3)!;
-      final lockedHeight2Rest = state.debugAnimatedSlotHeightForLine(2)!;
-      final lockedHeight3Rest = state.debugAnimatedSlotHeightForLine(3)!;
+      expect(frame0Font2Rest, closeTo(startFont2Rest, 0.01));
+      expect(frame0Font3Rest, closeTo(startFont3Rest, 0.01));
 
       final intermediateY2Rest = <double>[];
       final intermediateY3Rest = <double>[];
-      for (int sample = 1; sample <= 4; sample++) {
-        await tester.pump(const Duration(milliseconds: 60));
+      int intermediateStyleFramesRest = 0;
+      for (int sample = 1; sample <= 7; sample++) {
+        await tester.pump(const Duration(milliseconds: 50));
         intermediateY2Rest.add(
           tester
               .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_2')))
@@ -4528,17 +4606,36 @@ void main() {
               .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
               .top,
         );
-        // Verify locked typography (no mid-transition rewrapping or height change)
-        expect(state.debugCommittedWrapCountForLine(2), lockedWrap2Rest);
-        expect(state.debugCommittedWrapCountForLine(3), lockedWrap3Rest);
+        final curFont2 = tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_2')),
+            )
+            .style!
+            .fontSize!;
+        final curFont3 = tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+            )
+            .style!
+            .fontSize!;
+        final curColor3 = tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+            )
+            .style!
+            .color!;
+        // Never both lines at final active typography
         expect(
-          state.debugAnimatedSlotHeightForLine(2)!,
-          closeTo(lockedHeight2Rest, 0.01),
+          curFont2 >= startFont2Rest - 0.05 &&
+              curFont3 >= startFont2Rest - 0.05,
+          isFalse,
         );
-        expect(
-          state.debugAnimatedSlotHeightForLine(3)!,
-          closeTo(lockedHeight3Rest, 0.01),
-        );
+        if (curFont3 > startFont3Rest + 0.05 &&
+            curFont2 < startFont2Rest - 0.05 &&
+            curColor3 != startColor3Rest &&
+            curColor3 != startColor2Rest) {
+          intermediateStyleFramesRest++;
+        }
         // Verify exactly 1 copy of each line & NO overlap between any adjacent lines on this frame
         for (int i = 0; i < 6; i++) {
           expect(
@@ -4554,7 +4651,7 @@ void main() {
           expect(
             rectI.bottom,
             lessThanOrEqualTo(rectNext.top + 0.01),
-            reason: 'Lines $i and ${i + 1} must never overlap during Rest travel',
+            reason: 'Lines $i and ${i + 1} must never overlap during Rest slide',
           );
         }
       }
@@ -4577,10 +4674,11 @@ void main() {
       }
       expect(
         strictlyBetweenCountRest,
-        greaterThanOrEqualTo(3),
+        greaterThanOrEqualTo(4),
         reason:
             'startY2=$startY2Rest midY2=$intermediateY2Rest endY2=$endY2Rest | startY3=$startY3Rest midY3=$intermediateY3Rest endY3=$endY3Rest | scrollOff=${state.lyricsPanelScrollController.offset}',
       );
+      expect(intermediateStyleFramesRest, greaterThanOrEqualTo(4));
 
       // 2. In Explore mode: scroll slightly to enter Explore mode, then advance 3 -> 4 (at 30200ms)
       await tester.drag(
@@ -4596,6 +4694,18 @@ void main() {
       final startY4Explore = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_4')))
           .top;
+      final startFont3Explore = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+          )
+          .style!
+          .fontSize!;
+      final startFont4Explore = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_4')),
+          )
+          .style!
+          .fontSize!;
 
       localProvider.handleNativePosition(
         positionMs: 30200,
@@ -4603,13 +4713,12 @@ void main() {
         isPlaying: false,
       );
       await tester.pump(); // Frame 0 in Explore mode
-      final lockedWrap3Explore = state.debugCommittedWrapCountForLine(3)!;
-      final lockedWrap4Explore = state.debugCommittedWrapCountForLine(4)!;
 
       final intermediateY3Explore = <double>[];
       final intermediateY4Explore = <double>[];
-      for (int sample = 1; sample <= 4; sample++) {
-        await tester.pump(const Duration(milliseconds: 60));
+      int intermediateStyleFramesExplore = 0;
+      for (int sample = 1; sample <= 7; sample++) {
+        await tester.pump(const Duration(milliseconds: 50));
         intermediateY3Explore.add(
           tester
               .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
@@ -4620,8 +4729,22 @@ void main() {
               .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_4')))
               .top,
         );
-        expect(state.debugCommittedWrapCountForLine(3), lockedWrap3Explore);
-        expect(state.debugCommittedWrapCountForLine(4), lockedWrap4Explore);
+        final curFont3 = tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_3')),
+            )
+            .style!
+            .fontSize!;
+        final curFont4 = tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_4')),
+            )
+            .style!
+            .fontSize!;
+        if (curFont4 > startFont4Explore + 0.05 &&
+            curFont3 < startFont3Explore - 0.05) {
+          intermediateStyleFramesExplore++;
+        }
         for (int i = 0; i < 6; i++) {
           final rectI = tester.getRect(
             find.byKey(ValueKey<String>('lyrics_panel_line_$i')),
@@ -4633,7 +4756,7 @@ void main() {
             rectI.bottom,
             lessThanOrEqualTo(rectNext.top + 0.01),
             reason:
-                'Lines $i and ${i + 1} must never overlap during Explore travel',
+                'Lines $i and ${i + 1} must never overlap during Explore slide',
           );
         }
       }
@@ -4654,23 +4777,40 @@ void main() {
           strictlyBetweenCountExplore++;
         }
       }
-      expect(strictlyBetweenCountExplore, greaterThanOrEqualTo(3));
+      expect(strictlyBetweenCountExplore, greaterThanOrEqualTo(4));
+      expect(intermediateStyleFramesExplore, greaterThanOrEqualTo(4));
 
-      // Verify tap-to-seek inside the Lyrics panel (p = 0) seeks AND travels over ~300ms with >= 3 intermediate frames!
+      // Verify tap-to-seek inside the Lyrics panel (p = 0) seeks AND slides over ~400ms with >= 4 intermediate frames!
       final startY5Tap = tester
           .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_5')))
           .top;
+      final startFont5Tap = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_5')),
+          )
+          .style!
+          .fontSize!;
       await tester.tap(find.byKey(const ValueKey<String>('lyrics_panel_line_5')));
       await tester.pump();
       expect(localProvider.positionMs, 35000);
       final intermediateY5Tap = <double>[];
-      for (int sample = 1; sample <= 4; sample++) {
-        await tester.pump(const Duration(milliseconds: 60));
+      int tapIntermediateStyleCount = 0;
+      for (int sample = 1; sample <= 7; sample++) {
+        await tester.pump(const Duration(milliseconds: 50));
         intermediateY5Tap.add(
           tester
               .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_5')))
               .top,
         );
+        final curFont5 = tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_5')),
+            )
+            .style!
+            .fontSize!;
+        if (curFont5 > startFont5Tap + 0.05) {
+          tapIntermediateStyleCount++;
+        }
       }
       await tester.pumpAndSettle();
       final endY5Tap = tester
@@ -4682,7 +4822,8 @@ void main() {
           tapIntermediateCount++;
         }
       }
-      expect(tapIntermediateCount, greaterThanOrEqualTo(3));
+      expect(tapIntermediateCount, greaterThanOrEqualTo(4));
+      expect(tapIntermediateStyleCount, greaterThanOrEqualTo(4));
 
       // =======================================================================
       // (d) Plain-text (unsynced) lyrics treatment on Home & Lyrics panel
