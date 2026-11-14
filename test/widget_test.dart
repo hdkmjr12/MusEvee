@@ -9,6 +9,9 @@ import 'package:spotmeta_downloader/models/local_song.dart';
 import 'package:spotmeta_downloader/models/track_metadata.dart';
 import 'package:spotmeta_downloader/providers/downloader_provider.dart';
 import 'package:spotmeta_downloader/providers/local_music_provider.dart';
+import 'package:spotmeta_downloader/providers/settings_provider.dart';
+import 'package:spotmeta_downloader/screens/home_screen.dart';
+import 'package:spotmeta_downloader/services/folder_service.dart';
 import 'package:spotmeta_downloader/services/metadata_service.dart';
 import 'package:spotmeta_downloader/services/romaji_service.dart';
 import 'package:spotmeta_downloader/theme/musevee_palette.dart';
@@ -17,6 +20,7 @@ import 'package:spotmeta_downloader/widgets/local_library_views.dart';
 import 'package:spotmeta_downloader/widgets/musicolet_bottom_strip.dart';
 import 'package:spotmeta_downloader/widgets/musicolet_mini_player.dart';
 import 'package:spotmeta_downloader/widgets/now_playing_view.dart';
+import 'package:spotmeta_downloader/widgets/pressable_scale.dart';
 
 LocalSong _mockSong(
   int id, {
@@ -65,41 +69,38 @@ void main() {
     await tester.tap(find.byTooltip(AppStrings.tabDownloaderTooltip));
     await tester.pumpAndSettle();
 
-    expect(find.text('Cari lagu atau tempel link...'), findsOneWidget);
-    expect(find.text('Judul / Artis (Romaji J-Pop)'), findsOneWidget);
-    expect(find.text('Link YouTube / YT Music'), findsOneWidget);
-    expect(
-      find.text('Link Spotify (Track, Album & Playlist)'),
-      findsOneWidget,
-    );
-    expect(
-      find.text(
-        'MusEvee All-in-One Downloader (MP3 320kbps + USLT Lyrics)',
-      ),
-      findsOneWidget,
-    );
+    // Verify redesigned collapsed search bar with 3 filter pills and custom assets
+    expect(find.text(AppStrings.searchTitleArtistPill), findsOneWidget);
+    expect(find.text(AppStrings.linkYoutubePill), findsOneWidget);
+    expect(find.text(AppStrings.linkSpotifyPill), findsOneWidget);
 
-    // Verify the 3 Horizontal Carousels are rendered in the Downloader tab
-    expect(find.byKey(const ValueKey('carousel_for_you')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('carousel_global_trending')),
-      findsOneWidget,
-    );
-    expect(find.text('Untukmu'), findsOneWidget);
-    expect(find.text('Global Trending'), findsOneWidget);
-    expect(find.text('Idol'), findsOneWidget);
+    // Verify first 3 discovery sections are rendered
+    expect(find.text(AppStrings.thisWeeksTopSongsTitle), findsOneWidget);
+    expect(find.text(AppStrings.forYouTitle), findsOneWidget);
+    expect(find.text(AppStrings.playlistsForYouTitle), findsOneWidget);
 
-    // Scroll down slightly in the Downloader ListView to reveal the 3rd carousel (Indonesia Trending)
-    await tester.drag(find.byType(ListView).first, const Offset(0, -240));
+    // Test search pill tap -> morphs into expanded search bar with dynamic hint
+    await tester.tap(find.text(AppStrings.linkSpotifyPill));
     await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
 
-    expect(
-      find.byKey(const ValueKey('carousel_indonesia_trending')),
-      findsOneWidget,
-    );
-    expect(find.text('Indonesia Trending'), findsOneWidget);
+    // Collapse search bar back via back button
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.searchTitleArtistPill), findsOneWidget);
 
-    // Tap the compact Queue & History button next to the Downloader Omnibox
+    // Scroll down in the Downloader ListView to reveal 4th section (New releases)
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.newReleasesTitle), findsOneWidget);
+
+    // Scroll down further to reveal 5th section (Top Indonesian songs)
+    await tester.drag(find.byType(ListView).first, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.topIndonesianSongsTitle), findsOneWidget);
+
+    // Tap the circular black Download Queue & History button
     await tester.tap(find.byTooltip('Antrean & Riwayat Unduhan'));
     await tester.pumpAndSettle();
 
@@ -114,15 +115,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Tampilan'), findsOneWidget);
-    expect(find.text('Gelap'), findsOneWidget);
-    expect(find.text('Terang'), findsOneWidget);
-    expect(find.text('Hi-Res Lossless — FLAC'), findsOneWidget);
+    expect(find.text('Auto'), findsOneWidget);
     expect(find.text('Terbaik — 320 kbps'), findsOneWidget);
-    expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
-    expect(find.text('Hemat — 128 kbps'), findsOneWidget);
     expect(find.text('MusEvee v4.9'), findsOneWidget);
 
-    // Switch to Light Mode (`theme_mode_light`) and verify all 6 tabs render cleanly without error
+    // Verify Download Quality dropdown lists all 4 quality presets cleanly
+    await tester.tap(find.byKey(const ValueKey('download_quality_dropdown')));
+    await tester.pumpAndSettle();
+    expect(find.text('Hi-Res Lossless — FLAC'), findsOneWidget);
+    expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
+    expect(find.text('Hemat — 128 kbps'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('download_quality_best')));
+    await tester.pumpAndSettle();
+
+    // Open App Theme dropdown and switch to Light Mode (`theme_mode_light`)
+    await tester.tap(find.byKey(const ValueKey('theme_mode_dropdown')));
+    await tester.pumpAndSettle();
+    expect(find.text('Gelap'), findsOneWidget);
+    expect(find.text('Terang'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('theme_mode_light')));
     await tester.pumpAndSettle();
 
@@ -132,7 +142,7 @@ void main() {
     // Visit Tab 0 (Queue), Tab 1 (Now Playing), Tab 2 (Folders), Tab 3 (Playlists), Tab 4 (Downloader) in Light Mode
     await tester.tap(find.byTooltip(AppStrings.tabQueueTooltip));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Queue'), findsWidgets);
+    expect(find.text('Antrean Putar'), findsOneWidget);
 
     await tester.tap(find.byTooltip(AppStrings.tabFoldersTooltip));
     await tester.pumpAndSettle();
@@ -207,7 +217,8 @@ void main() {
     expect(provider.currentIndex, 0);
     expect(provider.currentSong?.title, 'Song 3');
 
-    final shuffledOrder = provider.queueEntries.map((e) => e.song.title).toList();
+    final shuffledOrder =
+        provider.queueEntries.map((e) => e.song.title).toList();
     expect(shuffledOrder.length, 8);
 
     // Next & Previous MUST strictly follow the visual queue order even when Shuffle is ON!
@@ -354,9 +365,7 @@ void main() {
     expect(provider.volume, 1.0);
     expect(
       recordedCalls.any(
-        (c) =>
-            c.method == 'setVolume' &&
-            (c.arguments as Map)['volume'] == 1.0,
+        (c) => c.method == 'setVolume' && (c.arguments as Map)['volume'] == 1.0,
       ),
       isTrue,
     );
@@ -489,8 +498,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Open Kelola Folder sheet
-    await tester.tap(find.text('Kelola Folder'));
+    // Open Kelola / Manage Folder sheet
+    expect(find.text('Kelola'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('folders_manage_button')));
     await tester.pumpAndSettle();
 
     expect(find.text('Kelola / Sembunyikan Folder'), findsOneWidget);
@@ -678,14 +688,16 @@ void main() {
       () {
     AppStrings.debugLanguageCodeOverride = 'id';
     expect(AppStrings.isIndonesian, isTrue);
-    expect(AppStrings.smartPlaylistTitle(SmartPlaylistId.allSongs), 'Semua lagu');
+    expect(
+        AppStrings.smartPlaylistTitle(SmartPlaylistId.allSongs), 'Semua lagu');
     expect(AppStrings.yourPlaylistsHeader, 'Playlist kamu');
     expect(AppStrings.forYouTitle, 'Untukmu');
     expect(AppStrings.omniboxHint, 'Cari lagu atau tempel link...');
 
     AppStrings.debugLanguageCodeOverride = 'en';
     expect(AppStrings.isIndonesian, isFalse);
-    expect(AppStrings.smartPlaylistTitle(SmartPlaylistId.allSongs), 'All songs');
+    expect(
+        AppStrings.smartPlaylistTitle(SmartPlaylistId.allSongs), 'All songs');
     expect(AppStrings.yourPlaylistsHeader, 'Your playlists');
     expect(AppStrings.forYouTitle, 'For You');
     expect(AppStrings.omniboxHint, 'Search songs or paste link...');
@@ -1125,7 +1137,8 @@ void main() {
 
     expect(find.text('Ganti Lirik dari LRCLIB'), findsOneWidget);
     expect(find.text('Auto-Romaji Lirik & Judul Jepang'), findsOneWidget);
-    expect(find.text('Ukuran Font Lirik'), findsOneWidget);
+    expect(find.text('Ukuran Font Lirik Aktif'), findsOneWidget);
+    expect(find.text('Ukuran Font Lirik Redup'), findsOneWidget);
     expect(find.text('Sinkronisasi Waktu Lirik'), findsOneWidget);
     expect(find.text('Mode & Sumber Lirik'), findsOneWidget);
     expect(find.text('Equalizer Sistem Android'), findsOneWidget);
@@ -1140,7 +1153,8 @@ void main() {
 
     // Switch to song with NO USLT lyrics (noLyricsSong) -> disc framing is STILL identical (zero disc jump!), tapping prompt opens search/manual sheet
     await localProvider.playNext();
-    await localProvider.togglePlayPause(); // pause so ticker stops after spin-down
+    await localProvider
+        .togglePlayPause(); // pause so ticker stops after spin-down
     await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 950));
     expect(tester.getRect(discFinder), discRectAtStart);
@@ -1209,7 +1223,9 @@ void main() {
           builder: (context, setHostState) {
             return MaterialApp(
               theme: ThemeData.dark().copyWith(
-                extensions: const <ThemeExtension<dynamic>>[MusEveePalette.dark],
+                extensions: const <ThemeExtension<dynamic>>[
+                  MusEveePalette.dark
+                ],
               ),
               home: Scaffold(
                 body: Column(
@@ -1275,7 +1291,8 @@ void main() {
       ),
     );
     // At t=0 of natural step, column starts shifted down (+28px) and slides upward to 0
-    expect(slideTransformAtStart.transform.getTranslation().y, closeTo(28.0, 0.5));
+    expect(
+        slideTransformAtStart.transform.getTranslation().y, closeTo(28.0, 0.5));
     await tester.pump(const Duration(milliseconds: 200));
     final slideTransformMid = tester.widget<Transform>(
       find.byKey(
@@ -1323,7 +1340,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Info File & Path Folder'));
     await tester.pumpAndSettle();
-    expect(find.text('Informasi File & Tag ID3'), findsOneWidget);
+    expect(find.text('Informasi File & Tag Audio'), findsOneWidget);
+    expect(find.text('Format Audio'), findsOneWidget);
+    expect(find.text('MP3'), findsOneWidget);
     await tester.tap(find.text('Tutup'));
     await tester.pumpAndSettle();
 
@@ -1344,8 +1363,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(movedSong?.filePath, syncedSong.filePath);
 
-    // 4. Lyrics Group: Font Size, Auto-Sync toggle, and Volume/Pre-Amp sliders
+    // 4. Lyrics Group: Active & Dimmed Font Size Steppers (+/-), Auto-Sync toggle, and Volume/Pre-Amp sliders
     final initialFont = localProvider.lyricsFontSize;
+    final initialSecFont = localProvider.secondaryLyricsFontSize;
     final initialSync = localProvider.autoScrollLyrics;
     await tester.tap(
       find.byKey(const ValueKey<String>('now_playing_overflow_button')),
@@ -1357,9 +1377,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Ukuran Font Lirik'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_active_font_plus')),
+    );
     await tester.pump();
     expect(localProvider.lyricsFontSize, isNot(equals(initialFont)));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_secondary_font_minus')),
+    );
+    await tester.pump();
+    expect(
+      localProvider.secondaryLyricsFontSize,
+      isNot(equals(initialSecFont)),
+    );
 
     await tester.tap(find.text('Sinkronisasi Waktu Lirik'));
     await tester.pump();
@@ -1415,7 +1446,8 @@ void main() {
 
     localProvider.seedSongsForTesting([song]);
     await localProvider.playSong(song, queueContext: [song]);
-    await localProvider.togglePlayPause(); // paused so ticker does not spin indefinitely
+    await localProvider
+        .togglePlayPause(); // paused so ticker does not spin indefinitely
 
     final npKey = GlobalKey<NowPlayingViewState>();
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -2308,7 +2340,8 @@ void main() {
         .opacity;
     expect(introOp0, NowPlayingView.lyricsPanelOpacityDistance1); // 0.90
     expect(introOp1, NowPlayingView.lyricsPanelOpacityDistance2); // 0.65
-    expect(introOp2, 0.0); // Stage Mode Rest Mode hides lines beyond stageDistance <= 1
+    expect(introOp2,
+        0.0); // Stage Mode Rest Mode hides lines beyond stageDistance <= 1
     final stageLine0IntroText = tester.widget<Text>(
       find.byKey(const ValueKey<String>('lyrics_panel_line_text_0')),
     );
@@ -3250,7 +3283,8 @@ void main() {
 
     localProvider.seedSongsForTesting([jpSong, enSong]);
     await localProvider.playSong(jpSong, queueContext: [jpSong, enSong]);
-    await localProvider.togglePlayPause(); // Pause disc ticker for pumpAndSettle
+    await localProvider
+        .togglePlayPause(); // Pause disc ticker for pumpAndSettle
 
     // Playback is at line 2 (9500ms -> line 2 timestamp is 00:09.00)
     localProvider.handleNativePosition(
@@ -4305,22 +4339,31 @@ void main() {
       // Verify opacity hierarchy 1.0 / 0.72 / 0.48 on the 3 slots
       final topSlotOpacity = tester
           .widget<Opacity>(
-            find.ancestor(of: prevSlotFinder, matching: find.byType(Opacity)).first,
+            find
+                .ancestor(of: prevSlotFinder, matching: find.byType(Opacity))
+                .first,
           )
           .opacity;
       final midSlotOpacity = tester
           .widget<Opacity>(
-            find.ancestor(of: midSlotFinder, matching: find.byType(Opacity)).first,
+            find
+                .ancestor(of: midSlotFinder, matching: find.byType(Opacity))
+                .first,
           )
           .opacity;
       final botSlotOpacity = tester
           .widget<Opacity>(
-            find.ancestor(of: nextSlotFinder, matching: find.byType(Opacity)).first,
+            find
+                .ancestor(of: nextSlotFinder, matching: find.byType(Opacity))
+                .first,
           )
           .opacity;
-      expect(topSlotOpacity, closeTo(MusEveePalette.homeIntroLine0Opacity, 1e-4));
-      expect(midSlotOpacity, closeTo(MusEveePalette.homeIntroLine1Opacity, 1e-4));
-      expect(botSlotOpacity, closeTo(MusEveePalette.homeIntroLine2Opacity, 1e-4));
+      expect(
+          topSlotOpacity, closeTo(MusEveePalette.homeIntroLine0Opacity, 1e-4));
+      expect(
+          midSlotOpacity, closeTo(MusEveePalette.homeIntroLine1Opacity, 1e-4));
+      expect(
+          botSlotOpacity, closeTo(MusEveePalette.homeIntroLine2Opacity, 1e-4));
 
       final introLine0TopY = tester.getRect(prevSlotFinder).top;
       final introLine1TopY = tester.getRect(midSlotFinder).top;
@@ -4414,7 +4457,9 @@ void main() {
       );
       final settledNextOpacity = tester
           .widget<Opacity>(
-            find.ancestor(of: nextSlotFinder, matching: find.byType(Opacity)).first,
+            find
+                .ancestor(of: nextSlotFinder, matching: find.byType(Opacity))
+                .first,
           )
           .opacity;
       expect(settledNextOpacity, closeTo(1.0, 1e-4));
@@ -4523,7 +4568,8 @@ void main() {
         if ((i - 2).abs() <= 1) {
           expect(op, greaterThan(0.0));
         } else {
-          expect(op, 0.0, reason: 'Line $i must be 0.0 on first settled frame at p=0');
+          expect(op, 0.0,
+              reason: 'Line $i must be 0.0 on first settled frame at p=0');
         }
       }
       await tester.pumpAndSettle();
@@ -4599,12 +4645,14 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
         intermediateY2Rest.add(
           tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_2')))
+              .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_2')))
               .top,
         );
         intermediateY3Rest.add(
           tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
+              .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
               .top,
         );
         final curFont2 = tester
@@ -4652,7 +4700,8 @@ void main() {
           expect(
             rectI.bottom,
             lessThanOrEqualTo(rectNext.top + 0.01),
-            reason: 'Lines $i and ${i + 1} must never overlap during Rest slide',
+            reason:
+                'Lines $i and ${i + 1} must never overlap during Rest slide',
           );
         }
       }
@@ -4722,12 +4771,14 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
         intermediateY3Explore.add(
           tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
+              .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_3')))
               .top,
         );
         intermediateY4Explore.add(
           tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_4')))
+              .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_4')))
               .top,
         );
         final curFont3 = tester
@@ -4791,7 +4842,8 @@ void main() {
           )
           .style!
           .fontSize!;
-      await tester.tap(find.byKey(const ValueKey<String>('lyrics_panel_line_5')));
+      await tester
+          .tap(find.byKey(const ValueKey<String>('lyrics_panel_line_5')));
       await tester.pump();
       expect(localProvider.positionMs, 35000);
       final intermediateY5Tap = <double>[];
@@ -4800,7 +4852,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
         intermediateY5Tap.add(
           tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_5')))
+              .getRect(
+                  find.byKey(const ValueKey<String>('lyrics_panel_line_5')))
               .top,
         );
         final curFont5 = tester
@@ -4830,7 +4883,8 @@ void main() {
       // (d) Plain-text (unsynced) lyrics treatment on Home & Lyrics panel
       // =======================================================================
       state.debugSetPanelProgress(1.0);
-      await localProvider.playSong(plainSong, queueContext: [syncedSong, plainSong]);
+      await localProvider
+          .playSong(plainSong, queueContext: [syncedSong, plainSong]);
       await localProvider.togglePlayPause();
       localProvider.handleNativePosition(
         positionMs: 45000,
@@ -4906,25 +4960,31 @@ void main() {
   );
 
   testWidgets(
-    'Lyrics Font Size 11.5pt Preset: 5-step overflow cycle (11.5/13.5/15.5/18.0/20.5), smaller active line at 11.5pt vs 13.5pt across Home/Morph/Panel 0/Sheet, and legacy session migration',
+    'Lyrics Font Size Split Controls (+/- Steppers): independent Active & Home-only Dimmed presets, session restore, Full Lyrics unaffected by Dimmed setting, and smooth morph',
     (WidgetTester tester) async {
       final localProvider = LocalMusicProvider();
       final downloaderProvider = DownloaderProvider();
       addTearDown(localProvider.dispose);
       addTearDown(downloaderProvider.dispose);
 
-      // 1. Default preset & 5-element preset list
+      // 1. Default presets & preset lists
       expect(
         LocalMusicProvider.fontSizePresets,
-        const <double>[11.5, 13.5, 15.5, 18.0, 20.5],
+        const <double>[8.5, 9.5, 10.5, 11.5, 13.5, 15.5, 18.0, 20.5],
+      );
+      expect(
+        LocalMusicProvider.secondaryFontSizePresets,
+        const <double>[9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5],
       );
       expect(localProvider.lyricsFontSize, 15.5);
+      expect(localProvider.secondaryLyricsFontSize, 13.5);
 
-      // 2. Legacy session migration: old 4-element indices 0..3 -> 13.5, 15.5, 18.0, 20.5
+      // 2. Session restore & legacy session migration
       localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
         'fontSizeIndex': 0,
       });
       expect(localProvider.lyricsFontSize, 13.5);
+      expect(localProvider.secondaryLyricsFontSize, 13.5);
       localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
         'fontSizeIndex': 1,
       });
@@ -4938,15 +4998,18 @@ void main() {
       });
       expect(localProvider.lyricsFontSize, 20.5);
       localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
-        'lyricsFontSizePt': 11.5,
-        'fontSizeIndex': 0,
+        'lyricsFontSizePt': 8.5,
+        'secondaryLyricsFontSizePt': 9.5,
       });
-      expect(localProvider.lyricsFontSize, 11.5);
-      // Reset to default 15.5pt
+      expect(localProvider.lyricsFontSize, 8.5);
+      expect(localProvider.secondaryLyricsFontSize, 9.5);
+      // Reset to defaults (15.5 / 13.5)
       localProvider.restoreFontSizeFromSessionMap(<String, dynamic>{
         'lyricsFontSizePt': 15.5,
+        'secondaryLyricsFontSizePt': 13.5,
       });
       expect(localProvider.lyricsFontSize, 15.5);
+      expect(localProvider.secondaryLyricsFontSize, 13.5);
 
       final song = _mockSong(
         701,
@@ -5007,10 +5070,20 @@ void main() {
             .fontSize!;
       }
 
-      // Default 15.5pt -> active line renders at 22.0pt
-      expect(currentHomeActiveFontSize(), 22.0);
+      double currentHomeSecondaryFontSize() {
+        return tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyric_line_previous')),
+            )
+            .style!
+            .fontSize!;
+      }
 
-      // 3. Open overflow menu and cycle through all 5 presets: 15.5 -> 18.0 -> 20.5 -> 11.5 -> 13.5 -> 15.5
+      // Default 15.5pt active -> 22.0pt, 13.5pt dimmed -> 13.5pt
+      expect(currentHomeActiveFontSize(), 22.0);
+      expect(currentHomeSecondaryFontSize(), 13.5);
+
+      // 3. Open overflow menu and use +/- stepper buttons for Active & Dimmed
       await tester.tap(
         find.byKey(const ValueKey<String>('now_playing_overflow_button')),
       );
@@ -5020,66 +5093,152 @@ void main() {
         const Offset(0, -280),
       );
       await tester.pumpAndSettle();
-      expect(find.text('15.5 pt'), findsOneWidget);
 
-      await tester.tap(find.text('Ukuran Font Lirik'));
+      expect(find.text('Ukuran Font Lirik Aktif'), findsOneWidget);
+      expect(find.text('Ukuran Font Lirik Redup'), findsOneWidget);
+      expect(find.text('Khusus layar Home'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_active_font_value')),
+            )
+            .data,
+        '15.5 pt',
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_secondary_font_value')),
+            )
+            .data,
+        '13.5 pt',
+      );
+
+      // Tap '+' on Active twice: 15.5 -> 18.0 -> 20.5 (stops at max)
+      final activePlus =
+          find.byKey(const ValueKey<String>('lyrics_active_font_plus'));
+      final activeMinus =
+          find.byKey(const ValueKey<String>('lyrics_active_font_minus'));
+      await tester.tap(activePlus);
       await tester.pump();
       expect(localProvider.lyricsFontSize, 18.0);
-      expect(find.text('18.0 pt'), findsOneWidget);
-
-      await tester.tap(find.text('Ukuran Font Lirik'));
+      await tester.tap(activePlus);
       await tester.pump();
       expect(localProvider.lyricsFontSize, 20.5);
-      expect(find.text('20.5 pt'), findsOneWidget);
-
-      await tester.tap(find.text('Ukuran Font Lirik'));
+      // Tapping '+' at max does not wrap
+      await tester.tap(activePlus);
       await tester.pump();
-      expect(localProvider.lyricsFontSize, 11.5);
-      expect(find.text('11.5 pt'), findsOneWidget);
+      expect(localProvider.lyricsFontSize, 20.5);
+
+      // Step Active down all the way to 8.5pt (7 steps from 20.5 -> 8.5)
+      for (int i = 0; i < 8; i++) {
+        await tester.tap(activeMinus);
+        await tester.pump();
+      }
+      expect(localProvider.lyricsFontSize, 8.5);
+      // Changing Active did NOT alter Dimmed (still 13.5pt!)
+      expect(localProvider.secondaryLyricsFontSize, 13.5);
+
+      // Step Dimmed down to 9.5pt via '-' button (4 steps from 13.5 -> 9.5)
+      final secMinus =
+          find.byKey(const ValueKey<String>('lyrics_secondary_font_minus'));
+      final secPlus =
+          find.byKey(const ValueKey<String>('lyrics_secondary_font_plus'));
+      for (int i = 0; i < 5; i++) {
+        await tester.tap(secMinus);
+        await tester.pump();
+      }
+      expect(localProvider.secondaryLyricsFontSize, 9.5);
+      await tester.tap(secPlus);
+      await tester.pump();
+      expect(localProvider.secondaryLyricsFontSize, 10.5);
+      await tester.tap(secMinus);
+      await tester.pump();
+      expect(localProvider.secondaryLyricsFontSize, 9.5);
 
       Navigator.of(tester.element(find.byType(NowPlayingView))).pop();
       await tester.pumpAndSettle();
 
-      // At 11.5pt (offset -4.0), Home active line renders at 18.0pt
-      final homeFontAt115 = currentHomeActiveFontSize();
-      expect(homeFontAt115, 18.0);
+      // At Active 8.5pt + Dimmed 9.5pt:
+      // Home active = 13.5pt, Home dimmed = 9.5pt
+      expect(currentHomeActiveFontSize(), 13.5);
+      expect(currentHomeSecondaryFontSize(), 9.5);
 
-      // Panel 0 at 11.5pt also renders active line at 18.0pt
+      // Full Lyrics (Panel 0) ignores Home Dimmed setting (stays 18.0pt active / 14.5pt dimmed)
       final state = npKey.currentState!;
       state.debugSetPanelProgress(0.0);
       await tester.pump();
-      final panel0FontAt115 = tester
+      final panel0ActiveAt85 = tester
           .widget<Text>(
             find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
           )
           .style!
           .fontSize!;
-      expect(panel0FontAt115, 18.0);
+      final panel0SecAt85 = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('lyrics_panel_line_text_0')),
+          )
+          .style!
+          .fontSize!;
+      expect(panel0ActiveAt85, 18.0);
+      expect(panel0SecAt85, MusEveePalette.lyricPanelSecondaryFontSize);
 
-      // Cycle to 13.5pt (offset -2.0) -> Home & Panel 0 active line renders at 20.0pt (> 18.0pt at 11.5pt)
-      localProvider.cycleLyricsFontSize();
-      expect(localProvider.lyricsFontSize, 13.5);
+      // Mid-morph at p = 0.5 interpolates Home (13.5 / 9.5) <-> Full Lyrics (18.0 / 14.5)
+      state.debugSetPanelProgress(0.5);
       await tester.pump();
-      final panel0FontAt135 = tester
+      final morphActiveAt85 = tester
           .widget<Text>(
-            find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+            find.byKey(const ValueKey<String>('morph_lyric_text_1')),
           )
           .style!
           .fontSize!;
-      expect(panel0FontAt135, 20.0);
-      expect(panel0FontAt115, lessThan(panel0FontAt135));
+      final morphSecAt85 = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('morph_lyric_text_0')),
+          )
+          .style!
+          .fontSize!;
+      expect(morphActiveAt85, closeTo(15.75, 0.01));
+      expect(morphSecAt85, closeTo(12.0, 0.01));
 
+      // Verify independent Dimmed max (15.5pt) on Home while Panel 0 stays 14.5pt
       state.debugSetPanelProgress(1.0);
       await tester.pump();
-      final homeFontAt135 = currentHomeActiveFontSize();
-      expect(homeFontAt135, 20.0);
-      expect(homeFontAt115, lessThan(homeFontAt135));
-
-      // Cycle back to 15.5pt -> 22.0pt
-      localProvider.cycleLyricsFontSize();
-      expect(localProvider.lyricsFontSize, 15.5);
+      for (int i = 0; i < 6; i++) {
+        localProvider.increaseSecondaryLyricsFontSize();
+      }
+      expect(localProvider.secondaryLyricsFontSize, 15.5);
       await tester.pump();
-      expect(currentHomeActiveFontSize(), 22.0);
+      expect(currentHomeSecondaryFontSize(), 15.5);
+
+      state.debugSetPanelProgress(0.0);
+      await tester.pump();
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_0')),
+            )
+            .style!
+            .fontSize!,
+        MusEveePalette.lyricPanelSecondaryFontSize,
+      );
+
+      // Step Active to 13.5pt -> Panel 0 active line renders at 20.0pt
+      localProvider.increaseLyricsFontSize(); // 9.5
+      localProvider.increaseLyricsFontSize(); // 10.5
+      localProvider.increaseLyricsFontSize(); // 11.5
+      localProvider.increaseLyricsFontSize(); // 13.5
+      expect(localProvider.lyricsFontSize, 13.5);
+      await tester.pump();
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')),
+            )
+            .style!
+            .fontSize!,
+        20.0,
+      );
     },
   );
 
@@ -5194,8 +5353,10 @@ void main() {
         expect(state.isPanel0ScrollTravelControllerAnimating, isFalse);
 
         // Frame 0: 0.0px displacement
-        expect((lineTop(outgoingIdx) - preOutTop).abs(), lessThanOrEqualTo(0.05));
-        expect((lineTop(incomingIdx) - preInTop).abs(), lessThanOrEqualTo(0.05));
+        expect(
+            (lineTop(outgoingIdx) - preOutTop).abs(), lessThanOrEqualTo(0.05));
+        expect(
+            (lineTop(incomingIdx) - preInTop).abs(), lessThanOrEqualTo(0.05));
 
         // Sample at 30fps (~33ms per frame) across 400ms (13 steps = 429ms)
         double prevOutTop = lineTop(outgoingIdx);
@@ -5265,8 +5426,10 @@ void main() {
         final postFinishInTop = lineTop(incomingIdx);
         expect(state.isPanel0SlideAnimating, isFalse);
         await tester.pump();
-        expect((lineTop(outgoingIdx) - postFinishOutTop).abs(), lessThanOrEqualTo(0.05));
-        expect((lineTop(incomingIdx) - postFinishInTop).abs(), lessThanOrEqualTo(0.05));
+        expect((lineTop(outgoingIdx) - postFinishOutTop).abs(),
+            lessThanOrEqualTo(0.05));
+        expect((lineTop(incomingIdx) - postFinishInTop).abs(),
+            lessThanOrEqualTo(0.05));
       }
 
       // 1. Entrance transition of "Wagamamana kimi no naka de kirei ni kusatta batsu" (0 -> 1)
@@ -5290,7 +5453,8 @@ void main() {
         isPlaying: false,
       );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 132)); // ~4 frames into 2 -> 3 slide
+      await tester.pump(
+          const Duration(milliseconds: 132)); // ~4 frames into 2 -> 3 slide
       expect(state.isPanel0SlideAnimating, isTrue);
 
       final midSlideRow0Rect = tester.getRect(
@@ -5311,7 +5475,8 @@ void main() {
         find.byKey(const ValueKey<String>('morph_lyric_3_row_0')),
       );
       expect(morphHandoverLine2Row0.top, closeTo(midSlideRow0Rect.top, 0.05));
-      expect(morphHandoverLine3Row0.top, closeTo(midSlideLine3Row0Rect.top, 0.05));
+      expect(
+          morphHandoverLine3Row0.top, closeTo(midSlideLine3Row0Rect.top, 0.05));
       state.debugRenderMorphAtSettledEndpoints = false;
       await tester.pumpAndSettle();
 
@@ -5414,11 +5579,13 @@ void main() {
         findsOneWidget,
       );
       final preRow0Text = tester
-          .widget<Text>(find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')))
+          .widget<Text>(
+              find.byKey(const ValueKey<String>('lyrics_panel_line_text_1')))
           .data!;
       final preRow1Text = tester
           .widget<Text>(
-            find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_text_1')),
+            find.byKey(
+                const ValueKey<String>('lyrics_panel_line_1_row_text_1')),
           )
           .data!;
 
@@ -5432,10 +5599,12 @@ void main() {
       expect(state.isPanel0SlideAnimating, isTrue);
 
       double prevRow1LocalOffset = tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')))
+              .getRect(find
+                  .byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')))
               .top -
           tester
-              .getRect(find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_0')))
+              .getRect(find
+                  .byKey(const ValueKey<String>('lyrics_panel_line_1_row_0')))
               .top;
       for (int step = 1; step <= 13; step++) {
         await tester.pump(const Duration(milliseconds: 33));
@@ -5460,16 +5629,19 @@ void main() {
         );
         final curRow1LocalOffset = tester
                 .getRect(
-                  find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_1')),
+                  find.byKey(
+                      const ValueKey<String>('lyrics_panel_line_1_row_1')),
                 )
                 .top -
             tester
                 .getRect(
-                  find.byKey(const ValueKey<String>('lyrics_panel_line_1_row_0')),
+                  find.byKey(
+                      const ValueKey<String>('lyrics_panel_line_1_row_0')),
                 )
                 .top;
         // Row spacing expands monotonically with fontSize as Line 1 grows from 14.5pt -> 22pt
-        expect(curRow1LocalOffset, greaterThanOrEqualTo(prevRow1LocalOffset - 0.05));
+        expect(curRow1LocalOffset,
+            greaterThanOrEqualTo(prevRow1LocalOffset - 0.05));
         prevRow1LocalOffset = curRow1LocalOffset;
       }
       await tester.pump();
@@ -5514,6 +5686,1333 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+      'Redesigned Folders view renders custom assets, 2x2 collage, clean folder-only rows, inline search, multi-select check FAB, drill-down, and Light/Dark + ID/EN parity',
+      (WidgetTester tester) async {
+    final localProvider = LocalMusicProvider();
+    final downloaderProvider = DownloaderProvider();
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    // Create 4 tiny valid 1x1 PNG cover files synchronously (FakeAsync safe) so
+    // the 2x2 collage builds 4 distinct Image.file tiles.
+    final tempDir = Directory.systemTemp.createTempSync('musevee_collage_');
+    addTearDown(() {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+    const tinyPngBytes = <int>[
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10,
+      0,
+      0,
+      0,
+      13,
+      73,
+      72,
+      68,
+      82,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      8,
+      6,
+      0,
+      0,
+      0,
+      31,
+      21,
+      196,
+      137,
+      0,
+      0,
+      0,
+      10,
+      73,
+      68,
+      65,
+      84,
+      120,
+      156,
+      99,
+      0,
+      1,
+      0,
+      0,
+      5,
+      0,
+      1,
+      13,
+      10,
+      45,
+      180,
+      0,
+      0,
+      0,
+      0,
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130,
+    ];
+    final coverPaths = <String>[];
+    for (int i = 0; i < 4; i++) {
+      final f = File('${tempDir.path}/cover_$i.png');
+      f.writeAsBytesSync(tinyPngBytes);
+      coverPaths.add(f.path);
+    }
+
+    LocalSong songWithCover(
+      int id, {
+      required String folderName,
+      required String title,
+      required String artist,
+      required String album,
+      String? coverPath,
+    }) {
+      final folderPath = '/storage/emulated/0/Music/$folderName';
+      return LocalSong(
+        filePath: '$folderPath/Track_$id.mp3',
+        fileName: 'Track_$id.mp3',
+        folderName: folderName,
+        title: title,
+        artist: artist,
+        album: album,
+        year: '2026',
+        durationMs: 185000,
+        sizeBytes: 4096000,
+        bitrateKbps: 320,
+        sampleRateHz: 44100,
+        coverFilePath: coverPath,
+        lastModifiedMs: 1700000000000 + id,
+      );
+    }
+
+    localProvider.seedSongsForTesting([
+      songWithCover(
+        1,
+        folderName: 'Music Barat',
+        title: 'Midnight Echo',
+        artist: 'Luna',
+        album: 'Nocturne',
+        coverPath: coverPaths[0],
+      ),
+      songWithCover(
+        2,
+        folderName: 'Music Barat',
+        title: 'Solaris',
+        artist: 'Orion',
+        album: 'Dawn',
+        coverPath: coverPaths[1],
+      ),
+      songWithCover(
+        3,
+        folderName: 'Music Barat',
+        title: 'Velvet Sky',
+        artist: 'Mira',
+        album: 'Horizon',
+        coverPath: coverPaths[2],
+      ),
+      songWithCover(
+        4,
+        folderName: 'Music Barat',
+        title: 'City Lights',
+        artist: 'Kaito',
+        album: 'Neon',
+        coverPath: coverPaths[3],
+      ),
+      songWithCover(
+        5,
+        folderName: 'Music Japan',
+        title: 'Hoshizora',
+        artist: 'Aimer',
+        album: 'Starlight',
+        coverPath: coverPaths[0],
+      ),
+    ]);
+
+    bool openedNowPlaying = false;
+
+    // 1. Render in English + Light Mode matching design/folder redesign.png
+    AppStrings.debugLanguageCodeOverride = 'en';
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            fontFamily: 'Poppins',
+            extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+          ),
+          home: Scaffold(
+            body: LocalFoldersView(
+              onOpenNowPlaying: () => openedNowPlaying = true,
+              onCreateNewFolder: (_) async {},
+              onMoveLocalSongFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Header shows 'Folders' (no folder count), 'Manage', and custom folder icon asset
+    expect(find.text('Folders'), findsOneWidget);
+    expect(find.text('Folders (2)'), findsNothing);
+    expect(find.text('Manage'), findsOneWidget);
+    final foldersHeaderStyle = tester.widget<Text>(find.text('Folders')).style!;
+    expect(foldersHeaderStyle.fontSize, 14);
+    expect(foldersHeaderStyle.fontWeight, FontWeight.w600);
+    expect(foldersHeaderStyle.color, MusEveePalette.light.textPrimary);
+    final manageDefaultStyle = tester.widget<Text>(find.text('Manage')).style!;
+    expect(manageDefaultStyle.fontWeight, FontWeight.w400);
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/folder.png',
+      ),
+      findsOneWidget,
+    );
+
+    // Search bar renders custom search icon + English hint
+    expect(find.byKey(const ValueKey('folders_search_field')), findsOneWidget);
+    expect(find.text('Search songs, artist, album...'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/search.png',
+      ),
+      findsOneWidget,
+    );
+
+    // Folder rows show ONLY folder name (no long path or song count subtitle)
+    expect(find.text('Music Barat'), findsOneWidget);
+    expect(find.text('Music Japan'), findsOneWidget);
+    final folderRowStyle = tester.widget<Text>(find.text('Music Barat')).style!;
+    expect(folderRowStyle.fontSize, 13.5);
+    expect(folderRowStyle.fontWeight, FontWeight.w500);
+    expect(folderRowStyle.color, MusEveePalette.light.textPrimary);
+    expect(find.textContaining('/storage/emulated/0/Music/'), findsNothing);
+    expect(find.textContaining('4 songs'), findsNothing);
+
+    // Music Barat renders 4 distinct Image.file tiles in 2x2 collage + Music Japan renders 1 full cover
+    final fileImages =
+        tester.widgetList<Image>(find.byType(Image)).where((img) {
+      final provider = img.image;
+      return provider is FileImage ||
+          (provider is ResizeImage && provider.imageProvider is FileImage);
+    }).toList();
+    expect(fileImages.length, 5);
+
+    // Plain play icon & check asset FAB are rendered
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('folders_merge_fab')), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/check.png',
+      ),
+      findsOneWidget,
+    );
+
+    // 2. Inline search by artist ('Aimer') filters directly inside Folders tab
+    await tester.enterText(
+      find.byKey(const ValueKey('folders_search_field')),
+      'Aimer',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.byKey(const ValueKey('folders_inline_search_results')),
+      findsOneWidget,
+    );
+    expect(find.text('Hoshizora'), findsOneWidget);
+    expect(find.text('Midnight Echo'), findsNothing);
+
+    // Tapping inline search result plays song and opens Now Playing
+    // (Use bounded pumps while AnimatedEqualizerIcon repeats on the active row)
+    await tester.tap(find.text('Hoshizora'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(localProvider.currentSong?.title, 'Hoshizora');
+    expect(openedNowPlaying, isTrue);
+
+    // Clearing inline search restores the folder list
+    await tester.tap(find.byKey(const ValueKey('folders_search_clear_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('folders_list_view')), findsOneWidget);
+    expect(find.text('Music Barat'), findsOneWidget);
+
+    // 3. Tapping check FAB opens monochrome Multi-Folder selection mode
+    await tester.tap(find.byKey(const ValueKey('folders_merge_fab')));
+    await tester.pumpAndSettle();
+    expect(find.text('Select folders'), findsOneWidget);
+    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.textContaining('Merge to Queue'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('folder_songs_delete_selected_button')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Music Barat'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 Folder • 4 songs'), findsOneWidget);
+    await tester.tap(find.byTooltip('Cancel selection'));
+    await tester.pumpAndSettle();
+
+    // 4. Opening a folder shows clean monochrome drill-down view (design/folder redesign - 2.png)
+    await tester.tap(find.text('Music Barat'));
+    await tester.pumpAndSettle();
+    expect(find.text('Midnight Echo'), findsOneWidget);
+    expect(find.text('Luna • 3:05'), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder_songs_search_field')),
+        findsOneWidget);
+    expect(find.text('Search songs/artist in this folder'), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('folder_songs_merge_fab')), findsOneWidget);
+    expect(find.byKey(const ValueKey('opened_folder_back_button')),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('opened_folder_back_button')));
+    await tester.pumpAndSettle();
+
+    // 5. Switch to Indonesian + Dark Mode and hide 1 folder -> shows 'Kelola (1)'
+    AppStrings.debugLanguageCodeOverride = 'id';
+    await localProvider.setFolderHidden(
+      '/storage/emulated/0/Music/Music Japan',
+      folderName: 'Music Japan',
+      hidden: true,
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            fontFamily: 'Poppins',
+            extensions: const <ThemeExtension<dynamic>>[MusEveePalette.dark],
+          ),
+          home: Scaffold(
+            body: LocalFoldersView(
+              onOpenNowPlaying: () {},
+              onCreateNewFolder: (_) async {},
+              onMoveLocalSongFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Folders'), findsOneWidget);
+    expect(find.text('Kelola (1)'), findsOneWidget);
+    final manageHiddenStyle =
+        tester.widget<Text>(find.text('Kelola (1)')).style!;
+    expect(manageHiddenStyle.fontWeight, FontWeight.w400);
+    expect(find.text('Cari lagu, artis, album...'), findsOneWidget);
+    expect(find.text('Music Barat'), findsOneWidget);
+    expect(find.text('Music Japan'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'System Back button pops Folders/Playlists sub-views, returns from tab root to Now Playing, moves to background while music plays, and exits when paused',
+      (WidgetTester tester) async {
+    const systemChannel = MethodChannel('com.spotmeta.downloader/system');
+    final systemCalls = <String>[];
+    final platformCalls = <String>[];
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(systemChannel, (MethodCall call) async {
+      systemCalls.add(call.method);
+      if (call.method == 'moveToBackground' ||
+          call.method == 'localPlayFile' ||
+          call.method == 'localPause' ||
+          call.method == 'localResume' ||
+          call.method == 'localStop' ||
+          call.method == 'setVolume') {
+        return true;
+      }
+      return null;
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform,
+            (MethodCall call) async {
+      platformCalls.add(call.method);
+      return null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(systemChannel, null);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    final settingsProvider = SettingsProvider();
+    final localProvider = LocalMusicProvider()
+      ..debugEnableNativeChannelInTests = true;
+    final downloaderProvider = DownloaderProvider(
+      settingsProvider: settingsProvider,
+    );
+    addTearDown(settingsProvider.dispose);
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final baratSong = _mockSong(1, folderName: 'Music Barat');
+    final japanSong = _mockSong(2, folderName: 'Music Japan');
+    localProvider.seedSongsForTesting([baratSong, japanSong]);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsProvider>.value(
+            value: settingsProvider,
+          ),
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            fontFamily: 'Poppins',
+            extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+          ),
+          home: const HomeScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Start playing a track from Music Barat so isPlaying == true
+    await localProvider
+        .playSong(baratSong, queueContext: [baratSong, japanSong]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(localProvider.isPlaying, isTrue);
+
+    // 1. Navigate to Folders tab and open 'Music Barat'
+    await tester.tap(find.byTooltip(AppStrings.tabFoldersTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('folders_list_view')), findsOneWidget);
+
+    await tester.tap(find.text('Music Barat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+    expect(find.text('Song 1'), findsWidgets);
+
+    // System Back inside Music Barat -> MUST return to main Folders list (NOT exit!)
+    systemCalls.clear();
+    platformCalls.clear();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('folders_list_view')), findsOneWidget);
+    expect(systemCalls.contains('moveToBackground'), isFalse);
+    expect(platformCalls.contains('SystemNavigator.pop'), isFalse);
+
+    // 2. Inline search in Folders -> System Back clears search and stays on Folders
+    await tester.enterText(
+      find.byKey(const ValueKey('folders_search_field')),
+      'Song 2',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(
+      find.byKey(const ValueKey('folders_inline_search_results')),
+      findsOneWidget,
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byKey(const ValueKey('folders_list_view')), findsOneWidget);
+
+    // 3. Multi-Folder selection mode -> System Back exits selection mode
+    await tester.tap(find.byKey(const ValueKey('folders_merge_fab')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+    expect(find.text('Pilih folder'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Pilih folder'), findsNothing);
+
+    // 4. System Back on main Folders list -> returns to Now Playing tab first
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const ValueKey('nav_now_playing_active')),
+      findsOneWidget,
+    );
+    expect(systemCalls.contains('moveToBackground'), isFalse);
+    expect(platformCalls.contains('SystemNavigator.pop'), isFalse);
+
+    // 5. System Back on Now Playing while music IS playing -> moveToBackground, keep playing!
+    systemCalls.clear();
+    platformCalls.clear();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(systemCalls.contains('moveToBackground'), isTrue);
+    expect(systemCalls.contains('localStop'), isFalse);
+    expect(platformCalls.contains('SystemNavigator.pop'), isFalse);
+    expect(localProvider.isPlaying, isTrue);
+
+    // 6. Playlists sub-view Back -> exits All songs (clearing query) -> Back returns to Now Playing
+    await tester.tap(find.byTooltip(AppStrings.tabPlaylistsTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Semua lagu'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(
+      find.byKey(const ValueKey('all_songs_search_field')),
+      'Song 1',
+    );
+    await tester.pump();
+    expect(localProvider.localSearchQuery, 'Song 1');
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(localProvider.localSearchQuery, isEmpty);
+    expect(find.byKey(const ValueKey('pl_list')), findsOneWidget);
+    expect(find.text('Semua lagu'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const ValueKey('nav_now_playing_active')),
+      findsOneWidget,
+    );
+
+    // 7. Pause music -> System Back on Now Playing exits normally via SystemNavigator.pop
+    await localProvider.togglePlayPause();
+    await tester.pump();
+    expect(localProvider.isPlaying, isFalse);
+
+    systemCalls.clear();
+    platformCalls.clear();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(systemCalls.contains('moveToBackground'), isFalse);
+    expect(platformCalls.contains('SystemNavigator.pop'), isTrue);
+  });
+
+  testWidgets(
+      'Redesigned Opened Folder view (design/folder redesign - 2.png), song-level Check FAB with red icon-only Delete square, and unified Playlists FAB labels',
+      (WidgetTester tester) async {
+    final fakeFolderService = _FakeDeleteFolderService();
+    final localProvider = LocalMusicProvider(folderService: fakeFolderService);
+    final downloaderProvider = DownloaderProvider();
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final mem = _mockSong(
+      1,
+      folderName: 'Music Barat',
+      lyrics: '[00:01.00] Memories',
+    ).copyWith(title: 'Memories', artist: 'Conan Gray', durationMs: 248000);
+    final locked = _mockSong(
+      2,
+      folderName: 'Music Barat',
+      lyrics: '[00:01.00] Locked out of Heaven',
+    ).copyWith(
+      title: 'Locked out of Heaven',
+      artist: 'Bruno Mars',
+      durationMs: 233000,
+    );
+    final letters = _mockSong(3, folderName: 'Music Barat').copyWith(
+      title: '8 Letters',
+      artist: "Why Don't We",
+      durationMs: 190000,
+    );
+    localProvider.seedSongsForTesting([mem, locked, letters]);
+
+    AppStrings.debugLanguageCodeOverride = 'en';
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            fontFamily: 'Poppins',
+            extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+          ),
+          home: Scaffold(
+            body: LocalFoldersView(
+              onOpenNowPlaying: () {},
+              onCreateNewFolder: (_) async {},
+              onMoveLocalSongFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Open Music Barat
+    await tester.tap(find.text('Music Barat'));
+    await tester.pumpAndSettle();
+
+    // Header has ONLY folder name (no path/count subtitle) + search bar + clean rows
+    expect(find.text('Music Barat'), findsOneWidget);
+    expect(find.textContaining('/storage/emulated/0/Music/'), findsNothing);
+    expect(find.text('Search songs/artist in this folder'), findsOneWidget);
+    expect(find.text('Memories'), findsOneWidget);
+    expect(find.text('Conan Gray • 4:08'), findsOneWidget);
+    expect(find.text('Locked out of Heaven'), findsOneWidget);
+    expect(find.text('Bruno Mars • 3:53'), findsOneWidget);
+    expect(find.text('8 Letters'), findsOneWidget);
+    expect(find.text("Why Don't We • 3:10"), findsOneWidget);
+    expect(find.text('Synced LRC'), findsNothing);
+    expect(find.text('Embedded Lyrics'), findsNothing);
+
+    // Search inside this folder filters songs live
+    await tester.enterText(
+      find.byKey(const ValueKey('folder_songs_search_field')),
+      'Bruno',
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Locked out of Heaven'), findsOneWidget);
+    expect(find.text('Memories'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('folder_songs_search_clear_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Memories'), findsOneWidget);
+
+    // Playing Memories highlights it & shows AnimatedEqualizerIcon on the row
+    await localProvider.playSong(mem, queueContext: [mem, locked, letters]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(AnimatedEqualizerIcon), findsOneWidget);
+
+    // Open song-level Check FAB -> verify Select songs, Shuffle, Queue, no Merge text, and red icon-only Delete square
+    await tester.tap(find.byKey(const ValueKey('folder_songs_merge_fab')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(find.text('Select songs'), findsOneWidget);
+    expect(find.text('Play'), findsOneWidget);
+    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.textContaining('Merge to Queue'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('folder_songs_delete_selected_button')),
+      findsOneWidget,
+    );
+
+    // Select Locked out of Heaven and 8 Letters -> Queue appends without replacing Memories
+    await tester.tap(find.text('Locked out of Heaven'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.tap(find.text('8 Letters'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('2 songs'), findsOneWidget);
+
+    // Now reopen FAB & delete Locked out of Heaven via red Delete box with confirmation
+    await tester.tap(
+      find.byKey(const ValueKey('folder_songs_delete_selected_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Delete Song Files?'), findsOneWidget);
+
+    await tester.tap(find.text('Delete'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(fakeFolderService.deletedPaths, contains(locked.filePath));
+    expect(fakeFolderService.deletedPaths, contains(letters.filePath));
+    expect(find.text('Locked out of Heaven'), findsNothing);
+    expect(find.text('8 Letters'), findsNothing);
+    expect(find.text('Memories'), findsOneWidget);
+
+    // Verify Playlists tab FAB also uses unified labels without Delete box
+    AppStrings.debugLanguageCodeOverride = 'id';
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          key: const ValueKey<String>('playlists_fab_verify_app'),
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            fontFamily: 'Poppins',
+            extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+          ),
+          home: Scaffold(
+            body: LocalPlaylistsView(
+              onOpenNowPlaying: () {},
+              onMoveLocalSongFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.byTooltip('Gabung / Pilih Banyak Playlist'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+    expect(find.text('Pilih playlist'), findsOneWidget);
+    expect(find.text('Shuffle'), findsOneWidget);
+    expect(find.text('Queue'), findsOneWidget);
+    expect(find.textContaining('Gabungkan ke Antrean'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('folder_songs_delete_selected_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+      'Status bar background blends seamlessly with top header across all tabs (Light & Dark)',
+      (WidgetTester tester) async {
+    AppStrings.debugLanguageCodeOverride = 'en';
+    addTearDown(() => AppStrings.debugLanguageCodeOverride = null);
+
+    final settingsProvider = SettingsProvider();
+    final localProvider = LocalMusicProvider();
+    final downloaderProvider = DownloaderProvider(
+      settingsProvider: settingsProvider,
+    );
+    addTearDown(settingsProvider.dispose);
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final baratSong = _mockSong(1, folderName: 'Music Barat');
+    localProvider.seedSongsForTesting([baratSong]);
+    final themeModeNotifier = ValueNotifier<ThemeMode>(ThemeMode.light);
+    addTearDown(themeModeNotifier.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsProvider>.value(
+            value: settingsProvider,
+          ),
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeModeNotifier,
+          builder: (context, mode, _) {
+            return MaterialApp(
+              themeMode: mode,
+              theme: ThemeData(
+                useMaterial3: true,
+                brightness: Brightness.light,
+                fontFamily: 'Poppins',
+                scaffoldBackgroundColor: MusEveePalette.light.bgCanvas,
+                extensions: const <ThemeExtension<dynamic>>[
+                  MusEveePalette.light,
+                ],
+              ),
+              darkTheme: ThemeData(
+                useMaterial3: true,
+                brightness: Brightness.dark,
+                fontFamily: 'Poppins',
+                scaffoldBackgroundColor: MusEveePalette.dark.bgCanvas,
+                extensions: const <ThemeExtension<dynamic>>[
+                  MusEveePalette.dark,
+                ],
+              ),
+              builder: (context, child) {
+                return MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    padding: const EdgeInsets.only(top: 32),
+                  ),
+                  child: child!,
+                );
+              },
+              home: const HomeScreen(),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    Future<void> expectHeaderExtendsBehindStatusBar(
+      Finder contentFinder,
+      Color expectedBg,
+    ) async {
+      final headerContainerFinder = find.ancestor(
+        of: contentFinder,
+        matching: find.byWidgetPredicate((widget) {
+          if (widget is! Container) return false;
+          final dec = widget.decoration;
+          if (dec is! BoxDecoration) return false;
+          return dec.color == expectedBg;
+        }),
+      );
+      expect(headerContainerFinder, findsOneWidget);
+      final headerTopLeft = tester.getTopLeft(headerContainerFinder);
+      expect(headerTopLeft.dy, equals(0.0));
+      expect(
+        tester.getTopLeft(contentFinder).dy,
+        greaterThanOrEqualTo(32.0),
+      );
+    }
+
+    // Light Mode: verify all non-NowPlaying tabs extend white header behind status bar
+    // 1. Folders root tab
+    await tester.tap(find.byTooltip(AppStrings.tabFoldersTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text('Folders'),
+      MusEveePalette.light.bottomBar,
+    );
+
+    // 2. Opened folder (`Music Barat`)
+    await tester.tap(find.text('Music Barat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.byKey(const ValueKey('opened_folder_back_button')),
+      MusEveePalette.light.bottomBar,
+    );
+
+    // 3. Queue tab
+    await tester.tap(find.byTooltip(AppStrings.tabQueueTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text('Playback Queue'),
+      MusEveePalette.light.bottomBar,
+    );
+    final queueLightBox = tester
+        .widget<Container>(
+          find.ancestor(
+            of: find.text('Playback Queue'),
+            matching: find.byWidgetPredicate(
+              (w) =>
+                  w is Container &&
+                  w.decoration is BoxDecoration &&
+                  (w.decoration as BoxDecoration).color ==
+                      MusEveePalette.light.bottomBar,
+            ),
+          ),
+        )
+        .decoration! as BoxDecoration;
+    expect(
+      queueLightBox.borderRadius,
+      const BorderRadius.vertical(bottom: Radius.circular(18)),
+    );
+
+    // 4. Playlists tab root + drill-down
+    await tester.tap(find.byTooltip(AppStrings.tabPlaylistsTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text(AppStrings.tabPlaylistsTooltip),
+      MusEveePalette.light.bottomBar,
+    );
+
+    await tester.tap(find.text('All songs'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.byIcon(Icons.arrow_back_rounded),
+      MusEveePalette.light.bottomBar,
+    );
+
+    // 5. Downloader tab
+    await tester.tap(find.byTooltip(AppStrings.tabDownloaderTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text(AppStrings.searchTitleArtistPill),
+      MusEveePalette.light.nowPlayingBg,
+    );
+
+    // 6. Settings tab
+    await tester.tap(find.byTooltip(AppStrings.tabSettingsTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text(AppStrings.settingsHeaderTitle),
+      MusEveePalette.light.bottomBar,
+    );
+    final settingsLightBox = tester
+        .widget<Container>(
+          find.ancestor(
+            of: find.text(AppStrings.settingsHeaderTitle),
+            matching: find.byWidgetPredicate(
+              (w) =>
+                  w is Container &&
+                  w.decoration is BoxDecoration &&
+                  (w.decoration as BoxDecoration).color ==
+                      MusEveePalette.light.bottomBar,
+            ),
+          ),
+        )
+        .decoration! as BoxDecoration;
+    expect(
+      settingsLightBox.borderRadius,
+      const BorderRadius.vertical(bottom: Radius.circular(18)),
+    );
+
+    // Dark Mode: verify matching dark header extends behind status bar too
+    themeModeNotifier.value = ThemeMode.dark;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text(AppStrings.settingsHeaderTitle),
+      MusEveePalette.dark.bottomBar,
+    );
+    await tester.tap(find.byTooltip(AppStrings.tabQueueTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.text('Playback Queue'),
+      MusEveePalette.dark.bottomBar,
+    );
+    await tester.tap(find.byTooltip(AppStrings.tabFoldersTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await expectHeaderExtendsBehindStatusBar(
+      find.byKey(const ValueKey('opened_folder_back_button')),
+      MusEveePalette.dark.bottomBar,
+    );
+  });
+
+  testWidgets(
+      'Mograph animations apply to Queue, Folders, and NowPlaying buttons without touching lyrics stages',
+      (WidgetTester tester) async {
+    AppStrings.debugLanguageCodeOverride = 'en';
+    addTearDown(() => AppStrings.debugLanguageCodeOverride = null);
+
+    final settingsProvider = SettingsProvider();
+    final localProvider = LocalMusicProvider();
+    final downloaderProvider = DownloaderProvider(
+      settingsProvider: settingsProvider,
+    );
+    addTearDown(settingsProvider.dispose);
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final s1 = _mockSong(
+      1,
+      folderName: 'Music Japan',
+      lyrics: '[00:05.00]Line One\n[00:10.00]Line Two',
+    );
+    final s2 = _mockSong(
+      2,
+      folderName: 'Music Barat',
+    );
+    localProvider.seedSongsForTesting([s1, s2]);
+    await localProvider.playSong(s1, queueContext: [s1, s2]);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<SettingsProvider>.value(
+            value: settingsProvider,
+          ),
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+            value: localProvider,
+          ),
+          ChangeNotifierProvider<DownloaderProvider>.value(
+            value: downloaderProvider,
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            fontFamily: 'Poppins',
+            extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+          ),
+          home: const HomeScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    // 1. NowPlaying buttons: Favorite Heart, Shuffle, Play/Pause, Play Mode use MographSpringTap + MographStatePop
+    expect(find.byType(MographSpringTap), findsWidgets);
+    expect(find.byType(MographStatePop), findsWidgets);
+
+    // Lyrics stage stays intact & functional
+    expect(
+      find.byKey(const ValueKey<String>('now_playing_three_line_lyrics')),
+      findsOneWidget,
+    );
+
+    // Toggle Favorite Heart -> mid-animation MographStatePop transform scales above 1.0, then settles cleanly
+    final favFinder = find.byKey(
+      const ValueKey<String>('now_playing_favorite_button'),
+    );
+    await tester.tap(favFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(localProvider.isFavorite(s1.filePath), isTrue);
+    final favTransforms = tester.widgetList<Transform>(
+      find.descendant(
+        of: find
+            .descendant(
+              of: favFinder,
+              matching: find.byType(MographStatePop),
+            )
+            .first,
+        matching: find.byType(Transform),
+      ),
+    );
+    expect(favTransforms, isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Toggle Play/Pause & Cycle Play Mode via transport buttons
+    await tester.tap(
+      find.byKey(const ValueKey<String>('transport_play_pause_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(localProvider.isPlaying, isFalse);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('transport_play_pause_button')),
+        matching: find.byIcon(Icons.play_arrow_rounded),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('transport_play_mode_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(localProvider.playMode, MusicoletPlayMode.repeatOne);
+
+    // 2. Queue tab: Shuffle Mograph bounce + Clear -> MographAnimatedSwitcher transitions cleanly to Empty state
+    await tester.tap(find.byTooltip(AppStrings.tabQueueTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+        find.byKey(const ValueKey('queue_reorderable_list')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('queue_header_shuffle_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(localProvider.isShuffle, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('queue_header_clear_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('queue_empty_state')), findsOneWidget);
+
+    // 3. Folders tab: Mograph transition into Music Barat folder, FAB merge bar, and clean back transition
+    await tester.tap(find.byTooltip(AppStrings.tabFoldersTooltip));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('folders_root_view')), findsOneWidget);
+
+    await tester.tap(find.text('Music Barat'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const ValueKey('opened_folder_view_Music Barat')),
+      findsOneWidget,
+    );
+
+    final folderSongsMergeFab = find.byKey(
+      const ValueKey<String>('folder_songs_merge_fab'),
+    );
+    expect(folderSongsMergeFab, findsOneWidget);
+    await tester.tap(folderSongsMergeFab);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byIcon(Icons.delete_outline_rounded), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close_rounded).last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byKey(const ValueKey('opened_folder_back_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('folders_root_view')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Redesigned Playlists view renders custom assets, All songs row, horizontal smart cards, 2-column grid, opened playlist monochrome view, and Light/Dark + ID/EN parity',
+      (WidgetTester tester) async {
+    AppStrings.debugLanguageCodeOverride = 'en';
+    addTearDown(() => AppStrings.debugLanguageCodeOverride = null);
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final localProvider = LocalMusicProvider();
+    final downloaderProvider = DownloaderProvider();
+    addTearDown(localProvider.dispose);
+    addTearDown(downloaderProvider.dispose);
+
+    final s1 = _mockSong(1, folderName: 'Music Barat');
+    final s2 = _mockSong(2, folderName: 'Music Japan');
+    final s3 = _mockSong(3, folderName: 'Music Random');
+    localProvider.seedSongsForTesting([s1, s2, s3]);
+    await localProvider.toggleFavorite(s2.filePath);
+    localProvider.recordPlayForTesting(s1.filePath, playedAtMs: 1000);
+
+    final pl1 = await localProvider.createPlaylist('Galau');
+    final pl2 = await localProvider.createPlaylist('Chill');
+    await localProvider.addSongToPlaylist(pl1.id, s1.filePath);
+    await localProvider.addSongToPlaylist(pl1.id, s2.filePath);
+    await localProvider.addSongToPlaylist(pl2.id, s3.filePath);
+
+    final playlistsKey = GlobalKey<LocalPlaylistsViewState>();
+
+    Future<void> pumpPlaylists(ThemeMode mode) async {
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LocalMusicProvider>.value(
+              value: localProvider,
+            ),
+            ChangeNotifierProvider<DownloaderProvider>.value(
+              value: downloaderProvider,
+            ),
+          ],
+          child: MaterialApp(
+            themeMode: mode,
+            theme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.light,
+              fontFamily: 'Poppins',
+              extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
+            ),
+            darkTheme: ThemeData(
+              useMaterial3: true,
+              brightness: Brightness.dark,
+              fontFamily: 'Poppins',
+              extensions: const <ThemeExtension<dynamic>>[MusEveePalette.dark],
+            ),
+            home: MediaQuery(
+              data: const MediaQueryData(
+                size: Size(360, 780),
+                padding: EdgeInsets.only(top: 36),
+                viewPadding: EdgeInsets.only(top: 36),
+              ),
+              child: Scaffold(
+                body: LocalPlaylistsView(
+                  key: playlistsKey,
+                  onOpenNowPlaying: () {},
+                  onMoveLocalSongFolder: (_) async {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 280));
+    }
+
+    await pumpPlaylists(ThemeMode.light);
+
+    // 1. Custom assets & layout checks on root Playlists view
+    expect(find.text('Playlists'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/album.png',
+      ),
+      findsWidgets,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/vinyl.png',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/heart.png',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.more_time_rounded), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == 'assets/add.png',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('playlists_merge_fab')), findsOneWidget);
+
+    // 2. Verify 2-column grid alignment for Your playlists (pl1 & pl2 share same row Y, different X)
+    // and ensure GridView has no phantom MediaQuery.padding.top gap below "+ New Playlist"
+    final newPlBottom = tester.getBottomLeft(find.text('New Playlist')).dy;
+    final chillPos = tester.getTopLeft(find.text('Chill'));
+    final galauPos = tester.getTopLeft(find.text('Galau'));
+    expect((chillPos.dy - galauPos.dy).abs(), lessThan(4.0));
+    expect(chillPos.dx, lessThan(galauPos.dx));
+    expect(chillPos.dy - newPlBottom, lessThan(42.0));
+
+    // 3. Long-press horizontal smart card (Favorites) opens quick action menu
+    await tester.longPress(find.text('Favorites'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('Play All'), findsOneWidget);
+    expect(find.text('Shuffle Playlist'), findsOneWidget);
+    await tester.tap(find.text('Play All'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(localProvider.queue.map((s) => s.title).toList(), ['Song 2']);
+
+    // 4. Open user playlist "Galau" -> clean monochrome opened view + inline search + song check FAB
+    await tester.tap(find.text('Galau'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(
+      find.byKey(const ValueKey('opened_playlist_back_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('playlist_songs_search_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('playlist_songs_merge_fab')),
+      findsOneWidget,
+    );
+
+    // Inline search filters inside opened playlist
+    await tester.enterText(
+      find.byKey(const ValueKey('playlist_songs_search_field')),
+      'Song 2',
+    );
+    await tester.pump();
+    final galauList =
+        find.byKey(ValueKey('opened_playlist_songs_list_${pl1.id}'));
+    expect(find.descendant(of: galauList, matching: find.text('Song 1')),
+        findsNothing);
+    expect(find.descendant(of: galauList, matching: find.text('Song 2')),
+        findsOneWidget);
+
+    // Back clears search first, then second Back closes opened playlist
+    expect(playlistsKey.currentState!.handleBack(), isTrue);
+    await tester.pump();
+    expect(find.text('Song 1'), findsOneWidget);
+    expect(playlistsKey.currentState!.handleBack(), isTrue);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(find.byKey(const ValueKey('pl_list')), findsOneWidget);
+
+    // 5. Dark Mode + Indonesian localization without overflow
+    AppStrings.debugLanguageCodeOverride = 'id';
+    await pumpPlaylists(ThemeMode.dark);
+    expect(find.text('Semua lagu'), findsOneWidget);
+    expect(find.text('Playlist kamu'), findsOneWidget);
+    expect(find.text('Playlist Baru'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _FakeDeleteFolderService extends FolderService {
+  final List<String> deletedPaths = <String>[];
+
+  @override
+  Future<bool> deleteLocalAudioFile(
+    String path, {
+    bool autoRequestPermission = true,
+  }) async {
+    deletedPaths.add(path);
+    return true;
+  }
 }
 
 class _OfflineTestRomajiService extends RomajiService {

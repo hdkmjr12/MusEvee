@@ -39,6 +39,12 @@ class DownloadItem {
       status == DownloadItemStatus.downloading ||
       status == DownloadItemStatus.tagging;
 
+  bool get isFlac =>
+      (savedFilePath?.trim().toLowerCase().endsWith('.flac') ?? false) ||
+      statusDetail.toUpperCase().contains('FLAC');
+
+  String get audioFormatLabel => isFlac ? 'FLAC' : 'MP3';
+
   DownloadItem copyWith({
     TrackMetadata? metadata,
     String? targetFolderName,

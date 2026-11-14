@@ -496,6 +496,14 @@ class MainActivity : FlutterActivity() {
                         mainHandler.post { result.success(true) }
                     }
                 }
+                "moveToBackground" -> {
+                    val moved = try {
+                        moveTaskToBack(true)
+                    } catch (_: Exception) {
+                        false
+                    }
+                    result.success(moved)
+                }
 
                 else -> result.notImplemented()
             }

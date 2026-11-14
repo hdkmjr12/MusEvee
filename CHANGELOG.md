@@ -6,6 +6,246 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.9 — Format-Aware MP3/FLAC, Terminologi Metadata Netral, Splash Startup Native Light/Dark, & Pembersihan Assets] — 2026-11-14 (Deteksi Format MP3/FLAC, Sinkronisasi Duplikat `.flac`, Label `Tag Audio`/`Cover Tertanam`/`Lirik Tertanam`, Splash Polos Android `#F7F8FA`/`#0E1014`, & Hygiene `assets/`)
+
+### Diubah & Ditambahkan
+- **`lib/models/local_song.dart`, `lib/models/download_item.dart`, `lib/services/folder_service.dart`, `lib/providers/downloader_provider.dart`, & `lib/providers/local_music_provider.dart` (Format Audio `.flac` vs `.mp3`):**
+  - Menambahkan getter `isFlac` dan `audioFormatLabel` (`'FLAC'` / `'MP3'`) pada `LocalSong` dan `DownloadItem`, serta mengubah `BrowsedDirectoryEntry.mp3Count` menjadi `audioCount` sambil tetap menyediakan getter kompatibilitas `mp3Count`.
+  - Memperbarui `DownloaderProvider.duplicateFolderFor`, `retagCompletedItem`, dan `moveItemToFolder` (memanggil `_taggingService.retagExistingAudio`) agar kunci `.mp3` (`sanitizedFileName`) dan `.flac` (`sanitizedFlacFileName`) selalu sinkron di `_duplicateFolderMap`.
+  - Memperbarui `LocalMusicProvider.retagLocalSong` agar memakai `_taggingService.retagExistingAudio` dan ikut menyinkronkan `fileName` dari `newPath`.
+- **`lib/utils/app_strings.dart`, `lib/widgets/tag_editor_sheet.dart`, `lib/widgets/queue_history_view.dart`, `lib/widgets/local_library_views.dart`, `lib/widgets/now_playing_view.dart`, & `lib/screens/home_screen.dart`:**
+  - Mengganti copy hardcoded `ID3` / `APIC` / `USLT` / `MP3` dengan label sadar format (`audioFormatLabel`) dan istilah netral (`Tag Audio`, `Cover Tertanam`, `Lirik Tertanam` / `Embedded Lyrics`), termasuk baris `Format Audio` di dialog informasi lagu `NowPlayingView` dan `BrowsedDirectoryEntry.audioCount` di pemilih folder `HomeScreen`.
+- **`lib/main.dart`, `android/app/src/main/res/**`, `pubspec.yaml`, & `assets/` (Splash Startup Light/Dark & Kebersihan Aset):**
+  - Memperbarui `main()` cold-start `SystemChrome.setSystemUIOverlayStyle` agar membaca `platformDispatcher.platformBrightness` dan memakai `MusEveePalette.light` / `MusEveePalette.dark` sebelum `runApp()`.
+  - Menambahkan splash startup monokrom polos (tanpa logo tengah) pada resource native Android (`values/colors.xml` `#F7F8FA`/`#FFFFFF`, `values-night/colors.xml` `#0E1014`/`#0A0C10`, `drawable/launch_background.xml`, `drawable-v21/launch_background.xml`, `values/styles.xml`, `values-night/styles.xml`, `values-v27/`, `values-night-v27/`, `values-v31/`, `values-night-v31/`).
+  - Menghapus 8 file duplikat identik di root `assets/` dan 3 aset tak terpakai (`back.png`, `equalizer.png`, `sorting.png`), mengganti nama `check (1).png` → `check.png` (`local_library_views.dart`) dan `folder (3).png` → `folder_picker.png` (`track_preview_sheet.dart`), memperbarui `pubspec.yaml`, serta mempertahankan `assets/folder.png` dan `assets/icons/folder.png` yang berbeda.
+- **`test/widget_test.dart` & `test/curated_playlist_discovery_test.dart`:**
+  - Menyelaraskan ekspektasi terminologi netral & nama aset serta menambahkan pengujian regresi untuk Poin #5 dan Poin #6.
+
+---
+
+## [v4.9 — Harmonisasi Tipografi SemiBold, Mograph, Emoji Queue, Lokalisasi Otomatis ID/EN, & Branding MusEvee] — 2026-11-14 (Standardisasi `FontWeight.w600` & Badge `w700`, `MographSpringTap` Tombol Material, Pembersihan Emoji Queue, Sinkronisasi `SystemLocaleScope`, Branding `MusEvee`, & Notifikasi Android Terlokalisasi)
+
+### Diubah & Ditambahkan
+- **`lib/main.dart`, `lib/screens/home_screen.dart`, & `lib/widgets/*.dart` (Tipografi, Emoji, & Mograph):**
+  - Menyeragamkan bobot font judul, subjudul kartu/dialog/sheet, dan label tombol dari `FontWeight.w700` ke `FontWeight.w600` (`SemiBold`), sambil tetap mempertahankan `FontWeight.w700` pada lencana angka/format kecil (badge antrean nav bawah, pill jumlah & persentase `$pct%` progres di `QueueHistoryView` / banner mini, badge `FLAC`, dan pill jumlah pilihan `_MorphingMergeActionBar`).
+  - Menghapus emoji `(📁)` dan `(⬇)` dari empty state `PlaybackQueueView` di `lib/widgets/local_library_views.dart`.
+  - Memperluas wrapper animasi pegas `MographSpringTap` ke tile hasil pencarian (`SearchResultTile`) dan tombol/chip Material pada `SettingsView`, `TagEditorSheet`, `BatchPlaylistSheet`, `QueueHistoryView`, `NowPlayingView`, dan `HomeScreen`, sekaligus mengganti `PressableScale` pembungkus tombol di `TagEditorSheet` menjadi `MographSpringTap`.
+- **`lib/utils/app_strings.dart`, `lib/models/track_metadata.dart`, `lib/services/tagging_service.dart`, `lib/services/lyrics_service.dart`, & `android/app/src/main/kotlin/com/example/spotmeta_downloader/MusEveeMediaNotifier.kt` (Lokalisasi & Branding):**
+  - Memasang `SystemLocaleScope.watch(context)` pada `MusicoletMiniPlayer`, `MusicoletBottomStrip`, `SearchResultTile`, `TagEditorSheet`, `BatchPlaylistSheet`, `TrackPreviewSheet`, `PlaybackQueueView`, `LocalFoldersView`, `LocalPlaylistsView`, `NowPlayingView`, dan `HomeScreen`.
+  - Mengganti copy & fallback branding legacy: `themeDarkSubtitle` (`Musicolet` → `MusEvee`), fallback nama file `TrackMetadata.sanitizedBaseName` (`SpotMeta_Track` → `MusEvee_Track`), direktori fallback `TaggingService` (`SpotMeta` → `MusEvee`), dan header `User-Agent` `LyricsService` (`MusEvee/4.9.0`).
+  - Menghapus duplikasi `'(Tried in this order)'` (`hiResAddonModalSubtitle`) dan jargon `FFmpeg` (`noActiveDownloads`), melokalisasi `hiResAddonDownloadsAllowed`/`hiResAddonStreamingOnly`, `previewMetadataRomajiConverted`, `editorLyricsHeader`, `searchResultsHeader` di `_buildSearchResultsView`, hitungan file audio & label folder, serta label lirik (`Lirik USLT`, `LRC Berjalan`, `Lirik Biasa`) di `QueueHistoryView`, `_LocalSongTile`, dan `NowPlayingView`; sekaligus melengkapi dua judul terpotong pada `_fallbackForYouTracks` (`Maafkan Aku #terlanjurluka`, `Locked Out of Heaven`).
+  - Memperbarui `MusEveeMediaNotifier.kt` untuk mendeteksi `Locale.getDefault().language` (`id`/`in` vs lainnya) sehingga nama channel notifikasi dan tombol aksi media (`Putar`/`Jeda`/`Sebelumnya`/`Berikutnya`/`Tutup` vs `Play`/`Pause`/`Previous`/`Next`/`Close`) otomatis menyesuaikan bahasa perangkat.
+- **`test/curated_playlist_discovery_test.dart`:**
+  - Menambahkan unit dan widget test untuk memverifikasi copy & fallback branding `MusEvee`, penghapusan emoji pada empty state Queue, standardisasi `FontWeight.w600` pada tema tombol/judul/MiniPlayer, `MographSpringTap` pada `SearchResultTile` dan `TagEditorSheet`, serta sinkronisasi bahasa langsung ID/EN.
+
+---
+
+## [v4.9 — Konsistensi Header Tab Queue, Bottom Sheet, AlertDialog, QueueHistoryView, Switch, & PopupMenuButton] — 2026-11-14 (Lokalisasi Judul Queue Tanpa Counter, Standarisasi Tema `nowPlayingBg` + Radius 18/14, `QueueHistoryView` `surfaceSubtle`, `Switch.adaptive` Monokrom, & `popupMenuTheme`)
+
+### Diubah & Ditambahkan
+- **`lib/main.dart`:**
+  - Memperbarui `_buildDialogTheme` (`nowPlayingBg`, `BorderRadius.circular(14)`, border `hairline 0.8`) dan `_buildBottomSheetTheme` (`nowPlayingBg`, sudut atas membulat `18`), serta menambahkan `_buildPopupMenuTheme` (`surfaceCard`, `BorderRadius.circular(10)`, border `hairline 0.8`) untuk Dark & Light theme.
+- **`lib/widgets/local_library_views.dart`:**
+  - Mengganti judul header `PlaybackQueueView` dari hardcoded bahasa Inggris dengan counter ke `AppStrings.tr('Antrean Putar', 'Playback Queue', context)` agar konsisten dengan tab `Folders`, `Playlists`, dan `Settings`.
+  - Menyelaraskan `_showManageFoldersSheet` dan `showAddToPlaylistSheet` ke `nowPlayingBg` + sudut atas `18`, dialog (`_confirmDeleteSelectedFolderSongs`, `_confirmDeletePlaylist`, `showPlaylistNameDialog`, dan dialog hapus `_LocalSongTile`) ke `nowPlayingBg` + radius `14` + border `hairline`, serta menyamakan `PopupMenuButton` di `_LocalSongTile` ke `palette.surfaceCard`.
+- **`lib/screens/home_screen.dart` & `lib/widgets/now_playing_view.dart`:**
+  - Menyelaraskan `_showPrivatePlaylistErrorDialog`, `_pickTargetFolderModal`, `_openDownloadQueueHistorySheet`, `_showCuratedPlaylistMenu`, dan `_confirmDeleteSong` ke `nowPlayingBg` serta radius konsisten (`18` sheet, `14` + `hairline` dialog), sembari mempertahankan bilah atas tab Downloader tetap datar polos sesuai preferensi UI.
+- **`lib/widgets/queue_history_view.dart`:**
+  - Menyamakan latar belakang `QueueHistoryView` menjadi `palette.nowPlayingBg` agar menyatu dengan header modal sheet, menggunakan `palette.surfaceSubtle` pada seluruh kartu antrean/riwayat, serta mengatur latar sub-elemen & track `LinearProgressIndicator` (`nowPlayingPrimary` 14%) agar kontras di Light dan Dark Mode.
+- **`lib/widgets/settings_view.dart`:**
+  - Mengubah `Switch` hijau emerald pada `_HiResAddonManagerSheet` menjadi `Switch.adaptive` monokrom (`nowPlayingPrimary` / `nowPlayingOnPrimary`) dan menyamakan radius dialog tambah URL add-on menjadi `14`.
+- **`test/widget_test.dart`, `test/settings_provider_test.dart`, & `test/curated_playlist_discovery_test.dart`:**
+  - Memperbarui ekspektasi judul tab Queue tanpa counter dan menambahkan uji verifikasi tema sheet/dialog/popup menu, `QueueHistoryView` (`nowPlayingBg` + `surfaceSubtle`), serta `Switch.adaptive` monokrom.
+
+---
+
+## [v4.9 — Pembersihan Sisa Aksen Biru Legacy & Kontras Monokrom Lintas Komponen] — 2026-11-14 (Pembersihan `palette.accent` di `PlaybackQueueView`, `showAddToPlaylistSheet`, `MusEveeLogo`, `_MographSelectCheckbox`, `_MorphingMergeActionBar`, Notifikasi Media Android, & Kontras Tombol Antrean Dark Mode)
+
+### Diubah & Ditambahkan
+- **`lib/widgets/local_library_views.dart`:**
+  - Mengubah tombol aksi empty state `PlaybackQueueView` (*Putar Semua Lagu Lokal* / *Cari & Unduh Lagu*) agar memakai palet monokrom (`nowPlayingPrimary`, `nowPlayingOnPrimary`, `elevation: 0`) menggantikan `palette.accent` / `Colors.white`.
+  - Mengganti warna ikon dan label `Playlist Baru…` pada `showAddToPlaylistSheet` menjadi `ctx.palette.nowPlayingPrimary`.
+  - Menetapkan `monochromeStyle = true` secara default pada `_MographSelectCheckbox` dan `_MorphingMergeActionBar` serta menghapus seluruh sisa `palette.accent` / `Colors.white` di cabang fallback.
+- **`lib/widgets/musevee_logo.dart`:**
+  - Mengubah warna ikon fallback error `MusEveeLogo` dari `palette.accent` menjadi `palette.nowPlayingPrimary`.
+- **`lib/screens/home_screen.dart`:**
+  - Mengganti warna latar track `CircularProgressIndicator` pada `_buildDownloadQueueButton` dari `Colors.white24` menjadi `onPrimary.withValues(alpha: 0.24)` agar terlihat kontras di Dark Mode maupun Light Mode.
+  - Menyelaraskan ikon kunci pada `_showPrivatePlaylistErrorDialog` dari hex literal `Color(0xFFF79009)` ke konstanta `MusEveePalette.amber`.
+- **`android/app/src/main/kotlin/com/example/spotmeta_downloader/MusEveeMediaNotifier.kt`:**
+  - Mengganti `.setColor(0xFF3898EC.toInt())` pada notification builder menjadi `.setColor(0xFF0E1014.toInt())` agar notifikasi media Android selaras dengan tema monokrom MusEvee.
+- **`test/curated_playlist_discovery_test.dart`:**
+  - Menambahkan widget test Light/Dark Mode untuk empty state `PlaybackQueueView`, `showAddToPlaylistSheet`, error fallback `MusEveeLogo`, serta kontras track indikator unduhan Dark Mode.
+
+---
+
+## [v4.9 — Penyeragaman Header Monokrom Tab `Queue` & `Settings` Mengikuti Gaya `Folders` & `Playlists`] — 2026-11-13 (Helper `cleanMonochromeHeaderDecoration` & `statusBarHeaderPadding`, Ikon Aset Tab `19×19`, Tinggi Minimum `40 px`, & Update `widget_test.dart`)
+
+### Diubah & Ditambahkan
+- **`lib/widgets/local_library_views.dart` (`PlaybackQueueView` & Helper Header Bersama):**
+  - Mempromosikan `statusBarHeaderPadding` dan `cleanMonochromeHeaderDecoration` menjadi fungsi helper top-level publik agar dapat dipakai lintas widget tanpa duplikasi, serta memperbarui seluruh pemanggil `Folders` dan `Playlists`.
+  - Memperbarui header `PlaybackQueueView` menggunakan `statusBarHeaderPadding(context)`, `cleanMonochromeHeaderDecoration(context)` (`palette.bottomBar`, sudut bawah membulat `18 px`, garis batas tipis, dan bayangan halus), latar `nowPlayingBg`, `ConstrainedBox(constraints: const BoxConstraints(minHeight: 40))` agar tinggi header stabil baik saat antrean kosong maupun terisi, serta ikon `assets/icons/add-to-playlist.png` (`19×19` bertinta `palette.textPrimary` via `BlendMode.srcIn`).
+- **`lib/widgets/settings_view.dart` (`SettingsView`):**
+  - Menggunakan `statusBarHeaderPadding(context)` dan `cleanMonochromeHeaderDecoration(context)` dari `local_library_views.dart`, `ConstrainedBox(constraints: const BoxConstraints(minHeight: 40))`, ikon `assets/icons/settings.png` (`19×19` bertinta `palette.textPrimary` via `BlendMode.srcIn`), serta gaya judul `Poppins SemiBold` `14 px` `FontWeight.w600` `letterSpacing: -0.2` untuk menyamai header `Folders` dan `Playlists`, sambil mempertahankan latar isi `palette.bgCanvas`.
+- **`test/widget_test.dart`:**
+  - Memperbarui pengujian `Status bar background blends seamlessly with top header across all tabs (Light & Dark)` agar memverifikasi warna header `bottomBar` dan sudut membulat `BorderRadius.vertical(bottom: Radius.circular(18))` pada tab `Queue`, `Playlists`, dan `Settings` (Light & Dark Mode).
+
+---
+
+## [v4.9 — Harmonisasi Monokrom Menu Settings, Opsi Tema `Auto`, & Dropdown Pemilih Pengaturan] — 2026-11-13 (Monokromisasi `SettingsView` / `_HiResAddonManagerSheet` / `ThemeData`, Default `ThemeMode.system` (`Auto`), & Dropdown Tema + Kualitas Audio)
+
+### Ringkasan Perubahan
+Menyelaraskan seluruh warna menu **Pengaturan / Settings** (termasuk sheet dan dialog Add-on Hi-Res serta token `ThemeData` aplikasi) ke palet monokrom Light/Dark, menambahkan opsi tema **`Auto`** sebagai default baru yang otomatis mengikuti pengaturan sistem perangkat, serta mengubah pemilih **Tema Aplikasi** dan **Kualitas Audio Unduhan** menjadi dropdown monokrom yang ringkas.
+
+### Perubahan Utama
+1. **Dukungan & Default `ThemeMode.system` (`Auto`) (`lib/providers/settings_provider.dart`, `lib/main.dart`, `lib/utils/app_strings.dart`):**
+   - Menjadikan `ThemeMode.system` (`Auto`) sebagai default di `SettingsProvider`, memutakhirkan `parseThemeMode`, `_saveToDisk`, dan `isDarkMode` agar mengevaluasi kecerahan platform saat `Auto` aktif.
+   - Menambahkan `didChangePlatformBrightness` serta resolusi `ThemeMode.system` di `_applySystemUiOverlayStyle` (`lib/main.dart`), serta mengganti sisa `accent` biru di `ThemeData` ke token monokrom `nowPlayingPrimary`/`nowPlayingOnPrimary`.
+2. **Monokromisasi & Dropdown Pengaturan (`lib/widgets/settings_view.dart`):**
+   - Mengganti kedua daftar radio **Tema Aplikasi** (*Auto / Gelap / Terang*) dan **Kualitas Audio Unduhan** (*Hi-Res Lossless — FLAC / 320 / 192 / 128 kbps*) dengan komponen `_MonochromeDropdownField<T>` yang seragam, mempertahankan kartu shortcut *Sumber Add-on Hi-Res [Kelola >]* dan catatan di bawah dropdown kualitas.
+   - Menghapus seluruh aksen biru legacy pada judul section, ikon, badge *Kelola*, sheet `_HiResAddonManagerSheet` (*Cek Status* & `+ Tambah URL Add-on`), serta dialog tambah URL.
+3. **Pembaruan Pengujian (`test/settings_provider_test.dart`, `test/widget_test.dart`, `test/curated_playlist_discovery_test.dart`):**
+   - Memperbarui dan menambah pengujian `ThemeMode.system` (`Auto`), perubahan kecerahan sistem secara langsung, interaksi kedua dropdown, serta verifikasi warna monokrom di Light/Dark Mode.
+
+---
+
+## [v4.9 — Harmonisasi Monokrom Download Queue & History (`QueueHistoryView`) dan Komponen Downloader] — 2026-11-13 (Monokromisasi Ikon, Progres, & Tombol Aksi `QueueHistoryView`, Header Sheet Antrean, `_showMoveFolderSheet`, & Banner Progres Mini Downloader)
+
+### Ringkasan Perubahan
+Menyesuaikan seluruh ikon, indikator progres, dan tombol aksi pada sheet **Antrean & Riwayat Unduhan** (`QueueHistoryView`) beserta sheet pemindah folder (`_showMoveFolderSheet`) dan overlay Downloader di `HomeScreen` agar menggunakan palet monokrom Light/Dark (`nowPlayingBg`, `nowPlayingPrimary`, `nowPlayingOnPrimary`) dan tidak lagi memakai ikon aksen biru legacy.
+
+### Perubahan Utama
+1. **Monokromisasi `QueueHistoryView` (`lib/widgets/queue_history_view.dart`):**
+   - Mengganti `palette.accent` ke `palette.nowPlayingPrimary` pada ikon header section (`Icons.downloading_rounded` & `Icons.history_rounded`), persentase & `LinearProgressIndicator` unduhan aktif, titik status progres & folder, serta ikon tombol **Pindah** (`Icons.drive_file_move_outlined`).
+   - Memperbarui tombol **Putar** (`Icons.play_arrow_rounded`) agar menggunakan `nowPlayingPrimary` + ikon `nowPlayingOnPrimary` (tetap mempertahankan warna semantik `emerald` untuk `USLT Lyrics`, `amber` untuk status menunggu, dan `error` untuk gagal).
+2. **Penyelarasan Sheet & Overlay Downloader di `HomeScreen` (`lib/screens/home_screen.dart`):**
+   - Menyelaraskan modal `_openDownloadQueueHistorySheet` (latar/header `nowPlayingBg` & ikon header `nowPlayingPrimary`), `_showMoveFolderSheet` (`ChoiceChip` folder terpilih `nowPlayingPrimary` dengan teks/ikon `nowPlayingOnPrimary` agar kontras di Dark Mode), banner progres mini melayang, menu *Playlists for you*, tombol retry offline, dan banner izin.
+3. **Pengujian Regresi (`lib/providers/downloader_provider.dart`, `test/curated_playlist_discovery_test.dart`):**
+   - Menambahkan `DownloaderProvider.seedQueueItemsForTesting` dan widget test yang memverifikasi ikon serta bar progres `QueueHistoryView` konsisten memakai token monokrom pada Dark Mode & Light Mode di lebar `360 px`.
+
+---
+
+## [v4.9 — Lokalisasi Penuh Bahasa Sistem Otomatis (ID/EN) di Seluruh Aplikasi] — 2026-11-13 (Auto System-Locale Propagation via `SystemLocaleScope`, Zero Hardcoded Indonesian UI Strings, `YouTube` Pill Typo Fix, & `360px` `QueueHistoryView` Header Overflow Fix)
+
+### Ringkasan Perubahan
+Menyelaraskan seluruh teks aplikasi MusEvee agar mengikuti bahasa sistem perangkat (`id` / `in` → Bahasa Indonesia, bahasa lainnya → English) secara otomatis dan reaktif saat bahasa perangkat berubah, termasuk layar Downloader, antrean/riwayat unduhan, editor tag, library lokal (`Queue`, `Folders`, `Playlists`), layar `Now Playing`, serta pesan progres dan error layanan di balik layar.
+
+### Perubahan Utama
+1. **Resolusi Bahasa Sistem & Propagasi Reaktif (`lib/main.dart`, `lib/utils/app_strings.dart`, `lib/screens/home_screen.dart`):**
+   - Menambahkan `SystemLocaleScope` pada `MaterialApp.builder` serta `didChangeLocales` pada `_MusEveeAppState` dan `_HomeScreenState` agar seluruh widget (termasuk `SettingsView` dan modal) ikut ter-rebuild seketika saat bahasa sistem Android berubah.
+   - Memperbaiki `AppStrings.isIndonesianInContext` agar membaca `SystemLocaleScope` dan `WidgetsBinding.instance.platformDispatcher.locale` saat `MaterialApp` menggunakan `supportedLocales` default `en_US`.
+2. **Lokalisasi Total Downloader, Library Lokal, & Services (`lib/widgets/*.dart`, `lib/screens/home_screen.dart`, `lib/providers/*.dart`, `lib/services/*.dart`):**
+   - Melokalisasi pill filter & judul section Downloader (memperbaiki `"Link Yotube/YT Music"` → `"Link YouTube/YT Music"` / `"YouTube/YT Music Link"`), dialog izin/folder/Spotify privat, `BatchPlaylistSheet`, `QueueHistoryView`, `SearchResultTile`, snackbar `TrackPreviewSheet` & `TagEditorSheet`, seluruh menu & dialog `local_library_views.dart` dan `now_playing_view.dart`, serta status/exception di `DownloaderProvider`, `LocalMusicProvider`, `MetadataService`, `AudioService`, `TaggingService`, `FolderService`, dan `HiResAddonService`.
+3. **Fix Overflow `QueueHistoryView` & Pengujian Locale (`lib/widgets/queue_history_view.dart`, `test/curated_playlist_discovery_test.dart`):**
+   - Membungkus teks judul `_buildSectionHeader` dengan `Flexible` agar tidak mengalami overflow 19 px pada lebar `360 px` berbahasa Inggris, serta menambahkan widget test peralihan locale langsung `en` → `id` → `in`.
+
+---
+
+## [v4.9 — Harmonisasi Monokrom `TagEditorSheet` & Alur Downloader, Ikon Segitiga Play Preview, & Fix Tag Bahasa Lirik] — 2026-11-13 (Monokromisasi `TagEditorSheet` / `BatchPlaylistSheet` / Dialog Folder, Ikon `Icons.play_arrow_rounded` pada Preview Lagu, Lokalisasi `[English/other]` & Penghapusan Kurung Ganda `[[...]]`)
+
+### Ringkasan Perubahan
+Menyelaraskan seluruh komponen pengeditan tag, pemilihan playlist, dan hasil pencarian agar memakai palet monokrom Light/Dark yang sama dengan `TrackPreviewSheet`, mengganti ikon pratinjau audio menjadi ikon segitiga penuh tanpa garis skip, serta memperbaiki label bahasa pada bagian ganti lirik agar otomatis mengikuti bahasa sistem dengan tepat satu pasang kurung siku.
+
+### Perubahan Utama
+1. **Palet Monokrom & Lokalisasi ID/EN di `TagEditorSheet`, `BatchPlaylistSheet`, & Dialog Downloader (`lib/widgets/tag_editor_sheet.dart`, `lib/widgets/batch_playlist_sheet.dart`, `lib/widgets/search_result_tile.dart`, `lib/screens/home_screen.dart`):**
+   - Mengubah latar belakang sheet menjadi `nowPlayingBg` (radius `18 px`) serta mengganti seluruh warna biru `palette.accent` dengan `nowPlayingPrimary` / `nowPlayingOnPrimary`, lengkap dengan `AppStrings.editor*` dan `PressableScale`.
+2. **Ikon Play Preview Segitiga Bersih (`lib/widgets/track_preview_sheet.dart`):**
+   - Mengganti `assets/play.png` (yang bergaris vertical next) pada tombol pratinjau sampul lagu menjadi `Icons.play_arrow_rounded`.
+3. **Normalisasi Tag Bahasa Lirik & Penghapusan Kurung Ganda (`lib/utils/app_strings.dart`, `lib/widgets/track_preview_sheet.dart`, `lib/widgets/now_playing_view.dart`, `test/curated_playlist_discovery_test.dart`):**
+   - Menambahkan `AppStrings.formatLyricsLanguageTag` yang melokalisasi `[Inggris/Lainnya]` → `[English/other]` dan `[Jepang/Kanji]` → `[Japanese/Kanji]` dengan tepat satu pasang kurung siku tanpa merusak skor internal `LyricsService`.
+
+---
+
+## [v4.9 — Fix Clipping Scroll Horizontal Tab Downloader & `BatchPlaylistSheet`] — 2026-11-13 (Edge-to-Edge Horizontal Carousel Scrolling Tanpa Terpotong di Tepi Kiri/Kanan)
+
+### Ringkasan Perubahan
+Memperbaiki bug visual di tab **Downloader** di mana daftar lagu, kartu album, maupun kartu playlist pada kelima carousel (*This week's top songs*, *For You*, *Playlists for you*, *New releases*, *Top Indonesian songs*) serta strip folder di `BatchPlaylistSheet` tampak terpotong secara vertikal di tepi dalam saat digeser ke kiri/kanan.
+
+### Perubahan Utama
+1. **Carousel Discovery Edge-to-Edge (`lib/screens/home_screen.dart`):**
+   - Menghapus padding horizontal dari `ListView` vertikal utama (`_buildDownloaderDiscoveryView`), memindahkan inset `14 px` ke helper `_buildDiscoverySectionHeader` (serta header *For You* dan kartu offline), dan menyematkan `padding: const EdgeInsets.symmetric(horizontal: 14)` langsung pada kelima `ListView.separated(scrollDirection: Axis.horizontal)`.
+2. **Strip Chip Folder Horizontal & Responsivitas `TagEditorSheet` (`lib/widgets/batch_playlist_sheet.dart`, `lib/widgets/tag_editor_sheet.dart`, `test/curated_playlist_discovery_test.dart`):**
+   - Memindahkan padding `16 px` ke `SingleChildScrollView` horizontal pemilihan folder di `BatchPlaylistSheet`, mengubah header baris lirik `TagEditorSheet` menjadi `Wrap` agar bebas overflow di `360 px`, serta menambah pengujian regresi pada `curated_playlist_discovery_test.dart`.
+
+---
+
+## [v4.9 — Redesign Monokrom Modal Pilihan Lagu (`TrackPreviewSheet`) Sesuai Mockup] — 2026-11-13 (Redesign `TrackPreviewSheet`: Header dengan Tombol Pensil Edit, Baris Sumber Audio `assets/audio.png`, Segmented Toggle Lirik Monokrom, Chips `Folder Tujuan`, Tombol Aksi Monokrom, Aset Kustom, Lokalisasi Otomatis `AppStrings` ID/EN, & Mograph)
+
+### Ringkasan Perubahan
+Mendesain ulang tampilan dialog pratinjau lagu (`TrackPreviewSheet`) saat pengguna memilih lagu yang hendak diunduh menjadi gaya monokrom modern sesuai mockup referensi, menggunakan ikon aset kustom terbaru dari folder `assets/`, tetap mempertahankan seluruh fitur fungsional (termasuk baris `Album • Tahun • Durasi`, peringatan lagu duplikat, `Auto-Romaji`, pemilihan sumber YouTube, pemilihan kandidat lirik LRCLIB, dan editor tag manual), dilengkapi animasi pegas Mograph serta dukungan otomatis Bahasa Indonesia/Inggris via `AppStrings`.
+
+### Perubahan Utama
+1. **Pendaftaran Aset Ikon Baru (`pubspec.yaml`):**
+   - Menambahkan `- assets/pencil.png`, `- assets/audio.png`, `- assets/folder (3).png`, `- assets/add-list.png`, dan `- assets/play.png` ke konfigurasi Flutter assets.
+2. **Redesign Monokrom `TrackPreviewSheet` & Animasi Mograph (`lib/widgets/track_preview_sheet.dart`):**
+   - **Header Lagu & Tombol Pensil Edit:** Cover `92×92` membulat `8 px` dengan tombol pratinjau audio 30 detik beranimasi `MographSpringTap` + `MographAnimatedSwitcher` (`assets/play.png` ↔ stop), judul `Poppins w700`, artis, teks `Album • Tahun • Durasi`, indikator/tombol kontekstual (duplikat folder & `Auto-Romaji`), serta tombol kotak edit (`assets/pencil.png`) di sisi kanan untuk membuka `TagEditorSheet`.
+   - **Baris Sumber Audio & Pemilih Kandidat YouTube:** Menampilkan `assets/audio.png`, status sumber audio, tombol `Ganti Sumber`/`Change Source`, dan daftar kandidat YouTube monokrom.
+   - **Kotak Lirik & Segmented Control Monokrom:** Segmented control `Lirik Berjalan` | `Lirik Biasa` (`Synced lyrics` | `Plain lyrics`) dengan pilihan aktif berlatar `nowPlayingPrimary`, tag bahasa kandidat aktif, tombol `Ganti Lirik`/`Change lyrics`, `Auto-Romaji` lirik kontekstual untuk lagu Jepang, pemilih kandidat LRCLIB monokrom, serta pratinjau lirik bersih.
+   - **Pemilih `Folder Tujuan` & Tombol Aksi Monokrom:** Chip folder dengan `assets/folder (3).png` (terpilih berlatar `nowPlayingPrimary`), tombol `+ Folder baru` (`assets/add.png`), tombol utama `Simpan ke <Folder>` (`assets/download.png`), dan tombol sekunder `Masukkan ke antrean` (`assets/add-list.png`), seluruhnya responsif dengan `PressableScale`.
+3. **Lokalisasi Otomatis ID/EN & Helper Uji (`lib/utils/app_strings.dart`, `lib/providers/downloader_provider.dart`, `test/curated_playlist_discovery_test.dart`):**
+   - Menambahkan getter `AppStrings.preview*` untuk bahasa Indonesia & Inggris otomatis mengikuti bahasa perangkat, menambahkan `DownloaderProvider.seedTrackMetadataForTesting`, dan menambah widget test `TrackPreviewSheet` mode Terang/Gelap + ID/EN pada lebar sempit `360px`.
+
+### Verifikasi
+- `flutter analyze lib/ test/` → `0` issues.
+- `flutter test` → seluruh pengujian lulus penuh.
+
+---
+
+## [v4.9 — Fix & Optimasi `Playlists for you`, `New releases`, Anti-Kedip `PressableScale`, Batch Duplicate Check, & Pill Bar Layout] — 2026-11-13 (Migrasi Playlist Kurasi & New Releases ke Deezer Public API, Instant `BatchPlaylistSheet`, Eliminasi Flicker Ketukan Pertama, Scan Duplikat Satu Lintasan, & Fit Layout 360dp)
+
+### Ringkasan Perubahan
+Memperbaiki 4 kendala utama pada hasil redesign tab **Downloader**: kolase gambar playlist kurasi yang sebelumnya gagal dimuat (tautan 404/kadaluwarsa), keterlambatan pembukaan playlist akibat pemindaian folder berulang kali, kedipan kartu sekaligus ketukan dua kali akibat unmount `PressableScale`, ketidaksesuaian judul playlist/rilisan baru, serta pemotongan pill ketiga pada layar ponsel sempit.
+
+### Perubahan Utama
+1. **Migrasi `Playlists for you` & `New releases` ke Deezer Public API (`lib/models/curated_playlist.dart`, `lib/services/metadata_service.dart`, `lib/providers/downloader_provider.dart`, `lib/screens/home_screen.dart`):**
+   - Memperluas model `CuratedPlaylist` dengan `deezerPlaylistId`, `coverUrl`, `preloadedTracks`, dan `copyWith`.
+   - Mengganti 6 playlist kurasi `defaultCuratedPlaylists` ke ID playlist Deezer publik yang aktif dan terverifikasi (`15234906703` *Lagu Galau Indonesia 2026*, `15681651181` *Lagu Top Hits Indonesia 2026*, `4403076402` *TikTok Hits World*, `6049895724` *Top J-Pop*, `3338949242` *Chill Lofi*, `2098157264` *Global Hits*) beserta fungsi `hydrateDeezerCuratedPlaylists` dalam `loadDiscoveryCarousels` yang mengisi 4 sampul unik kolase 2×2, judul konsisten (`formatPlaylistTitle`), jumlah lagu aktual, dan `preloadedTracks`.
+   - Menambahkan dukungan tautan koleksi Deezer (`isDeezerCollectionInput`, `isCollectionInput`, `fetchDeezerCollection` untuk `/playlist/{id}` & `/album/{id}` pada `MetadataService`, `submitSmartInput`, dan `_handleIncomingSharedText`), mengganti menu `Salin Link Spotify` menjadi `Salin Link Playlist`, serta memindahkan `fetchNewReleasesTracks` ke playlist mingguan Deezer `Radar Weekly` (`1282495565`) dengan fallback iTunes US Top Songs RSS (menggantikan pencarian literal `'new music'`).
+2. **Pembukaan Instan `BatchPlaylistSheet` & Perbaikan Layout Material (`lib/widgets/batch_playlist_sheet.dart`, `lib/screens/home_screen.dart`):**
+   - Menjadikan `collection` opsional dengan `initialTitle`, `initialCoverUrl`, dan `onRetry` sehingga sheet terbuka seketika pada ketukan pertama (langsung siap jika sudah di-preload, atau menampilkan spinner loading reaktif lalu otomatis memunculkan daftar lagu segera setelah fetch selesai, serta tombol **Coba Lagi** saat gagal/offline).
+   - Membungkus daftar `CheckboxListTile` dengan `Material` dan memoles lebar kolom judul header agar bebas *RenderFlex overflow* dan *ListTile ink splash assertion* pada layar `360px`.
+3. **Eliminasi Kedip & Ketukan Ganda (`lib/widgets/pressable_scale.dart`, `lib/screens/home_screen.dart`):**
+   - Menambahkan properti `enabled` pada `PressableScale` sambil mempertahankan node `GestureDetector` tetap terpasang saat `enabled` berubah menjadi `false` (sehingga widget gambar anak tidak pernah ter-unmount/berkedip saat `provider.isBusy` berubah).
+   - Menerapkan `enabled: !provider.isBusy` dengan callback `onTap` konstan pada `_buildRankedSongCard`, `_buildCuratedPlaylistCard`, dan `_buildVerticalDiscoveryCard`, ditambah `gaplessPlayback: true` serta `cacheWidth/Height: 120` pada `_buildSmallNetworkCover`.
+4. **Deteksi Duplikat Batch Satu Lintasan & Pemolesan Top Bar/Kartu (`lib/services/folder_service.dart`, `lib/providers/downloader_provider.dart`, `lib/screens/home_screen.dart`):**
+   - Menambahkan `FolderService.findDuplicateFoldersBatch` (dan `findDuplicateFoldersBatchInDirectories`) yang memindai tiap folder musik **sekali saja** menggunakan indeks stem + pencocokan duplikat bernomor `(1)` alih-alih `N × folders` panggilan `dir.list()`.
+   - Membungkus baris 3 pill bar atas dengan `FittedBox(fit: BoxFit.scaleDown)` agar `Title/Artist`, `Link Yotube/YT Music`, dan `Link Spotify` tampil penuh dalam 1 baris tanpa terpotong di layar sempit, serta memperlebar kartu playlist menjadi `212×64` (`maxLines: 2`, `11.5 px`) agar judul tampil jelas.
+5. **Pengujian (`test/curated_playlist_discovery_test.dart`):**
+   - Menambahkan 5 pengujian terfokus: pemindaian duplikat batch satu lintasan (`.mp3`/`.flac`/duplikat bernomor/file korup `<16 KB`), deteksi & format playlist Deezer, kestabilan state anak `PressableScale` saat `enabled` toggle, pembukaan asinkron/preload `BatchPlaylistSheet`, serta verifikasi layout 360px dan ketukan pertama kartu playlist di `HomeScreen`.
+
+### Verifikasi
+- `flutter analyze lib/ test/` → `0` issues.
+- `flutter test` → seluruh pengujian lulus penuh.
+
+---
+
+## [v4.9 — Redesign Menu Downloader Sesuai Mockup & Morphing Search Bar Mograph] — 2026-11-13 (Redesign Halaman Downloader: Animasi Morphing Search Bar + 3 Filter Pills, Tombol Unduhan Melingkar Monokrom, & 5 Bagian Discovery Vertikal/Horizontal Sesuai Mockup)
+
+### Ringkasan Perubahan
+Merombak seluruh tampilan tab **Downloader** (`_buildSearchAndDownloadTab`) agar 100% sesuai dengan desain mockup referensi pengguna: bilah pencarian atas beranimasi *Motion Graphics* yang bertransisi mulus antara 3 pill filter interaktif (`Title/Artist`, `Link Yotube/YT Music`, `Link Spotify`) dan *Search Bar* penuh dengan hint dinamis & tombol kembali, tombol unduhan melingkar hitam di sisi kanan, serta 5 bagian penjelajahan musik (*This week's top songs* dengan nomor urut 3 baris per kolom, *For you*, *Playlists for you* 2 baris bergulir dengan kolase sampul 2×2, *New releases*, dan *Top Indonesian songs*) yang didukung animasi pegas taktil `PressableScale`.
+
+### Perubahan Utama
+1. **Search Top Bar Morphing Motion Graphics (`lib/screens/home_screen.dart`, `pubspec.yaml`):**
+   - **Mode Terlipat (Collapsed):** Tombol kaca pembesar (`assets/search.png`), deretan 3 tombol pill filter berlatar `surfaceSubtle` (`Title/Artist`, `Link Yotube/YT Music`, `Link Spotify`), dan tombol antrean/riwayat unduhan melingkar hitam (`assets/download.png` berputar dengan cincin progres putih saat ada unduhan aktif atau badge jumlah antrean).
+   - **Mode Terbuka (Expanded):** Menggunakan `_searchBarAnimController` (`300 ms`, `Curves.easeOutCubic`) untuk menganimasikan morphing dari tombol kaca pembesar & pills menjadi bilah pencarian penuh berlatar `surfaceSubtle` dengan tombol kembali `←`, kolom teks pencarian aktif (`autofocus: true` + keyboard otomatis terbuka) dengan hint dinamis sesuai pill yang diketuk (`Search title/artist or paste a link...`, `Search title/artist...`, `Paste YouTube or YT Music link...`, `Paste Spotify link...`), serta tombol pembersih `✕`.
+   - **Navigasi Kembali:** Mengetuk tombol panah `←` atau menekan tombol Back fisik Android melipat kembali search bar ke mode 3 pill secara mulus.
+2. **5 Bagian Discovery Lagu & Playlist Kurasi (`lib/screens/home_screen.dart`, `lib/providers/downloader_provider.dart`, `lib/models/curated_playlist.dart`, `lib/services/metadata_service.dart`):**
+   - **This week's top songs:** Menampilkan lagu tren global dalam susunan kolom horizontal di mana tiap kolom memuat 3 baris lagu dengan nomor urut `1.`, `2.`, `3.`... berbobot `w600`, sampul album membulat `7 px`, judul, artis, dan badge/deteksi folder duplikat.
+   - **For you:** Kartu vertikal sampul album bergulir horizontal dengan teks judul `12 px w600` dan artis `10.5 px w400` serta subtitle seed artis rekomendasi.
+   - **Playlists for you:** Koleksi playlist kurasi populer bergulir horizontal 2 baris (`Galau`, `Top Hits Indonesia`, `Viral Hits`, `J-Pop Favorites`, `Lofi Chill`, `Today's Top Hits`) berkolase sampul 2×2, jumlah lagu, dan menu `⋮` (*Unduh Semua Lagu*, *Putar Semua*, *Salin Link Spotify*) yang terhubung langsung ke `BatchPlaylistSheet`.
+   - **New releases:** Bagian rilisan baru bergulir horizontal (`fetchNewReleasesTracks` via API Deezer / iTunes) dengan kartu vertikal sampul album.
+   - **Top Indonesian songs:** Deretan lagu terpopuler Indonesia bergulir horizontal.
+3. **Mograph & Tactile Feedback:**
+   - Seluruh elemen interaktif menggunakan `PressableScale` dengan pantulan pegas `Curves.easeOutBack` (`240 ms` release) dan squash taktil saat ditekan tanpa mengganggu panggung lirik maupun performa pemutar lokal.
+4. **Unit & Widget Test (`test/widget_test.dart`):**
+   - Menyesuaikan pengujian tab Downloader untuk memverifikasi 3 pill filter, animasi morphing search bar dengan hint dinamis & collapse kembali, scrolling 5 bagian discovery, pembukaan modal antrean/riwayat unduhan, dan pengujian keselarasan status bar header Downloader.
+
+### Verifikasi
+- `flutter analyze` → `0` issues.
+- `flutter test` → seluruh 60 unit & widget test lulus (`60/60`).
+
+---
+
 ## [v4.9 — Hi-Res Lossless (`.flac`) Downloads & Add-on Source Manager] — 2026-11-11 (Unduhan Hi-Res Lossless `.flac` 16/24-bit + Waterfall Resolver `HiResAddonService` + Preset `Monochrome` & 7 Modul BitChord + Tagging Biner `VORBIS_COMMENT` & `PICTURE` `.flac` + Parser Biner `fLaC` Native di `MainActivity.kt` + Modal `Kelola Sumber Add-on Hi-Res`)
 
 ### Ditambahkan (Added)

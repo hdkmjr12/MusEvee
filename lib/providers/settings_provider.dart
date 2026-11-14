@@ -305,7 +305,7 @@ class SettingsProvider extends ChangeNotifier {
   final File? _settingsFileOverride;
 
   DownloadQuality _downloadQuality = DownloadQuality.best;
-  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode _themeMode = ThemeMode.system;
   List<HiResAddonSource> _hiResAddons = List<HiResAddonSource>.from(
     defaultHiResAddonPresets,
   );
@@ -319,25 +319,30 @@ class SettingsProvider extends ChangeNotifier {
     Directory? storageDirectory,
     Future<Directory> Function()? directoryResolver,
     File? settingsFile,
-    ThemeMode initialThemeMode = ThemeMode.dark,
+    ThemeMode initialThemeMode = ThemeMode.system,
   })  : _storageDirectory = storageDirectory,
         _directoryResolver = directoryResolver,
         _settingsFileOverride = settingsFile,
-        _themeMode =
-            initialThemeMode == ThemeMode.light
-                ? ThemeMode.light
-                : ThemeMode.dark {
+        _themeMode = initialThemeMode {
     _initFuture = _loadFromDisk();
   }
 
   /// Active download quality setting (defaults to [DownloadQuality.best] = 320 kbps).
   DownloadQuality get downloadQuality => _downloadQuality;
 
-  /// Active theme mode (`ThemeMode.dark` or `ThemeMode.light`, defaults to `ThemeMode.dark`).
+  /// Active theme mode (`ThemeMode.system`, `ThemeMode.dark`, or `ThemeMode.light`;
+  /// defaults to `ThemeMode.system`).
   ThemeMode get themeMode => _themeMode;
 
-  /// Whether the active theme is Dark Mode.
-  bool get isDarkMode => _themeMode == ThemeMode.dark;
+  /// Whether the effective active theme is currently Dark Mode (resolves
+  /// [ThemeMode.system] against the platform brightness).
+  bool get isDarkMode {
+    if (_themeMode == ThemeMode.system) {
+      return WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+          Brightness.dark;
+    }
+    return _themeMode == ThemeMode.dark;
+  }
 
   /// Convenience getter for the active MP3 encoding bitrate in kbps (`320`, `192`, or `128`).
   int get downloadBitrateKbps => _downloadQuality.bitrateKbps;
@@ -368,10 +373,18 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   static ThemeMode parseThemeMode(Object? raw) {
-    if (raw is String && raw.trim().toLowerCase() == 'light') {
-      return ThemeMode.light;
+    if (raw is String) {
+      switch (raw.trim().toLowerCase()) {
+        case 'light':
+          return ThemeMode.light;
+        case 'dark':
+          return ThemeMode.dark;
+        case 'system':
+        case 'auto':
+          return ThemeMode.system;
+      }
     }
-    return ThemeMode.dark;
+    return ThemeMode.system;
   }
 
   /// Updates [downloadQuality], notifies listeners immediately, and persists
@@ -386,14 +399,12 @@ class SettingsProvider extends ChangeNotifier {
     await _saveToDisk();
   }
 
-  /// Updates [themeMode] (`ThemeMode.dark` or `ThemeMode.light`), notifies
-  /// listeners immediately, and persists the choice to `musevee_settings_v1.json`.
+  /// Updates [themeMode] (`ThemeMode.system`, `ThemeMode.dark`, or `ThemeMode.light`),
+  /// notifies listeners immediately, and persists the choice to `musevee_settings_v1.json`.
   Future<void> setThemeMode(ThemeMode mode) async {
-    final resolved =
-        mode == ThemeMode.light ? ThemeMode.light : ThemeMode.dark;
     _hasUserModifiedTheme = true;
-    final changed = _themeMode != resolved;
-    _themeMode = resolved;
+    final changed = _themeMode != mode;
+    _themeMode = mode;
     if (changed) {
       _safeNotifyListeners();
     }
@@ -684,7 +695,11 @@ class SettingsProvider extends ChangeNotifier {
         'version': 2,
         'downloadQuality': _downloadQuality.name,
         'bitrateKbps': _downloadQuality.bitrateKbps,
-        'themeMode': _themeMode == ThemeMode.light ? 'light' : 'dark',
+        'themeMode': switch (_themeMode) {
+          ThemeMode.system => 'system',
+          ThemeMode.light => 'light',
+          ThemeMode.dark => 'dark',
+        },
         'hiResAddons': _hiResAddons.map((a) => a.toJson()).toList(),
       };
       final encoded = jsonEncode(payload);

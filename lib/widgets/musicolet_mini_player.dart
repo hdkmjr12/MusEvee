@@ -20,6 +20,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
     return Consumer<LocalMusicProvider>(
       builder: (context, localProvider, _) {
@@ -101,7 +102,7 @@ class MusicoletMiniPlayer extends StatelessWidget {
                                   style: TextStyle(
                                     color: palette.nowPlayingPrimary,
                                     fontSize: 13.5,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w600,
                                     letterSpacing: -0.2,
                                   ),
                                 ),

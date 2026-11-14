@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
+import '../models/curated_playlist.dart';
 import '../models/track_metadata.dart';
 import '../utils/app_strings.dart';
 
@@ -19,20 +20,25 @@ class MetadataException implements Exception {
 /// Thrown when a catalog search or metadata request fails due to no internet /
 /// DNS failure / connection timeout (distinct from an empty search result).
 class NetworkOfflineException extends MetadataException {
-  const NetworkOfflineException([
-    super.message =
-        'Tidak ada koneksi internet. Periksa jaringan Anda lalu coba lagi.',
-  ]);
+  const NetworkOfflineException([super.message = '']);
+
+  @override
+  String get message =>
+      super.message.isNotEmpty ? super.message : AppStrings.svcNoInternet;
 }
 
 class SpotifyPrivateOrUnavailableException extends MetadataException {
   final String collectionType;
 
   const SpotifyPrivateOrUnavailableException([
-    super.message =
-        "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
+    super.message = '',
     this.collectionType = 'playlist',
   ]);
+
+  @override
+  String get message => super.message.isNotEmpty
+      ? super.message
+      : AppStrings.spotifyPrivatePlaylistMessage;
 }
 
 class SpotifyCollectionResult {
@@ -129,6 +135,21 @@ class MetadataService {
     ).hasMatch(trimmed);
   }
 
+  /// Checks whether [rawInput] contains a Deezer album or playlist URL.
+  bool isDeezerCollectionInput(String rawInput) {
+    final trimmed = rawInput.trim();
+    if (trimmed.isEmpty) return false;
+    return RegExp(
+      r'https?://(?:www\.)?deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(?:album|playlist)/\d+',
+      caseSensitive: false,
+    ).hasMatch(trimmed);
+  }
+
+  /// Checks whether [rawInput] contains any supported album or playlist link
+  /// (Spotify or Deezer).
+  bool isCollectionInput(String rawInput) =>
+      isSpotifyCollectionInput(rawInput) || isDeezerCollectionInput(rawInput);
+
   /// Checks whether [rawInput] contains a YouTube or YouTube Music video URL.
   bool isYoutubeInput(String rawInput) {
     return extractYoutubeVideoId(rawInput) != null;
@@ -168,7 +189,12 @@ class MetadataService {
   Future<TrackMetadata> fetchYoutubeTrackMetadata(String rawInput) async {
     final videoId = extractYoutubeVideoId(rawInput);
     if (videoId == null || videoId.isEmpty) {
-      throw const MetadataException('Tautan YouTube / YT Music tidak valid.');
+      throw MetadataException(
+        AppStrings.tr(
+          'Tautan YouTube / YT Music tidak valid.',
+          'Invalid YouTube / YT Music link.',
+        ),
+      );
     }
 
     String rawTitle = 'YouTube Track ($videoId)';
@@ -340,8 +366,7 @@ class MetadataService {
         final tMap = _ensureMap(item);
         if (tMap == null) continue;
 
-        final tTitle =
-            (tMap['title'] ?? tMap['name'] ?? '').toString().trim();
+        final tTitle = (tMap['title'] ?? tMap['name'] ?? '').toString().trim();
         if (tTitle.isEmpty) continue;
 
         String tArtist = (tMap['subtitle'] ?? '').toString().trim();
@@ -382,11 +407,15 @@ class MetadataService {
     }
   }
 
-  /// Extracts a full track list from a Spotify Album or Playlist link
-  /// using Spotify's embed/web page (`__NEXT_DATA__`), forwarding `?pt=`
+  /// Extracts a full track list from a Spotify or Deezer Album / Playlist link.
+  /// For Spotify links, parses embed/web `__NEXT_DATA__`, forwarding `?pt=`
   /// private tokens when present, and throwing [SpotifyPrivateOrUnavailableException]
   /// if the playlist is private or unavailable (never falling back to random search).
   Future<SpotifyCollectionResult> fetchAlbumOrPlaylist(String rawInput) async {
+    if (isDeezerCollectionInput(rawInput)) {
+      return fetchDeezerCollection(rawInput);
+    }
+
     final extracted = extractUrlFromSharedText(rawInput);
     String collectionType = 'album';
     String collectionId = '';
@@ -411,8 +440,11 @@ class MetadataService {
     }
 
     if (collectionId.isEmpty) {
-      throw const MetadataException(
-        'Link Album atau Playlist Spotify tidak valid.',
+      throw MetadataException(
+        AppStrings.tr(
+          'Link Album atau Playlist Spotify tidak valid.',
+          'Invalid Spotify Album or Playlist link.',
+        ),
       );
     }
 
@@ -599,13 +631,16 @@ class MetadataService {
       if (collectionType == 'playlist' ||
           detectedPrivateOrUnavailable ||
           (ptToken != null && ptToken.isNotEmpty)) {
-        throw const SpotifyPrivateOrUnavailableException(
-          "Playlist Spotify ini berstatus Pribadi (Private) atau tidak dapat diakses. Silakan ubah pengaturan playlist di Spotify menjadi 'Publik' (Make Public) terlebih dahulu, lalu salin ulang link-nya.",
+        throw SpotifyPrivateOrUnavailableException(
+          AppStrings.spotifyPrivatePlaylistMessage,
           'playlist',
         );
       }
-      throw const SpotifyPrivateOrUnavailableException(
-        'Album Spotify ini tidak dapat diakses atau daftar lagunya kosong. Pastikan link Album Spotify valid dan dapat diakses publik.',
+      throw SpotifyPrivateOrUnavailableException(
+        AppStrings.tr(
+          'Album Spotify ini tidak dapat diakses atau daftar lagunya kosong. Pastikan link Album Spotify valid dan dapat diakses publik.',
+          'This Spotify Album cannot be accessed or has an empty track list. Make sure the Spotify Album link is valid and publicly accessible.',
+        ),
         'album',
       );
     }
@@ -635,7 +670,8 @@ class MetadataService {
     var s = raw.trim();
     if (s.isEmpty) return '';
     s = s
-        .replaceFirst(RegExp(r'\s*[|\-–—]\s*Spotify\s*$', caseSensitive: false), '')
+        .replaceFirst(
+            RegExp(r'\s*[|\-–—]\s*Spotify\s*$', caseSensitive: false), '')
         .replaceFirst(
           RegExp(r'\s*-\s*(?:playlist|album)\s+by\s+.+$', caseSensitive: false),
           '',
@@ -659,7 +695,12 @@ class MetadataService {
   Future<List<TrackMetadata>> searchMusicTracks(String rawQuery) async {
     final query = rawQuery.trim();
     if (query.isEmpty) {
-      throw const MetadataException('Kata kunci pencarian tidak boleh kosong.');
+      throw MetadataException(
+        AppStrings.tr(
+          'Kata kunci pencarian tidak boleh kosong.',
+          'Search keywords cannot be empty.',
+        ),
+      );
     }
     if (isSpotifyCollectionInput(query)) {
       throw const SpotifyPrivateOrUnavailableException();
@@ -737,30 +778,43 @@ class MetadataService {
           jaQ,
           limit: 10,
           onError: recordNetErr,
-        ).then((list) => _CatalogBatch(tracks: list, isItunes: false, boost: 8));
+        ).then(
+            (list) => _CatalogBatch(tracks: list, isItunes: false, boost: 8));
       }());
     }
 
     final batches = await Future.wait<_CatalogBatch>(searchFutures);
 
-    // Index true release years & high-res covers from iTunes batches
+    // Index true release years & high-res covers from iTunes batches,
+    // and ISRC codes from Deezer batches so merged tracks preserve exact ISRCs.
     final itunesYearMap = <String, String>{};
     final itunesCoverMap = <String, String>{};
     final itunesPreviewMap = <String, String>{};
+    final deezerIsrcMap = <String, String>{};
     for (final batch in batches) {
-      if (!batch.isItunes) continue;
-      for (final t in batch.tracks) {
-        final key = _dedupTrackKey(t.artist, t.title);
-        if (t.releaseYear.isNotEmpty && !itunesYearMap.containsKey(key)) {
-          itunesYearMap[key] = t.releaseYear;
+      if (batch.isItunes) {
+        for (final t in batch.tracks) {
+          final key = _dedupTrackKey(t.artist, t.title);
+          if (t.releaseYear.isNotEmpty && !itunesYearMap.containsKey(key)) {
+            itunesYearMap[key] = t.releaseYear;
+          }
+          if (t.coverUrl.isNotEmpty && !itunesCoverMap.containsKey(key)) {
+            itunesCoverMap[key] = t.coverUrl;
+          }
+          if (t.previewAudioUrl != null &&
+              t.previewAudioUrl!.isNotEmpty &&
+              !itunesPreviewMap.containsKey(key)) {
+            itunesPreviewMap[key] = t.previewAudioUrl!;
+          }
         }
-        if (t.coverUrl.isNotEmpty && !itunesCoverMap.containsKey(key)) {
-          itunesCoverMap[key] = t.coverUrl;
-        }
-        if (t.previewAudioUrl != null &&
-            t.previewAudioUrl!.isNotEmpty &&
-            !itunesPreviewMap.containsKey(key)) {
-          itunesPreviewMap[key] = t.previewAudioUrl!;
+      } else {
+        for (final t in batch.tracks) {
+          final key = _dedupTrackKey(t.artist, t.title);
+          if (t.isrc != null &&
+              t.isrc!.isNotEmpty &&
+              !deezerIsrcMap.containsKey(key)) {
+            deezerIsrcMap[key] = t.isrc!;
+          }
         }
       }
     }
@@ -787,6 +841,9 @@ class MetadataService {
               itunesPreviewMap.containsKey(normKey)) {
             track = track.copyWith(previewAudioUrl: itunesPreviewMap[normKey]);
           }
+        } else if ((track.isrc == null || track.isrc!.isEmpty) &&
+            deezerIsrcMap.containsKey(normKey)) {
+          track = track.copyWith(isrc: deezerIsrcMap[normKey]);
         }
 
         final score = _scoreTrackRelevance(
@@ -805,9 +862,23 @@ class MetadataService {
             order: sequenceCounter++,
           );
         } else if (score > existing.score) {
+          if ((track.isrc == null || track.isrc!.isEmpty) &&
+              existing.track.isrc != null &&
+              existing.track.isrc!.isNotEmpty) {
+            track = track.copyWith(isrc: existing.track.isrc);
+          }
           candidatesByKey[normKey] = _ScoredSearchTrack(
             track: track,
             score: score,
+            order: existing.order,
+          );
+        } else if ((existing.track.isrc == null ||
+                existing.track.isrc!.isEmpty) &&
+            track.isrc != null &&
+            track.isrc!.isNotEmpty) {
+          candidatesByKey[normKey] = _ScoredSearchTrack(
+            track: existing.track.copyWith(isrc: track.isrc),
+            score: existing.score,
             order: existing.order,
           );
         }
@@ -834,19 +905,18 @@ class MetadataService {
 
   /// Fetches Global Trending tracks (`Global Trending` carousel) via Deezer Global
   /// Chart API with iTunes US Top Songs RSS fallback.
-  Future<List<TrackMetadata>> fetchGlobalTrendingTracks({int limit = 12}) async {
+  Future<List<TrackMetadata>> fetchGlobalTrendingTracks(
+      {int limit = 12}) async {
     int netErrors = 0;
     int attempts = 0;
 
     // 1. Primary: Deezer Global Chart API
     attempts++;
     try {
-      final resp = await _dio
-          .get<dynamic>(
-            'https://api.deezer.com/chart/0/tracks',
-            queryParameters: {'limit': limit},
-          )
-          .timeout(const Duration(seconds: 9));
+      final resp = await _dio.get<dynamic>(
+        'https://api.deezer.com/chart/0/tracks',
+        queryParameters: {'limit': limit},
+      ).timeout(const Duration(seconds: 9));
       final map = _ensureMap(resp.data);
       final rawList = map?['data'];
       if (rawList is List && rawList.isNotEmpty) {
@@ -925,6 +995,266 @@ class MetadataService {
     return const [];
   }
 
+  /// Normalizes all-uppercase or all-lowercase Deezer playlist titles to clean
+  /// Title Case while preserving intentional mixed-case titles (e.g. TikTok).
+  static String formatPlaylistTitle(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    final isAllUpper =
+        trimmed == trimmed.toUpperCase() && trimmed != trimmed.toLowerCase();
+    final isAllLower =
+        trimmed == trimmed.toLowerCase() && trimmed != trimmed.toUpperCase();
+    if (!isAllUpper && !isAllLower) return trimmed;
+    return trimmed
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+        .join(' ');
+  }
+
+  /// Fetches a public Deezer playlist or album link (`/playlist/{id}` or
+  /// `/album/{id}`) and converts its tracks into [SpotifyCollectionResult].
+  Future<SpotifyCollectionResult> fetchDeezerCollection(
+    String rawInput, {
+    String? fallbackTitle,
+  }) async {
+    final extracted = extractUrlFromSharedText(rawInput);
+    final match = RegExp(
+      r'deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(album|playlist)/(\d+)',
+      caseSensitive: false,
+    ).firstMatch(extracted);
+
+    if (match == null) {
+      throw MetadataException(
+        AppStrings.tr(
+          'Link Album atau Playlist Deezer tidak valid.',
+          'Invalid Deezer Album or Playlist link.',
+        ),
+      );
+    }
+
+    final collectionType = match.group(1)!.toLowerCase();
+    final collectionId = match.group(2)!;
+    final endpoint = 'https://api.deezer.com/$collectionType/$collectionId';
+
+    try {
+      final resp =
+          await _dio.get<dynamic>(endpoint).timeout(const Duration(seconds: 9));
+      final data = _ensureMap(resp.data);
+      if (data == null || data['error'] != null) {
+        throw MetadataException(
+          AppStrings.tr(
+            'Playlist atau Album Deezer tidak ditemukan atau tidak tersedia.',
+            'Deezer Playlist or Album not found or unavailable.',
+          ),
+        );
+      }
+
+      final title =
+          formatPlaylistTitle((data['title']?.toString() ?? '').trim());
+      final resolvedTitle = title.isNotEmpty
+          ? title
+          : (fallbackTitle?.trim().isNotEmpty == true
+              ? fallbackTitle!.trim()
+              : (collectionType == 'album'
+                  ? 'Deezer Album'
+                  : 'Deezer Playlist'));
+
+      final resolvedCover = (data['cover_xl']?.toString() ??
+              data['cover_big']?.toString() ??
+              data['cover_medium']?.toString() ??
+              data['picture_xl']?.toString() ??
+              data['picture_big']?.toString() ??
+              data['picture_medium']?.toString() ??
+              '')
+          .trim();
+
+      final creatorName = (_ensureMap(data['creator'])?['name']?.toString() ??
+              _ensureMap(data['artist'])?['name']?.toString() ??
+              '')
+          .trim();
+
+      final rawTracks = _ensureMap(data['tracks'])?['data'];
+      final normalizedRawTracks = <dynamic>[];
+      if (rawTracks is List) {
+        for (final item in rawTracks) {
+          final m = _ensureMap(item);
+          if (m == null) continue;
+          // Deezer /album/{id} track items may omit nested album fields.
+          if (collectionType == 'album' && m['album'] == null) {
+            final copy = Map<String, dynamic>.from(m);
+            copy['album'] = <String, dynamic>{
+              'title': resolvedTitle,
+              'cover_xl': resolvedCover,
+              'cover_big': resolvedCover,
+              'cover_medium': resolvedCover,
+            };
+            normalizedRawTracks.add(copy);
+          } else {
+            normalizedRawTracks.add(m);
+          }
+        }
+      }
+
+      final tracks = _parseDeezerTrackList(normalizedRawTracks, limit: 150);
+      if (tracks.isEmpty) {
+        throw MetadataException(
+          AppStrings.tr(
+            'Playlist atau Album ini belum memiliki daftar lagu yang tersedia.',
+            'This Playlist or Album does not have any available tracks yet.',
+          ),
+        );
+      }
+
+      final coverOut =
+          resolvedCover.isNotEmpty ? resolvedCover : tracks.first.coverUrl;
+      final songCountText = AppStrings.songsCountLabel(tracks.length);
+      final subtitle = creatorName.isNotEmpty
+          ? '$creatorName • $songCountText'
+          : '$songCountText • Deezer';
+
+      return SpotifyCollectionResult(
+        title: resolvedTitle,
+        subtitle: subtitle,
+        coverUrl: coverOut,
+        collectionType: collectionType,
+        tracks: tracks,
+      );
+    } on MetadataException {
+      rethrow;
+    } catch (e) {
+      if (isNetworkOfflineError(e)) {
+        throw NetworkOfflineException(AppStrings.offlineSubtitle);
+      }
+      throw MetadataException(AppStrings.svcDeezerLoadFailed(e));
+    }
+  }
+
+  /// Hydrates curated playlist cards with live titles, real song counts,
+  /// 4 distinct album cover URLs (`sampleCovers`), and preloaded track lists
+  /// from Deezer's public Playlist API.
+  Future<List<CuratedPlaylist>> hydrateDeezerCuratedPlaylists(
+    List<CuratedPlaylist> templates,
+  ) async {
+    if (templates.isEmpty) return const [];
+
+    Future<CuratedPlaylist> hydrateOne(CuratedPlaylist template) async {
+      final playlistId = template.deezerPlaylistId.trim();
+      if (playlistId.isEmpty) return template;
+      try {
+        final resp = await _dio
+            .get<dynamic>('https://api.deezer.com/playlist/$playlistId')
+            .timeout(const Duration(seconds: 8));
+        final data = _ensureMap(resp.data);
+        if (data == null || data['error'] != null) return template;
+
+        final apiTitle = formatPlaylistTitle(
+          (data['title']?.toString() ?? '').trim(),
+        );
+        final apiLink = (data['link']?.toString() ?? '').trim();
+        final apiCount = _parseInt(data['nb_tracks']);
+        final playlistCover = (data['picture_big']?.toString() ??
+                data['picture_medium']?.toString() ??
+                data['picture_xl']?.toString() ??
+                '')
+            .trim();
+
+        final rawTracks = _ensureMap(data['tracks'])?['data'];
+        if (rawTracks is! List || rawTracks.isEmpty) return template;
+
+        // Collect up to 4 unique medium album covers for crisp 2x2 collage tiles.
+        final distinctCovers = <String>[];
+        final seenCovers = <String>{};
+        for (final item in rawTracks) {
+          final m = _ensureMap(item);
+          if (m == null) continue;
+          final albumObj = _ensureMap(m['album']);
+          final mediumCover = (albumObj?['cover_medium']?.toString() ??
+                  albumObj?['cover_big']?.toString() ??
+                  albumObj?['cover_xl']?.toString() ??
+                  '')
+              .trim();
+          if (mediumCover.isNotEmpty && seenCovers.add(mediumCover)) {
+            distinctCovers.add(mediumCover);
+            if (distinctCovers.length >= 4) break;
+          }
+        }
+        if (distinctCovers.isEmpty && playlistCover.isNotEmpty) {
+          distinctCovers.add(playlistCover);
+        }
+
+        final tracks = _parseDeezerTrackList(rawTracks, limit: 150);
+        if (tracks.isEmpty) return template;
+
+        return template.copyWith(
+          title: apiTitle.isNotEmpty ? apiTitle : template.title,
+          songCount: tracks.isNotEmpty
+              ? tracks.length
+              : (apiCount > 0 ? apiCount : template.songCount),
+          spotifyUrl: apiLink.isNotEmpty
+              ? apiLink
+              : 'https://www.deezer.com/playlist/$playlistId',
+          coverUrl: playlistCover.isNotEmpty
+              ? playlistCover
+              : (distinctCovers.isNotEmpty
+                  ? distinctCovers.first
+                  : template.coverUrl),
+          sampleCovers: distinctCovers.isNotEmpty
+              ? distinctCovers
+              : template.sampleCovers,
+          preloadedTracks: tracks,
+        );
+      } catch (e) {
+        debugPrint(
+          '[MusEvee] DISCOVERY: Hydrate playlist ${template.id} gagal: $e',
+        );
+        return template;
+      }
+    }
+
+    return Future.wait(templates.map(hydrateOne));
+  }
+
+  /// Fetches New Releases tracks via Deezer Radar Weekly (`1282495565`) with
+  /// iTunes US Top Songs RSS fallback (avoiding literal keyword `'new music'`).
+  Future<List<TrackMetadata>> fetchNewReleasesTracks({int limit = 12}) async {
+    int netErrors = 0;
+    int attempts = 0;
+
+    // 1. Primary: Deezer Radar Weekly official new-releases playlist
+    attempts++;
+    try {
+      final resp = await _dio
+          .get<dynamic>('https://api.deezer.com/playlist/1282495565')
+          .timeout(const Duration(seconds: 9));
+      final map = _ensureMap(resp.data);
+      final rawList = _ensureMap(map?['tracks'])?['data'];
+      if (rawList is List && rawList.isNotEmpty) {
+        final tracks = _parseDeezerTrackList(rawList, limit: limit);
+        if (tracks.isNotEmpty) return tracks;
+      }
+    } catch (e) {
+      if (isNetworkOfflineError(e)) netErrors++;
+    }
+
+    // 2. Fallback: iTunes US Top Songs RSS (live chart instead of keyword search)
+    attempts++;
+    try {
+      final rssTracks = await _fetchItunesRssTopSongs(
+        country: 'us',
+        limit: limit,
+      );
+      if (rssTracks.isNotEmpty) return rssTracks;
+    } catch (e) {
+      if (isNetworkOfflineError(e)) netErrors++;
+    }
+
+    if (netErrors > 0 && netErrors >= attempts) {
+      throw NetworkOfflineException(AppStrings.offlineSubtitle);
+    }
+    return const [];
+  }
+
   /// Fetches personalized `For You` (`Untukmu`) track recommendations based on
   /// [seedArtists] sampled from the user's local library (`Most played` /
   /// `Recently added`), excluding any track whose normalized identity is in
@@ -991,7 +1321,9 @@ class MetadataService {
     }
 
     for (int row = 0; row < maxLen && result.length < limit; row++) {
-      for (int col = 0; col < perSeedLists.length && result.length < limit; col++) {
+      for (int col = 0;
+          col < perSeedLists.length && result.length < limit;
+          col++) {
         final list = perSeedLists[col];
         if (row >= list.length) continue;
         final candidate = list[row];
@@ -1094,8 +1426,7 @@ class MetadataService {
           title: title,
           artist: artist,
           album: album.isNotEmpty ? album : title,
-          releaseYear:
-              year.isNotEmpty ? year : DateTime.now().year.toString(),
+          releaseYear: year.isNotEmpty ? year : DateTime.now().year.toString(),
           durationSeconds: durationSec,
           coverUrl: coverUrl,
           previewAudioUrl: previewUrl,
@@ -1152,16 +1483,14 @@ class MetadataService {
     // 1. Whole-phrase Google Input Tools Japanese IME (`heikousen sayuri` -> `平行線 さユり`)
     futures.add(() async {
       try {
-        final resp = await _dio
-            .get<dynamic>(
-              'https://inputtools.google.com/request',
-              queryParameters: {
-                'text': cleaned.toLowerCase(),
-                'itc': 'ja-t-i0-und',
-                'num': 4,
-              },
-            )
-            .timeout(const Duration(milliseconds: 3500));
+        final resp = await _dio.get<dynamic>(
+          'https://inputtools.google.com/request',
+          queryParameters: {
+            'text': cleaned.toLowerCase(),
+            'itc': 'ja-t-i0-und',
+            'num': 4,
+          },
+        ).timeout(const Duration(milliseconds: 3500));
         final parsed = _parseGoogleImeResponse(resp.data);
         if (parsed.isNotEmpty && parsed.first.isNotEmpty) {
           for (final cand in parsed.first) {
@@ -1188,23 +1517,20 @@ class MetadataService {
           }
           if (latinWords.isEmpty) return;
 
-          final resp = await _dio
-              .get<dynamic>(
-                'https://inputtools.google.com/request',
-                queryParameters: {
-                  'text': latinWords.join(','),
-                  'itc': 'ja-t-i0-und',
-                  'num': 5,
-                },
-              )
-              .timeout(const Duration(milliseconds: 3500));
+          final resp = await _dio.get<dynamic>(
+            'https://inputtools.google.com/request',
+            queryParameters: {
+              'text': latinWords.join(','),
+              'itc': 'ja-t-i0-und',
+              'num': 5,
+            },
+          ).timeout(const Duration(milliseconds: 3500));
           final perWord = _parseGoogleImeResponse(resp.data);
-          for (int k = 0;
-              k < perWord.length && k < latinIdx.length;
-              k++) {
+          for (int k = 0; k < perWord.length && k < latinIdx.length; k++) {
             final targetGroup = tokenVariants[latinIdx[k]];
             for (final c in perWord[k]) {
-              final cleanCand = c.replaceAll('\u3000', ' ').trim().toLowerCase();
+              final cleanCand =
+                  c.replaceAll('\u3000', ' ').trim().toLowerCase();
               if (cleanCand.isNotEmpty) {
                 targetGroup.add(cleanCand);
               }
@@ -1217,18 +1543,16 @@ class MetadataService {
     // 3. Google Translate (`gtx`) fallback for loanwords / English-to-Japanese titles
     futures.add(() async {
       try {
-        final resp = await _dio
-            .get<dynamic>(
-              'https://translate.googleapis.com/translate_a/single',
-              queryParameters: {
-                'client': 'gtx',
-                'sl': 'en',
-                'tl': 'ja',
-                'dt': 't',
-                'q': cleaned,
-              },
-            )
-            .timeout(const Duration(milliseconds: 3200));
+        final resp = await _dio.get<dynamic>(
+          'https://translate.googleapis.com/translate_a/single',
+          queryParameters: {
+            'client': 'gtx',
+            'sl': 'en',
+            'tl': 'ja',
+            'dt': 't',
+            'q': cleaned,
+          },
+        ).timeout(const Duration(milliseconds: 3200));
         final data = resp.data is String ? jsonDecode(resp.data) : resp.data;
         if (data is List && data.isNotEmpty && data[0] is List) {
           final sb = StringBuffer();
@@ -1324,7 +1648,8 @@ class MetadataService {
   }
 
   String _dedupTrackKey(String artist, String title) {
-    final normArtist = artist.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final normArtist =
+        artist.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
     final normTitle = _stripFeaturedFromTitle(title)
         .toLowerCase()
         .replaceAll(RegExp(r'\s+'), ' ')
@@ -1345,8 +1670,8 @@ class MetadataService {
     final albumLower = track.album.toLowerCase();
     final combined = '$titleLower $artistLower';
 
-    double score = sourceBoost.toDouble() +
-        ((15 - rankInSource).clamp(0, 15) * 1.2);
+    double score =
+        sourceBoost.toDouble() + ((15 - rankInSource).clamp(0, 15) * 1.2);
 
     final groups = expansion.tokenVariantGroups;
     int matchedGroups = 0;
@@ -1471,7 +1796,9 @@ class MetadataService {
 
         tracks.add(
           TrackMetadata(
-            spotifyUrl: trackViewUrl.isNotEmpty ? trackViewUrl : 'search:$artist - $title',
+            spotifyUrl: trackViewUrl.isNotEmpty
+                ? trackViewUrl
+                : 'search:$artist - $title',
             title: title,
             artist: artist,
             album: album.isNotEmpty ? album : title,
@@ -1516,6 +1843,7 @@ class MetadataService {
       final durationSec = _parseInt(m['duration']);
       final previewUrl = (m['preview']?.toString() ?? '').trim();
       final linkUrl = (m['link']?.toString() ?? '').trim();
+      final isrc = (m['isrc']?.toString() ?? '').trim();
 
       tracks.add(
         TrackMetadata(
@@ -1527,6 +1855,7 @@ class MetadataService {
           durationSeconds: durationSec > 0 ? durationSec : 200,
           coverUrl: coverXl,
           previewAudioUrl: previewUrl.isNotEmpty ? previewUrl : null,
+          isrc: isrc.isNotEmpty ? isrc : null,
         ),
       );
     }
@@ -1553,7 +1882,12 @@ class MetadataService {
   String normalizeSpotifyTrackUrl(String rawUrl) {
     final trimmed = extractUrlFromSharedText(rawUrl);
     if (trimmed.isEmpty) {
-      throw const MetadataException('URL Spotify tidak boleh kosong.');
+      throw MetadataException(
+        AppStrings.tr(
+          'URL Spotify tidak boleh kosong.',
+          'Spotify URL cannot be empty.',
+        ),
+      );
     }
 
     final spotifyUriMatch =
@@ -1566,22 +1900,33 @@ class MetadataService {
     if (uri == null ||
         (!uri.host.endsWith('open.spotify.com') &&
             !uri.host.endsWith('spotify.com'))) {
-      throw const MetadataException(
-        'Link tidak valid. Gunakan link lagu Spotify seperti https://open.spotify.com/track/...',
+      throw MetadataException(
+        AppStrings.tr(
+          'Link tidak valid. Gunakan link lagu Spotify seperti https://open.spotify.com/track/...',
+          'Invalid link. Use a Spotify track link such as https://open.spotify.com/track/...',
+        ),
       );
     }
 
     final pathSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     final trackIndex = pathSegments.indexOf('track');
     if (trackIndex == -1 || trackIndex + 1 >= pathSegments.length) {
-      throw const MetadataException(
-        'URL bukan merupakan link lagu (track) Spotify yang valid.',
+      throw MetadataException(
+        AppStrings.tr(
+          'URL bukan merupakan link lagu (track) Spotify yang valid.',
+          'URL is not a valid Spotify track link.',
+        ),
       );
     }
 
     final trackId = pathSegments[trackIndex + 1];
     if (!RegExp(r'^[a-zA-Z0-9]{15,30}$').hasMatch(trackId)) {
-      throw const MetadataException('ID lagu Spotify pada URL tidak valid.');
+      throw MetadataException(
+        AppStrings.tr(
+          'ID lagu Spotify pada URL tidak valid.',
+          'Invalid Spotify track ID in URL.',
+        ),
+      );
     }
 
     return 'https://open.spotify.com/track/$trackId';
@@ -1590,7 +1935,8 @@ class MetadataService {
   /// Extracts initial metadata from Spotify oEmbed & HTML meta tags,
   /// then enriches it with Deezer Public API (Album, Release Year, Duration, 1000x1000 Cover).
   Future<TrackMetadata> fetchTrackMetadata(String rawSpotifyUrl) async {
-    debugPrint('[AUTO_E2E] TAHAP_1: Memulai ekstraksi metadata untuk URL: $rawSpotifyUrl');
+    debugPrint(
+        '[AUTO_E2E] TAHAP_1: Memulai ekstraksi metadata untuk URL: $rawSpotifyUrl');
     final canonicalUrl = normalizeSpotifyTrackUrl(rawSpotifyUrl);
     debugPrint('[AUTO_E2E] TAHAP_1: Canonical URL: $canonicalUrl');
 
@@ -1609,7 +1955,8 @@ class MetadataService {
     String? previewAudioUrl = spotifyData.previewAudioUrl;
 
     // Tahap 2: Deezer Public API Enricher
-    debugPrint('[AUTO_E2E] TAHAP_2: Memulai pengayaan metadata via Deezer API...');
+    debugPrint(
+        '[AUTO_E2E] TAHAP_2: Memulai pengayaan metadata via Deezer API...');
     final deezerEnriched = await _enrichWithDeezer(
       title: title,
       artist: artist,
@@ -1644,7 +1991,8 @@ class MetadataService {
         previewAudioUrl = deezerEnriched.previewAudioUrl;
       }
     } else {
-      debugPrint('[AUTO_E2E] TAHAP_2: Deezer tidak mengembalikan hasil tambahan, menggunakan metadata Spotify.');
+      debugPrint(
+          '[AUTO_E2E] TAHAP_2: Deezer tidak mengembalikan hasil tambahan, menggunakan metadata Spotify.');
     }
 
     final finalMetadata = TrackMetadata(
@@ -1652,12 +2000,12 @@ class MetadataService {
       title: title.isNotEmpty ? title : 'Spotify Track',
       artist: artist.isNotEmpty ? artist : 'Unknown Artist',
       album: album.isNotEmpty ? album : (title.isNotEmpty ? title : 'Single'),
-      releaseYear: releaseYear.isNotEmpty
-          ? releaseYear
-          : DateTime.now().year.toString(),
+      releaseYear:
+          releaseYear.isNotEmpty ? releaseYear : DateTime.now().year.toString(),
       durationSeconds: durationSeconds > 0 ? durationSeconds : 200,
       coverUrl: coverUrl,
       previewAudioUrl: previewAudioUrl,
+      isrc: deezerEnriched?.isrc,
     );
 
     debugPrint(
@@ -1755,7 +2103,8 @@ class MetadataService {
         );
       }
     } catch (e, s) {
-      debugPrint('[AUTO_E2E] TAHAP_1: Ekstraksi HTML gagal (fallback ke oEmbed): $e\n$s');
+      debugPrint(
+          '[AUTO_E2E] TAHAP_1: Ekstraksi HTML gagal (fallback ke oEmbed): $e\n$s');
     }
 
     String title = ogTitle.isNotEmpty ? ogTitle : oembedTitle;
@@ -1883,6 +2232,7 @@ class MetadataService {
       final deezerTitle = (chosenTrack['title']?.toString() ?? '').trim();
       final deezerDuration = _parseInt(chosenTrack['duration']);
       final deezerPreview = (chosenTrack['preview']?.toString() ?? '').trim();
+      final deezerIsrc = (chosenTrack['isrc']?.toString() ?? '').trim();
 
       final artistObj = _ensureMap(chosenTrack['artist']);
       final deezerArtist = (artistObj?['name']?.toString() ?? '').trim();
@@ -1908,7 +2258,8 @@ class MetadataService {
               (albumData?['release_date']?.toString() ?? '').trim();
           releaseYear = _extractYear(releaseDate);
         } catch (e, s) {
-          debugPrint('[AUTO_E2E] TAHAP_2: Gagal mengambil detail album Deezer $albumId: $e\n$s');
+          debugPrint(
+              '[AUTO_E2E] TAHAP_2: Gagal mengambil detail album Deezer $albumId: $e\n$s');
         }
       }
 
@@ -1920,6 +2271,7 @@ class MetadataService {
         durationSeconds: deezerDuration,
         coverUrl: coverXl,
         previewAudioUrl: deezerPreview.isNotEmpty ? deezerPreview : null,
+        isrc: deezerIsrc.isNotEmpty ? deezerIsrc : null,
       );
     } catch (e, s) {
       debugPrint('[AUTO_E2E] TAHAP_2: Error saat enrich Deezer: $e\n$s');
@@ -2051,6 +2403,7 @@ class _PartialMetadata {
   final int durationSeconds;
   final String coverUrl;
   final String? previewAudioUrl;
+  final String? isrc;
 
   const _PartialMetadata({
     required this.title,
@@ -2060,6 +2413,7 @@ class _PartialMetadata {
     required this.durationSeconds,
     required this.coverUrl,
     this.previewAudioUrl,
+    this.isrc,
   });
 }
 

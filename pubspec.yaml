@@ -29,6 +29,21 @@ flutter:
   uses-material-design: true
   assets:
     - assets/musevee_logo.png
+    - assets/folder.png
+    - assets/search.png
+    - assets/check.png
+    - assets/album.png
+    - assets/vinyl.png
+    - assets/heart.png
+    - assets/recently.png
+    - assets/fire.png
+    - assets/not-allowed.png
+    - assets/add.png
+    - assets/download.png
+    - assets/pencil.png
+    - assets/audio.png
+    - assets/folder_picker.png
+    - assets/add-list.png
     - assets/icons/
   fonts:
     - family: Poppins

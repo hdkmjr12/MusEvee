@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/track_metadata.dart';
+import '../utils/app_strings.dart';
 
 class AudioExtractionException implements Exception {
   final String message;
@@ -125,9 +126,8 @@ class AudioService {
     final query = '${metadata.artist} - ${metadata.title} Official Audio';
     final yt = YoutubeExplode();
     try {
-      final results = await yt.search
-          .search(query)
-          .timeout(const Duration(seconds: 12));
+      final results =
+          await yt.search.search(query).timeout(const Duration(seconds: 12));
       final batch = results.take(8).toList();
       if (batch.isEmpty) return const [];
 
@@ -165,8 +165,15 @@ class AudioService {
     final tempDir = await getTemporaryDirectory();
     final preferredId = metadata.preferredYoutubeVideoId?.trim() ?? '';
     final query = '${metadata.artist} - ${metadata.title} Official Audio';
-    debugPrint('[AUTO_E2E] TAHAP_4: Memulai pencarian audio untuk query: "$query" (preferredId="$preferredId")');
-    onProgress?.call(0.02, 'Mencari sumber audio: "$query"...');
+    debugPrint(
+        '[AUTO_E2E] TAHAP_4: Memulai pencarian audio untuk query: "$query" (preferredId="$preferredId")');
+    onProgress?.call(
+      0.02,
+      AppStrings.tr(
+        'Mencari sumber audio: "$query"...',
+        'Searching audio sources: "$query"...',
+      ),
+    );
 
     // 1. Search candidate videos on YouTube (or fetch preferred video first)
     List<Video> rankedVideos = const [];
@@ -179,7 +186,8 @@ class AudioService {
               .get(preferredId)
               .timeout(const Duration(seconds: 10));
         } catch (e) {
-          debugPrint('[AUTO_E2E] TAHAP_4: Gagal mengambil preferredVideo $preferredId: $e');
+          debugPrint(
+              '[AUTO_E2E] TAHAP_4: Gagal mengambil preferredVideo $preferredId: $e');
         }
       }
 
@@ -207,7 +215,7 @@ class AudioService {
       searchYt.close();
     }
 
-    String lastErrorDetail = 'Belum ada stream yang berhasil.';
+    String lastErrorDetail = AppStrings.svcNoAudioStreamYet;
 
     // 2. Layer 1: Try YoutubeExplode multi-client extraction on top candidate videos
     final videosToTry = rankedVideos.take(3).toList();
@@ -220,7 +228,10 @@ class AudioService {
 
       onProgress?.call(
         0.05,
-        'Sumber terpilih: "${video.title}" ($durationStr)',
+        AppStrings.tr(
+          'Sumber terpilih: "${video.title}" ($durationStr)',
+          'Selected source: "${video.title}" ($durationStr)',
+        ),
       );
 
       for (int cIdx = 0; cIdx < _clientProfiles.length; cIdx++) {
@@ -230,7 +241,10 @@ class AudioService {
 
         onProgress?.call(
           manifestProgress,
-          'Ekstraksi manifest via client ${profile.name}...',
+          AppStrings.tr(
+            'Ekstraksi manifest via client ${profile.name}...',
+            'Extracting manifest via ${profile.name} client...',
+          ),
         );
         debugPrint(
           '[AUTO_E2E] TAHAP_4: Meminta manifest video ${video.id.value} dengan client ${profile.name} (watchPage=${profile.requireWatchPage})...',
@@ -256,7 +270,8 @@ class AudioService {
           );
         } catch (e, s) {
           lastErrorDetail = 'Manifest ${profile.name} gagal: $e';
-          debugPrint('[AUTO_E2E] TAHAP_4: Manifest ${profile.name} GAGAL: $e\n$s');
+          debugPrint(
+              '[AUTO_E2E] TAHAP_4: Manifest ${profile.name} GAGAL: $e\n$s');
           clientYt.close();
           continue;
         }
@@ -306,7 +321,13 @@ class AudioService {
             debugPrint(
               '[AUTO_E2E] TAHAP_4: Unduhan Direct Client-UA BERHASIL -> ${directFile.path} (${await directFile.length()} bytes)',
             );
-            onProgress?.call(1.0, 'Unduhan stream audio selesai.');
+            onProgress?.call(
+              1.0,
+              AppStrings.tr(
+                'Unduhan stream audio selesai.',
+                'Audio stream download complete.',
+              ),
+            );
             return directFile;
           } catch (e, s) {
             final errStr = e.toString();
@@ -314,7 +335,7 @@ class AudioService {
               receivedHttp403 = true;
             }
             lastErrorDetail =
-                'Direct stream ${streamInfo.container.name} (${profile.name}) gagal: $e';
+                'Direct stream ${streamInfo.container.name} (${profile.name}) ${AppStrings.isIndonesian ? 'gagal' : 'failed'}: $e';
             debugPrint(
               '[AUTO_E2E] TAHAP_4: Direct Client-UA stream #${sIdx + 1} gagal ($e)...\n$s',
             );
@@ -343,11 +364,17 @@ class AudioService {
             debugPrint(
               '[AUTO_E2E] TAHAP_4: Unduhan YoutubeExplode stream BERHASIL -> ${downloadedFile.path} (${await downloadedFile.length()} bytes)',
             );
-            onProgress?.call(1.0, 'Unduhan stream audio selesai.');
+            onProgress?.call(
+              1.0,
+              AppStrings.tr(
+                'Unduhan stream audio selesai.',
+                'Audio stream download complete.',
+              ),
+            );
             return downloadedFile;
           } catch (e, s) {
             lastErrorDetail =
-                'Stream ${streamInfo.container.name} (${profile.name}) gagal: $e';
+                'Stream ${streamInfo.container.name} (${profile.name}) ${AppStrings.isIndonesian ? 'gagal' : 'failed'}: $e';
             debugPrint('[AUTO_E2E] TAHAP_4: $lastErrorDetail\n$s');
             try {
               if (await rawAudioFile.exists()) {
@@ -388,7 +415,7 @@ class AudioService {
     }
 
     throw AudioExtractionException(
-      'Gagal mengunduh stream audio di semua jalur ekstraksi. Detail terakhir: $lastErrorDetail',
+      AppStrings.svcAudioDownloadAllFailed(lastErrorDetail),
     );
   }
 
@@ -449,7 +476,12 @@ class AudioService {
 
         final bodyStream = response.data?.stream;
         if (bodyStream == null) {
-          throw const AudioExtractionException('Response body stream kosong.');
+          throw AudioExtractionException(
+            AppStrings.tr(
+              'Response body stream kosong.',
+              'Empty response body stream.',
+            ),
+          );
         }
 
         int chunkReceived = 0;
@@ -472,12 +504,19 @@ class AudioService {
                   (expectedTotal / (1024 * 1024)).toStringAsFixed(2);
               onProgress?.call(
                 mappedProgress,
-                'Mengunduh audio ($containerLabel ${bitrateKbps}kbps): $downloadedMb MB / $totalMb MB',
+                AppStrings.svcDownloadingAudioProgress(
+                  '$containerLabel ${bitrateKbps}kbps',
+                  downloadedMb,
+                  totalMb,
+                ),
               );
             } else {
               onProgress?.call(
                 0.55,
-                'Mengunduh audio ($containerLabel ${bitrateKbps}kbps): $downloadedMb MB',
+                AppStrings.svcDownloadingAudioProgress(
+                  '$containerLabel ${bitrateKbps}kbps',
+                  downloadedMb,
+                ),
               );
             }
           }
@@ -496,8 +535,12 @@ class AudioService {
     }
 
     if (!await targetFile.exists() || await targetFile.length() < 65536) {
+      final size = await targetFile.exists() ? await targetFile.length() : 0;
       throw AudioExtractionException(
-        'File hasil unduhan direct terlalu kecil (${await targetFile.exists() ? await targetFile.length() : 0} bytes).',
+        AppStrings.tr(
+          'File hasil unduhan direct terlalu kecil ($size bytes).',
+          'Downloaded direct stream file is too small ($size bytes).',
+        ),
       );
     }
 
@@ -529,7 +572,13 @@ class AudioService {
     // 1. Try Piped instances
     for (final instance in _pipedInstances) {
       try {
-        onProgress?.call(0.14, 'Mencoba mirror Piped ($instance)...');
+        onProgress?.call(
+          0.14,
+          AppStrings.tr(
+            'Mencoba mirror Piped ($instance)...',
+            'Trying Piped mirror ($instance)...',
+          ),
+        );
         final resp = await _dio
             .get<dynamic>('$instance/streams/$videoId')
             .timeout(const Duration(seconds: 10));
@@ -541,7 +590,8 @@ class AudioService {
               .whereType<Map<String, dynamic>>()
               .toList()
             ..sort(
-              (a, b) => _parseInt(b['bitrate']).compareTo(_parseInt(a['bitrate'])),
+              (a, b) =>
+                  _parseInt(b['bitrate']).compareTo(_parseInt(a['bitrate'])),
             );
 
           for (final stream in sorted.take(2)) {
@@ -569,7 +619,13 @@ class AudioService {
     // 2. Try Invidious instances
     for (final instance in _invidiousInstances) {
       try {
-        onProgress?.call(0.15, 'Mencoba mirror Invidious ($instance)...');
+        onProgress?.call(
+          0.15,
+          AppStrings.tr(
+            'Mencoba mirror Invidious ($instance)...',
+            'Trying Invidious mirror ($instance)...',
+          ),
+        );
         final resp = await _dio
             .get<dynamic>('$instance/api/v1/videos/$videoId')
             .timeout(const Duration(seconds: 10));
@@ -579,11 +635,13 @@ class AudioService {
           final audioItems = adaptive
               .map(_ensureMap)
               .whereType<Map<String, dynamic>>()
-              .where((m) =>
-                  (m['type']?.toString() ?? '').toLowerCase().startsWith('audio/'))
+              .where((m) => (m['type']?.toString() ?? '')
+                  .toLowerCase()
+                  .startsWith('audio/'))
               .toList()
             ..sort(
-              (a, b) => _parseInt(b['bitrate']).compareTo(_parseInt(a['bitrate'])),
+              (a, b) =>
+                  _parseInt(b['bitrate']).compareTo(_parseInt(a['bitrate'])),
             );
 
           for (final item in audioItems.take(2)) {
@@ -628,15 +686,20 @@ class AudioService {
 
     for (final endpoint in _saavnApiInstances) {
       try {
-        onProgress?.call(0.15, 'Mengambil stream dari Public Audio CDN...');
-        debugPrint('[AUTO_E2E] TAHAP_4: Query Public Audio CDN $endpoint?query=$query');
+        onProgress?.call(
+          0.15,
+          AppStrings.tr(
+            'Mengambil stream dari Public Audio CDN...',
+            'Fetching stream from Public Audio CDN...',
+          ),
+        );
+        debugPrint(
+            '[AUTO_E2E] TAHAP_4: Query Public Audio CDN $endpoint?query=$query');
 
-        final resp = await _dio
-            .get<dynamic>(
-              endpoint,
-              queryParameters: {'query': query, 'limit': 8},
-            )
-            .timeout(const Duration(seconds: 12));
+        final resp = await _dio.get<dynamic>(
+          endpoint,
+          queryParameters: {'query': query, 'limit': 8},
+        ).timeout(const Duration(seconds: 12));
 
         final root = _ensureMap(resp.data);
         if (root == null) continue;
@@ -671,7 +734,8 @@ class AudioService {
 
         if (chosenSong == null) continue;
 
-        final downloadUrls = chosenSong['downloadUrl'] ?? chosenSong['download_url'];
+        final downloadUrls =
+            chosenSong['downloadUrl'] ?? chosenSong['download_url'];
         String bestStreamUrl = '';
 
         if (downloadUrls is List && downloadUrls.isNotEmpty) {
@@ -712,7 +776,8 @@ class AudioService {
           return downloaded;
         }
       } catch (e, s) {
-        debugPrint('[AUTO_E2E] TAHAP_4: Public Audio CDN $endpoint gagal: $e\n$s');
+        debugPrint(
+            '[AUTO_E2E] TAHAP_4: Public Audio CDN $endpoint gagal: $e\n$s');
       }
     }
 
@@ -731,40 +796,49 @@ class AudioService {
       }
 
       int lastUiMs = 0;
-      await _dio
-          .download(
-            url,
-            targetFile.path,
-            onReceiveProgress: (received, total) {
-              final nowMs = DateTime.now().millisecondsSinceEpoch;
-              if (nowMs - lastUiMs >= 80 || (total > 0 && received >= total)) {
-                lastUiMs = nowMs;
-                final recMb = (received / (1024 * 1024)).toStringAsFixed(2);
-                if (total > 0) {
-                  final ratio = (received / total).clamp(0.0, 1.0);
-                  final mapped = 0.16 + (ratio * 0.84);
-                  final totMb = (total / (1024 * 1024)).toStringAsFixed(2);
-                  onProgress?.call(
-                    mapped,
-                    'Mengunduh audio ($label): $recMb MB / $totMb MB',
-                  );
-                } else {
-                  onProgress?.call(
-                    0.55,
-                    'Mengunduh audio ($label): $recMb MB',
-                  );
-                }
-              }
-            },
-          )
-          .timeout(const Duration(seconds: 45));
+      await _dio.download(
+        url,
+        targetFile.path,
+        onReceiveProgress: (received, total) {
+          final nowMs = DateTime.now().millisecondsSinceEpoch;
+          if (nowMs - lastUiMs >= 80 || (total > 0 && received >= total)) {
+            lastUiMs = nowMs;
+            final recMb = (received / (1024 * 1024)).toStringAsFixed(2);
+            if (total > 0) {
+              final ratio = (received / total).clamp(0.0, 1.0);
+              final mapped = 0.16 + (ratio * 0.84);
+              final totMb = (total / (1024 * 1024)).toStringAsFixed(2);
+              onProgress?.call(
+                mapped,
+                AppStrings.svcDownloadingAudioProgress(
+                  label,
+                  recMb,
+                  totMb,
+                ),
+              );
+            } else {
+              onProgress?.call(
+                0.55,
+                AppStrings.svcDownloadingAudioProgress(label, recMb),
+              );
+            }
+          }
+        },
+      ).timeout(const Duration(seconds: 45));
 
       if (await targetFile.exists() && await targetFile.length() >= 65536) {
-        onProgress?.call(1.0, 'Unduhan stream audio selesai.');
+        onProgress?.call(
+          1.0,
+          AppStrings.tr(
+            'Unduhan stream audio selesai.',
+            'Audio stream download complete.',
+          ),
+        );
         return targetFile;
       }
     } catch (e) {
-      debugPrint('[AUTO_E2E] TAHAP_4: _downloadGenericHttpAudio ($label) gagal: $e');
+      debugPrint(
+          '[AUTO_E2E] TAHAP_4: _downloadGenericHttpAudio ($label) gagal: $e');
       try {
         if (await targetFile.exists()) await targetFile.delete();
       } catch (_) {}
@@ -906,7 +980,10 @@ class AudioService {
 
     onProgress?.call(
       0.16,
-      'Menghubungkan stream $streamTypeLabel $containerLabel (${bitrateKbps}kbps - $clientName)...',
+      AppStrings.tr(
+        'Menghubungkan stream $streamTypeLabel $containerLabel (${bitrateKbps}kbps - $clientName)...',
+        'Connecting $streamTypeLabel $containerLabel stream (${bitrateKbps}kbps - $clientName)...',
+      ),
     );
 
     final fileSink = targetFile.openWrite();
@@ -923,7 +1000,10 @@ class AudioService {
         if (!completer.isCompleted) {
           completer.completeError(
             TimeoutException(
-              'Stream stalled selama 12 detik ($receivedBytes bytes diterima).',
+              AppStrings.tr(
+                'Stream stalled selama 12 detik ($receivedBytes bytes diterima).',
+                'Stream stalled for 12 seconds ($receivedBytes bytes received).',
+              ),
             ),
           );
           unawaited(subscription?.cancel());
@@ -958,12 +1038,19 @@ class AudioService {
               final totalMb = (totalBytes / (1024 * 1024)).toStringAsFixed(2);
               onProgress?.call(
                 mappedProgress,
-                'Mengunduh audio ($containerLabel ${bitrateKbps}kbps): $downloadedMb MB / $totalMb MB',
+                AppStrings.svcDownloadingAudioProgress(
+                  '$containerLabel ${bitrateKbps}kbps',
+                  downloadedMb,
+                  totalMb,
+                ),
               );
             } else {
               onProgress?.call(
                 0.55,
-                'Mengunduh audio ($containerLabel ${bitrateKbps}kbps): $downloadedMb MB',
+                AppStrings.svcDownloadingAudioProgress(
+                  '$containerLabel ${bitrateKbps}kbps',
+                  downloadedMb,
+                ),
               );
             }
           }
@@ -993,8 +1080,11 @@ class AudioService {
     }
 
     if (!await targetFile.exists() || await targetFile.length() < 65536) {
-      throw const AudioExtractionException(
-        'File stream audio kosong atau terlalu kecil (< 64 KB).',
+      throw AudioExtractionException(
+        AppStrings.tr(
+          'File stream audio kosong atau terlalu kecil (< 64 KB).',
+          'Audio stream file is empty or too small (< 64 KB).',
+        ),
       );
     }
 
@@ -1012,7 +1102,11 @@ class AudioService {
         onTimeoutDispose();
         completer.completeError(
           TimeoutException(
-              'Operasi melewati batas waktu ${timeout.inSeconds} detik.'),
+            AppStrings.tr(
+              'Operasi melewati batas waktu ${timeout.inSeconds} detik.',
+              'Operation timed out after ${timeout.inSeconds} seconds.',
+            ),
+          ),
         );
       }
     });

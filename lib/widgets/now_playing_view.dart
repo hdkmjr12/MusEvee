@@ -213,8 +213,7 @@ class _LyricLineAnimSnapshot {
 class _DynamicInitialScrollController extends ScrollController {
   double Function()? initialOffsetResolver;
 
-  _DynamicInitialScrollController()
-      : super(keepScrollOffset: false);
+  _DynamicInitialScrollController() : super(keepScrollOffset: false);
 
   @override
   double get initialScrollOffset => initialOffsetResolver?.call() ?? 0.0;
@@ -376,19 +375,47 @@ class NowPlayingView extends StatefulWidget {
         : rawWidth;
   }
 
+  /// Returns the active-line offset for Full Lyrics (Panel 0 & Sheet),
+  /// clamped to `[-4.0, 2.0]` so presets below `11.5 pt` remain locked at the
+  /// `11.5 pt` baseline (`18.0 pt` floor) on Full Lyrics.
+  static double computeStageActiveFontPrefOffset(double lyricsFontSizePt) {
+    return (lyricsFontSizePt - 15.5).clamp(-4.0, 2.0);
+  }
+
+  /// Returns how many `1.0 pt` steps [lyricsFontSizePt] sits below `11.5 pt`
+  /// (`0.0` for `>= 11.5 pt`; `1.0 / 2.0 / 3.0` for `10.5 / 9.5 / 8.5 pt`).
+  static double _belowMinPresetSteps(double lyricsFontSizePt) {
+    return (11.5 - lyricsFontSizePt).clamp(0.0, 3.0);
+  }
+
+  /// Returns the Home-column active-line preferred offset (`-4.0 .. +2.0` for
+  /// `>= 11.5 pt`, stepping down `-1.5` per preset below `11.5 pt`).
+  static double computeHomeActiveFontPrefOffset(double lyricsFontSizePt) {
+    return computeStageActiveFontPrefOffset(lyricsFontSizePt) -
+        1.5 * _belowMinPresetSteps(lyricsFontSizePt);
+  }
+
+  /// Returns the Home-column active-line minimum floor (`18.0` for `>= 11.5 pt`,
+  /// stepping down `16.5 / 15.0 / 13.5` for `10.5 / 9.5 / 8.5 pt`).
+  static double computeHomeActiveMinFontSize(double lyricsFontSizePt) {
+    return MusEveePalette.lyricActiveMinFontSize -
+        1.5 * _belowMinPresetSteps(lyricsFontSizePt);
+  }
+
   /// Secondary (non-active) lyric font size across the `Home ↔ Lyrics` morph (`t = 1.0 - p`):
-  /// interpolates from `lyricSecondaryFontSize` (`13.5` at `t = 0.0`, Home) to
+  /// interpolates from [homeFontSize] (`13.5` by default at `t = 0.0`, Home) to
   /// `lyricPanelSecondaryFontSize` (`14.5` at `t = 1.0`, Lyrics Stage).
-  static double computeMorphSecondaryFontSize(double t) {
+  static double computeMorphSecondaryFontSize(
+    double t, {
+    double homeFontSize = MusEveePalette.lyricSecondaryFontSize,
+  }) {
     final clampedT = t.clamp(0.0, 1.0);
-    if (clampedT <= 1e-4) return MusEveePalette.lyricSecondaryFontSize;
+    if (clampedT <= 1e-4) return homeFontSize;
     if (clampedT >= 1.0 - 1e-4) {
       return MusEveePalette.lyricPanelSecondaryFontSize;
     }
-    return MusEveePalette.lyricSecondaryFontSize +
-        (MusEveePalette.lyricPanelSecondaryFontSize -
-                MusEveePalette.lyricSecondaryFontSize) *
-            clampedT;
+    return homeFontSize +
+        (MusEveePalette.lyricPanelSecondaryFontSize - homeFontSize) * clampedT;
   }
 
   /// Horizontal translation `dx` of the Home 3-line lyrics column for `p ∈ [1.0, 2.0]`
@@ -641,8 +668,8 @@ class NowPlayingView extends StatefulWidget {
         ),
       );
     } else if (wrappedCount == 1) {
-      final rowW =
-          (metrics.isNotEmpty ? metrics[0].width : 0.0).clamp(0.0, containerWidth);
+      final rowW = (metrics.isNotEmpty ? metrics[0].width : 0.0)
+          .clamp(0.0, containerWidth);
       maxLineW = rowW;
       rows.add(
         LyricRowMetrics(
@@ -905,11 +932,13 @@ class NowPlayingView extends StatefulWidget {
   }
 
   /// Steps the active lyric line font size down (`22 → 20 → 18`) if it does not
-  /// fit within 3 lines at [maxWidth]. Never returns less than `18.0`.
+  /// fit within 3 lines at [maxWidth]. Never returns less than [minFontSize]
+  /// (`18.0` by default).
   static double computeActiveLyricFontSize(
     String activeLine, {
     required double maxWidth,
     double preferredOffset = 0.0,
+    double minFontSize = MusEveePalette.lyricActiveMinFontSize,
   }) {
     const candidates = <double>[
       MusEveePalette.lyricActiveMaxFontSize,
@@ -918,7 +947,7 @@ class NowPlayingView extends StatefulWidget {
     ];
     for (final base in candidates) {
       final candidateSize = math.max(
-        MusEveePalette.lyricActiveMinFontSize,
+        minFontSize,
         base + preferredOffset,
       );
       final lines = estimateWrappedLineCount(
@@ -930,7 +959,7 @@ class NowPlayingView extends StatefulWidget {
         return candidateSize;
       }
     }
-    return MusEveePalette.lyricActiveMinFontSize;
+    return minFontSize;
   }
 
   /// Measures a single lyric line's FINAL active typography (`fontSize` after
@@ -941,6 +970,7 @@ class NowPlayingView extends StatefulWidget {
     String rawText, {
     required double columnWidth,
     double preferredOffset = 0.0,
+    double minFontSize = MusEveePalette.lyricActiveMinFontSize,
     double? devicePixelRatio,
     TextScaler textScaler = TextScaler.noScaling,
     int maxLines = 3,
@@ -955,11 +985,11 @@ class NowPlayingView extends StatefulWidget {
     const letterSpacing = -0.2;
     const fontWeight = FontWeight.w400;
 
-    double chosenSize = MusEveePalette.lyricActiveMinFontSize;
+    double chosenSize = minFontSize;
 
     for (final base in candidates) {
       final candidateSize = math.max(
-        MusEveePalette.lyricActiveMinFontSize,
+        minFontSize,
         base + preferredOffset,
       );
       final painter = TextPainter(
@@ -1005,12 +1035,13 @@ class NowPlayingView extends StatefulWidget {
   }
 
   /// Measures the resting secondary slot height (`previous` / `next` line at
-  /// `lyricSecondaryFontSize`, `FontWeight.w400`, `maxLines: 2`). Always returns
+  /// [fontSize], `FontWeight.w400`, `maxLines: 2`). Always returns
   /// at least a single-line height (`>= 22.0 px`) even when [rawText] is empty
   /// so an empty previous/next slot NEVER collapses.
   static CachedLyricLineMetrics measureSecondaryLyricSlot(
     String rawText, {
     required double columnWidth,
+    double fontSize = MusEveePalette.lyricSecondaryFontSize,
     double? devicePixelRatio,
     TextScaler textScaler = TextScaler.noScaling,
     int maxLines = 2,
@@ -1018,7 +1049,7 @@ class NowPlayingView extends StatefulWidget {
     return measureLyricLineAtWidth(
       rawText,
       containerWidth: columnWidth,
-      fontSize: MusEveePalette.lyricSecondaryFontSize,
+      fontSize: fontSize,
       isActiveRole: false,
       devicePixelRatio: devicePixelRatio,
       textScaler: textScaler,
@@ -1233,6 +1264,8 @@ class NowPlayingViewState extends State<NowPlayingView>
   String _cachedMetricsTextSignature = '';
   double _cachedMetricsColumnWidth = -1.0;
   double _cachedMetricsFontOffset = -999.0;
+  double _cachedMetricsMinFontSize = -999.0;
+  double _cachedMetricsSecondaryFontSize = -999.0;
   int _cachedMetricsEntryCount = -1;
   final Map<int, CachedLyricLineMetrics> _cachedActiveLineMetrics =
       <int, CachedLyricLineMetrics>{};
@@ -1580,8 +1613,7 @@ class NowPlayingViewState extends State<NowPlayingView>
 
   void _onPanel0TravelTick() {
     if (!mounted || !_isPanel0Traveling) return;
-    final eased =
-        Curves.easeOutCubic.transform(_panel0TravelController.value);
+    final eased = Curves.easeOutCubic.transform(_panel0TravelController.value);
     if (_lyricsPanelScrollController.hasClients) {
       final pos = _lyricsPanelScrollController.position;
       final rawOff = _panel0TravelFromScrollOffset +
@@ -1699,6 +1731,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     bool allowTriggerGlide = true,
     bool recordAsRenderedState = true,
     bool animateRoleChange = false,
+    bool allowFontScaleGlide = false,
     int roleChangeGlideDurationMs = MusEveePalette.lyricsAutoScrollDurationMs,
   }) {
     if (_morphRowStateSongPath != songPath) {
@@ -1722,7 +1755,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     final roleOrFontChanged = existing == null ||
         textChanged ||
         existing.isActiveRole != isActiveRole ||
-        (existing.fontSize - fontSize).abs() > 1.5;
+        (!allowFontScaleGlide && (existing.fontSize - fontSize).abs() > 1.5);
 
     final CachedLyricLineMetrics metrics;
     if (lockedMetricsOverride != null) {
@@ -1880,6 +1913,9 @@ class NowPlayingViewState extends State<NowPlayingView>
     required double homeWidth,
     required double zoneHeight,
     required double preferredOffset,
+    double? homePreferredOffset,
+    double homeMinFontSize = MusEveePalette.lyricActiveMinFontSize,
+    double homeSecondaryFontSize = MusEveePalette.lyricSecondaryFontSize,
     required double stageScrollDelta,
     required double dpr,
     required double emptySlotHeight,
@@ -1891,7 +1927,10 @@ class NowPlayingViewState extends State<NowPlayingView>
     final count = entries.length;
     if (count == 0) return const <int, _LyricLineAnimSnapshot>{};
     final clampedT = t.clamp(0.0, 1.0);
-    final secFontSize = NowPlayingView.computeMorphSecondaryFontSize(clampedT);
+    final secFontSize = NowPlayingView.computeMorphSecondaryFontSize(
+      clampedT,
+      homeFontSize: homeSecondaryFontSize,
+    );
     const gap = NowPlayingView.lyricSlotVerticalGap;
 
     double secSlotHeightFor(int k, {double? resolvedOverride}) {
@@ -1960,9 +1999,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                       MusEveePalette.homeIntroLine1Opacity) *
                   clampedT)
           .clamp(0.0, 1.0);
-      final op2 =
-          (MusEveePalette.homeIntroLine2Opacity * (1.0 - clampedT))
-              .clamp(0.0, 1.0);
+      final op2 = (MusEveePalette.homeIntroLine2Opacity * (1.0 - clampedT))
+          .clamp(0.0, 1.0);
 
       final introResult = <int, _LyricLineAnimSnapshot>{
         0: _LyricLineAnimSnapshot(
@@ -2014,12 +2052,20 @@ class NowPlayingViewState extends State<NowPlayingView>
       if (k == c) {
         final raw = (k >= 0 && k < count) ? entries[k].text.trim() : '';
         final text = raw.isEmpty ? '♪' : raw;
-        return _cachedActiveLineMetrics[c]?.fontSize ??
+        final homeSize = _cachedActiveLineMetrics[c]?.fontSize ??
+            NowPlayingView.computeActiveLyricFontSize(
+              text,
+              maxWidth: homeWidth,
+              preferredOffset: homePreferredOffset ?? preferredOffset,
+              minFontSize: homeMinFontSize,
+            );
+        final stageSize = _cachedPanel0ActiveMetrics[c]?.fontSize ??
             NowPlayingView.computeActiveLyricFontSize(
               text,
               maxWidth: homeWidth,
               preferredOffset: preferredOffset,
             );
+        return homeSize + (stageSize - homeSize) * clampedT;
       }
       return secFontSize;
     }
@@ -2132,8 +2178,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     if (c + 2 < count) {
       final inNextH = slotHeightFor(c + 2);
       final inNextTop = nextTop + nextH + gap;
-      final inNextOp =
-          c == 0 ? 0.0 : (0.18 * (1.0 - clampedT)).clamp(0.0, 1.0);
+      final inNextOp = c == 0 ? 0.0 : (0.18 * (1.0 - clampedT)).clamp(0.0, 1.0);
       result[c + 2] = _LyricLineAnimSnapshot(
         top: inNextTop,
         slotHeight: inNextH,
@@ -2170,6 +2215,9 @@ class NowPlayingViewState extends State<NowPlayingView>
     required double homeWidth,
     required double zoneHeight,
     required double preferredOffset,
+    double? homePreferredOffset,
+    double homeMinFontSize = MusEveePalette.lyricActiveMinFontSize,
+    double homeSecondaryFontSize = MusEveePalette.lyricSecondaryFontSize,
     required double stageScrollDelta,
     required double dpr,
     required double emptySlotHeight,
@@ -2285,6 +2333,9 @@ class NowPlayingViewState extends State<NowPlayingView>
       homeWidth: homeWidth,
       zoneHeight: zoneHeight,
       preferredOffset: preferredOffset,
+      homePreferredOffset: homePreferredOffset,
+      homeMinFontSize: homeMinFontSize,
+      homeSecondaryFontSize: homeSecondaryFontSize,
       stageScrollDelta: 0.0,
       dpr: dpr,
       emptySlotHeight: emptySlotHeight,
@@ -2343,6 +2394,9 @@ class NowPlayingViewState extends State<NowPlayingView>
     required double homeWidth,
     required double zoneHeight,
     required double preferredOffset,
+    double? homePreferredOffset,
+    double homeMinFontSize = MusEveePalette.lyricActiveMinFontSize,
+    double homeSecondaryFontSize = MusEveePalette.lyricSecondaryFontSize,
     required double stageScrollDelta,
     required double dpr,
     required double emptySlotHeight,
@@ -2359,6 +2413,9 @@ class NowPlayingViewState extends State<NowPlayingView>
       homeWidth: homeWidth,
       zoneHeight: zoneHeight,
       preferredOffset: preferredOffset,
+      homePreferredOffset: homePreferredOffset,
+      homeMinFontSize: homeMinFontSize,
+      homeSecondaryFontSize: homeSecondaryFontSize,
       stageScrollDelta: stageScrollDelta,
       dpr: dpr,
       emptySlotHeight: emptySlotHeight,
@@ -2383,6 +2440,9 @@ class NowPlayingViewState extends State<NowPlayingView>
       homeWidth: homeWidth,
       zoneHeight: zoneHeight,
       preferredOffset: preferredOffset,
+      homePreferredOffset: homePreferredOffset,
+      homeMinFontSize: homeMinFontSize,
+      homeSecondaryFontSize: homeSecondaryFontSize,
       stageScrollDelta: 0.0,
       dpr: dpr,
       emptySlotHeight: emptySlotHeight,
@@ -2404,14 +2464,12 @@ class NowPlayingViewState extends State<NowPlayingView>
           (oldSnap.colorBlend + (_slideResidualColorBlend[k] ?? 0.0))
               .clamp(0.0, 1.0);
       final startOpacity =
-          (oldSnap.opacity + (_slideResidualOpacity[k] ?? 0.0))
-              .clamp(0.0, 1.0);
+          (oldSnap.opacity + (_slideResidualOpacity[k] ?? 0.0)).clamp(0.0, 1.0);
 
       final liveSnap = _LyricLineAnimSnapshot(
         top: startTop + (newSnap.top - startTop) * clampedU,
         slotHeight: startSlotH + (newSnap.slotHeight - startSlotH) * clampedU,
-        fontSize:
-            startFontSize + (newSnap.fontSize - startFontSize) * clampedU,
+        fontSize: startFontSize + (newSnap.fontSize - startFontSize) * clampedU,
         colorBlend:
             startColorBlend + (newSnap.colorBlend - startColorBlend) * clampedU,
         opacity: startOpacity + (newSnap.opacity - startOpacity) * clampedU,
@@ -2489,8 +2547,7 @@ class NowPlayingViewState extends State<NowPlayingView>
         !_slideInterpolateRoleSize) {
       _slideInterpolateRoleSize = true;
     }
-    final rounded =
-        p.round().clamp(0, NowPlayingView.pagerPanelCount - 1);
+    final rounded = p.round().clamp(0, NowPlayingView.pagerPanelCount - 1);
     if (_currentPagerIndex != rounded && mounted) {
       setState(() {
         _currentPagerIndex = rounded;
@@ -2581,7 +2638,8 @@ class NowPlayingViewState extends State<NowPlayingView>
     final dt = rawDt.clamp(0.0, 5.0);
 
     final provider = _observedLocalProvider;
-    final isPlayingNow = provider != null ? provider.isPlaying : _latestIsPlaying;
+    final isPlayingNow =
+        provider != null ? provider.isPlaying : _latestIsPlaying;
     final hasSongNow =
         provider != null ? (provider.currentSong != null) : _latestHasSong;
     _latestIsPlaying = isPlayingNow;
@@ -2661,6 +2719,8 @@ class NowPlayingViewState extends State<NowPlayingView>
     required List<SyncedLyricEntry> entries,
     required double columnWidth,
     required double preferredOffset,
+    double minFontSize = MusEveePalette.lyricActiveMinFontSize,
+    double secondaryFontSize = MusEveePalette.lyricSecondaryFontSize,
     double? devicePixelRatio,
   }) {
     final textSig = _computeEntriesTextSignature(entries);
@@ -2668,14 +2728,22 @@ class NowPlayingViewState extends State<NowPlayingView>
         _cachedMetricsTextSignature == textSig &&
         (_cachedMetricsColumnWidth - columnWidth).abs() < 0.01 &&
         (_cachedMetricsFontOffset - preferredOffset).abs() < 0.001 &&
+        (_cachedMetricsMinFontSize - minFontSize).abs() < 0.001 &&
+        (_cachedMetricsSecondaryFontSize - secondaryFontSize).abs() < 0.001 &&
         _cachedMetricsEntryCount == entries.length &&
         _cachedEmptySecondarySlotMetrics != null) {
       return;
     }
 
+    final fontPrefChanged = _cachedMetricsSongPath == song.filePath &&
+        ((_cachedMetricsFontOffset - preferredOffset).abs() >= 0.001 ||
+            (_cachedMetricsMinFontSize - minFontSize).abs() >= 0.001 ||
+            (_cachedMetricsSecondaryFontSize - secondaryFontSize).abs() >=
+                0.001);
     if (_cachedMetricsSongPath == song.filePath &&
-        _cachedMetricsTextSignature.isNotEmpty &&
-        _cachedMetricsTextSignature != textSig) {
+        ((_cachedMetricsTextSignature.isNotEmpty &&
+                _cachedMetricsTextSignature != textSig) ||
+            fontPrefChanged)) {
       _lineMorphRowStates.clear();
       _lastRenderedLineMorphStates.clear();
       _stopRowGlideTicker();
@@ -2685,13 +2753,15 @@ class NowPlayingViewState extends State<NowPlayingView>
     _cachedMetricsTextSignature = textSig;
     _cachedMetricsColumnWidth = columnWidth;
     _cachedMetricsFontOffset = preferredOffset;
+    _cachedMetricsMinFontSize = minFontSize;
+    _cachedMetricsSecondaryFontSize = secondaryFontSize;
     _cachedMetricsEntryCount = entries.length;
     _cachedActiveLineMetrics.clear();
     _cachedSecondaryLineMetrics.clear();
-    _cachedEmptySecondarySlotMetrics =
-        NowPlayingView.measureSecondaryLyricSlot(
+    _cachedEmptySecondarySlotMetrics = NowPlayingView.measureSecondaryLyricSlot(
       '',
       columnWidth: columnWidth,
+      fontSize: secondaryFontSize,
       devicePixelRatio: devicePixelRatio,
     );
 
@@ -2702,12 +2772,13 @@ class NowPlayingViewState extends State<NowPlayingView>
         text,
         columnWidth: columnWidth,
         preferredOffset: preferredOffset,
+        minFontSize: minFontSize,
         devicePixelRatio: devicePixelRatio,
       );
-      _cachedSecondaryLineMetrics[i] =
-          NowPlayingView.measureSecondaryLyricSlot(
+      _cachedSecondaryLineMetrics[i] = NowPlayingView.measureSecondaryLyricSlot(
         text,
         columnWidth: columnWidth,
+        fontSize: secondaryFontSize,
         devicePixelRatio: devicePixelRatio,
       );
     }
@@ -2719,13 +2790,18 @@ class NowPlayingViewState extends State<NowPlayingView>
     required double columnWidth,
     required double homeColumnWidth,
     required double preferredOffset,
+    double? homePreferredOffset,
+    double homeMinFontSize = MusEveePalette.lyricActiveMinFontSize,
+    double homeSecondaryFontSize = MusEveePalette.lyricSecondaryFontSize,
     double? devicePixelRatio,
   }) {
     _ensureSongLyricMetricsCached(
       song: song,
       entries: entries,
       columnWidth: homeColumnWidth,
-      preferredOffset: preferredOffset,
+      preferredOffset: homePreferredOffset ?? preferredOffset,
+      minFontSize: homeMinFontSize,
+      secondaryFontSize: homeSecondaryFontSize,
       devicePixelRatio: devicePixelRatio,
     );
     final textSig = _computeEntriesTextSignature(entries);
@@ -2757,15 +2833,23 @@ class NowPlayingViewState extends State<NowPlayingView>
     _cachedPanel0ActiveMetrics.clear();
     _cachedPanel0SecondaryMetrics.clear();
 
+    final reuseHomeActiveFontSize =
+        ((homePreferredOffset ?? preferredOffset) - preferredOffset).abs() <
+                0.001 &&
+            (homeMinFontSize - MusEveePalette.lyricActiveMinFontSize).abs() <
+                0.001;
     for (int i = 0; i < entries.length; i++) {
       final raw = entries[i].text.trim();
       final text = raw.isEmpty ? '♪' : raw;
-      final activeRoleFontSize = _cachedActiveLineMetrics[i]?.fontSize ??
-          NowPlayingView.computeActiveLyricFontSize(
-            text,
-            maxWidth: homeColumnWidth,
-            preferredOffset: preferredOffset,
-          );
+      final activeRoleFontSize =
+          (reuseHomeActiveFontSize && _cachedActiveLineMetrics[i] != null)
+              ? _cachedActiveLineMetrics[i]!.fontSize
+              : NowPlayingView.measureActiveLyricLine(
+                  text,
+                  columnWidth: homeColumnWidth,
+                  preferredOffset: preferredOffset,
+                  devicePixelRatio: devicePixelRatio,
+                ).fontSize;
       final activeMetrics = NowPlayingView.measureLyricLineAtWidth(
         text,
         containerWidth: columnWidth,
@@ -3011,8 +3095,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     if (_isPanel0Traveling && _panel0TravelController.isAnimating) {
       final centerExtraDy =
           (1.0 - Curves.easeOutCubic.transform(_panel0TravelController.value)) *
-              (_panel0TravelExtraDyByLine[
-                      _lastLyricsPanelScrolledLineIndex] ??
+              (_panel0TravelExtraDyByLine[_lastLyricsPanelScrolledLineIndex] ??
                   0.0);
       _isPanel0Traveling = false;
       _panel0TravelExtraDyByLine.clear();
@@ -3132,6 +3215,7 @@ class NowPlayingViewState extends State<NowPlayingView>
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
 
     return Consumer2<LocalMusicProvider, DownloaderProvider>(
@@ -3212,7 +3296,6 @@ class NowPlayingViewState extends State<NowPlayingView>
                     const SizedBox(height: 10),
                   ],
                 ),
-
                 if (localProvider.isProcessingLocalTag)
                   Container(
                     color: palette.nowPlayingBg.withValues(alpha: 0.78),
@@ -3230,11 +3313,17 @@ class NowPlayingViewState extends State<NowPlayingView>
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          AppStrings.tr(
-                            'Memperbarui tag MP3...',
-                            'Updating MP3 tags...',
-                            context,
-                          ),
+                          song != null
+                              ? AppStrings.tr(
+                                  'Memperbarui tag ${song.audioFormatLabel}...',
+                                  'Updating ${song.audioFormatLabel} tags...',
+                                  context,
+                                )
+                              : AppStrings.tr(
+                                  'Memperbarui tag audio...',
+                                  'Updating audio tags...',
+                                  context,
+                                ),
                           style: TextStyle(
                             color: palette.nowPlayingPrimary,
                             fontSize: 12.5,
@@ -3278,7 +3367,9 @@ class NowPlayingViewState extends State<NowPlayingView>
                 'Song & Audio Menu',
                 context,
               ),
-              child: PressableScale(
+              child: MographSpringTap(
+                pressedScale: 0.82,
+                tapRotationRad: 0.20,
                 child: InkWell(
                   key: const ValueKey<String>('now_playing_overflow_button'),
                   borderRadius: BorderRadius.circular(24),
@@ -3309,7 +3400,9 @@ class NowPlayingViewState extends State<NowPlayingView>
             // Top-right: Favorite Heart (red when active, pale gray outline when inactive)
             Tooltip(
               message: AppStrings.tr('Favorit', 'Favorite', context),
-              child: PressableScale(
+              child: MographSpringTap(
+                pressedScale: 0.78,
+                enabled: song != null,
                 child: InkWell(
                   key: const ValueKey<String>('now_playing_favorite_button'),
                   borderRadius: BorderRadius.circular(24),
@@ -3320,14 +3413,24 @@ class NowPlayingViewState extends State<NowPlayingView>
                     width: MusEveePalette.minTouchTargetSize,
                     height: MusEveePalette.minTouchTargetSize,
                     child: Center(
-                      child: Icon(
-                        isFav
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        size: 24,
-                        color: isFav
-                            ? palette.favoriteActive
-                            : palette.nowPlayingInactiveIcon,
+                      child: MographStatePop(
+                        stateKey: isFav,
+                        scaleBoost: isFav ? 0.28 : 0.10,
+                        rotationKickRad: isFav ? -0.24 : 0.12,
+                        child: MographAnimatedSwitcher(
+                          duration: const Duration(milliseconds: 220),
+                          beginScale: 0.65,
+                          child: Icon(
+                            isFav
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            key: ValueKey<bool>(isFav),
+                            size: 24,
+                            color: isFav
+                                ? palette.favoriteActive
+                                : palette.nowPlayingInactiveIcon,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -3381,15 +3484,15 @@ class NowPlayingViewState extends State<NowPlayingView>
                   (_lyricSlideController.isAnimating || _isPanel0Traveling)) {
                 _frozenStageScrollOffsetAtDragStart = null;
               } else {
-                final centerExtraDy = (_isPanel0Traveling &&
-                        _panel0TravelController.isAnimating)
-                    ? (1.0 -
-                            Curves.easeOutCubic
-                                .transform(_panel0TravelController.value)) *
-                        (_panel0TravelExtraDyByLine[
-                                _lastLyricsPanelScrolledLineIndex] ??
-                            0.0)
-                    : 0.0;
+                final centerExtraDy =
+                    (_isPanel0Traveling && _panel0TravelController.isAnimating)
+                        ? (1.0 -
+                                Curves.easeOutCubic
+                                    .transform(_panel0TravelController.value)) *
+                            (_panel0TravelExtraDyByLine[
+                                    _lastLyricsPanelScrolledLineIndex] ??
+                                0.0)
+                        : 0.0;
                 _frozenStageScrollOffsetAtDragStart =
                     _lyricsPanelScrollController.offset - centerExtraDy;
               }
@@ -3400,8 +3503,7 @@ class NowPlayingViewState extends State<NowPlayingView>
           },
           onPointerMove: (event) {
             final start = _pointerDownLocalPos;
-            if (start != null &&
-                _lockedDragAxis == _MiddleDragAxis.undecided) {
+            if (start != null && _lockedDragAxis == _MiddleDragAxis.undecided) {
               final dx = (event.localPosition.dx - start.dx).abs();
               final dy = (event.localPosition.dy - start.dy).abs();
               final distance = math.sqrt(dx * dx + dy * dy);
@@ -3498,8 +3600,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                   final isSettledAt2 = p >= 2.0 - settledEps;
 
                   // Home -> Full Disc (p ∈ [1.0, 2.0]) choreography (unchanged from Phase 1.6)
-                  final homeLyricsOpacity = NowPlayingView
-                      .computeHomeLyricsOpacityForProgress(p);
+                  final homeLyricsOpacity =
+                      NowPlayingView.computeHomeLyricsOpacityForProgress(p);
                   final homeLyricsDx =
                       NowPlayingView.computeHomeLyricsDxForProgress(
                     progress: p,
@@ -3519,12 +3621,12 @@ class NowPlayingViewState extends State<NowPlayingView>
                       (!isSettledAt0 && !isSettledAt1 && p < 1.0) ||
                           (debugRenderMorphAtSettledEndpoints &&
                               p <= 1.0 + settledEps);
-                  final renderHomeLyricsColumn = (isSettledAt1 &&
-                          !debugRenderMorphAtSettledEndpoints) ||
-                      (!isSettledAt1 &&
-                          !isSettledAt2 &&
-                          p > 1.0 &&
-                          homeLyricsOpacity > 0.001);
+                  final renderHomeLyricsColumn =
+                      (isSettledAt1 && !debugRenderMorphAtSettledEndpoints) ||
+                          (!isSettledAt1 &&
+                              !isSettledAt2 &&
+                              p > 1.0 &&
+                              homeLyricsOpacity > 0.001);
 
                   // Single Shared Disc choreography (p = 0.0: off-screen right; p = 1.0: Home right-cropped; p = 2.0: Full Disc centered)
                   final discGeom =
@@ -3717,9 +3819,8 @@ class NowPlayingViewState extends State<NowPlayingView>
     }
 
     final effectiveFontSize = fontSizeOverride ?? metrics.fontSize;
-    final fontScale = metrics.fontSize > 0.0
-        ? (effectiveFontSize / metrics.fontSize)
-        : 1.0;
+    final fontScale =
+        metrics.fontSize > 0.0 ? (effectiveFontSize / metrics.fontSize) : 1.0;
     final heightScale = (slotHeightOverride != null && metrics.slotHeight > 0.0)
         ? (slotHeightOverride / metrics.slotHeight)
         : 1.0;
@@ -3846,8 +3947,14 @@ class NowPlayingViewState extends State<NowPlayingView>
           );
         }
 
-        final fontSizePrefOffset =
-            (localProvider.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
+        final lyricsFontPt = localProvider.lyricsFontSize;
+        final stagePrefOffset =
+            NowPlayingView.computeStageActiveFontPrefOffset(lyricsFontPt);
+        final homePrefOffset =
+            NowPlayingView.computeHomeActiveFontPrefOffset(lyricsFontPt);
+        final homeMinFontSize =
+            NowPlayingView.computeHomeActiveMinFontSize(lyricsFontPt);
+        final homeSecondaryFontSize = localProvider.secondaryLyricsFontSize;
         final edgeFadeHeight =
             zoneHeight * MusEveePalette.lyricsPanelEdgeFadeHeightFactor;
 
@@ -3862,7 +3969,10 @@ class NowPlayingViewState extends State<NowPlayingView>
               entries: entries,
               columnWidth: textColumnWidth,
               homeColumnWidth: homeWidthSnapped,
-              preferredOffset: fontSizePrefOffset,
+              preferredOffset: stagePrefOffset,
+              homePreferredOffset: homePrefOffset,
+              homeMinFontSize: homeMinFontSize,
+              homeSecondaryFontSize: homeSecondaryFontSize,
               devicePixelRatio: dpr,
             );
 
@@ -3903,7 +4013,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                   containerWidth: textColumnWidth,
                   homeWidth: homeWidthSnapped,
                   zoneHeight: zoneHeight,
-                  preferredOffset: fontSizePrefOffset,
+                  preferredOffset: stagePrefOffset,
+                  homePreferredOffset: homePrefOffset,
+                  homeMinFontSize: homeMinFontSize,
+                  homeSecondaryFontSize: homeSecondaryFontSize,
                   stageScrollDelta: 0.0,
                   dpr: dpr,
                   emptySlotHeight: 22.0,
@@ -3944,13 +4057,13 @@ class NowPlayingViewState extends State<NowPlayingView>
                         : entries[nextIdx].text.trim())
                     : '';
 
-                final activeRoleFontSize = _cachedActiveLineMetrics[centerIdx]
-                        ?.fontSize ??
-                    NowPlayingView.computeActiveLyricFontSize(
-                      centerText,
-                      maxWidth: homeWidthSnapped,
-                      preferredOffset: fontSizePrefOffset,
-                    );
+                final activeRoleFontSize =
+                    _cachedPanel0ActiveMetrics[centerIdx]?.fontSize ??
+                        NowPlayingView.computeActiveLyricFontSize(
+                          centerText,
+                          maxWidth: homeWidthSnapped,
+                          preferredOffset: stagePrefOffset,
+                        );
 
                 final _ResolvedLineRowLayout? prevLayout = hasPrev
                     ? _resolveLineMorphMetricsAndGlide(
@@ -3979,8 +4092,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                   hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                   devicePixelRatio: dpr,
                   recordAsRenderedState: isCenterActive,
-                  lockedMetricsOverride:
-                      _cachedPanel0ActiveMetrics[centerIdx],
+                  lockedMetricsOverride: _cachedPanel0ActiveMetrics[centerIdx],
                 );
                 final centerRenderLayout = isCenterActive
                     ? centerActiveRoleLayout
@@ -4148,7 +4260,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                   containerWidth: textColumnWidth,
                   homeWidth: homeWidthSnapped,
                   zoneHeight: zoneHeight,
-                  preferredOffset: fontSizePrefOffset,
+                  preferredOffset: stagePrefOffset,
+                  homePreferredOffset: homePrefOffset,
+                  homeMinFontSize: homeMinFontSize,
+                  homeSecondaryFontSize: homeSecondaryFontSize,
                   stageScrollDelta: 0.0,
                   dpr: dpr,
                   emptySlotHeight: 22.0,
@@ -4413,11 +4528,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                     ? 0.0
                     : (travelRemainingFactor *
                         (_panel0TravelExtraDyByLine[count - 1] ?? 0.0));
-                final double lastLineSlotH =
-                    (isPanel0SlideAnimating &&
-                            handoverSnaps.containsKey(count - 1))
-                        ? handoverSnaps[count - 1]!.slotHeight
-                        : slotH[count - 1];
+                final double lastLineSlotH = (isPanel0SlideAnimating &&
+                        handoverSnaps.containsKey(count - 1))
+                    ? handoverSnaps[count - 1]!.slotHeight
+                    : slotH[count - 1];
                 final liveContentHeight = effectiveAnchorOffset +
                     restScreenTop[count - 1] +
                     math.max(0.0, lastLineExtraDy) +
@@ -4543,8 +4657,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                                         final actM =
                                             _cachedPanel0ActiveMetrics[i] ??
                                                 lineMetrics[i];
-                                        itemMetrics = NowPlayingView
-                                            .lerpPanel0RowMetrics(
+                                        itemMetrics =
+                                            NowPlayingView.lerpPanel0RowMetrics(
                                           secondaryMetrics: secM,
                                           activeMetrics: actM,
                                           fontSize: snap.fontSize,
@@ -4593,21 +4707,20 @@ class NowPlayingViewState extends State<NowPlayingView>
                                             (ladderOp - restOp) *
                                                 clampedExplore;
                                       }
-                                      final List<double>? itemRowTops =
-                                          snap != null
-                                              ? null
-                                              : (i == centerIdx
-                                                  ? centerRenderLayout
-                                                      .animatedRowTops
-                                                  : (i == prevIdx &&
-                                                          prevLayout != null
-                                                      ? prevLayout
+                                      final List<double>? itemRowTops = snap !=
+                                              null
+                                          ? null
+                                          : (i == centerIdx
+                                              ? centerRenderLayout
+                                                  .animatedRowTops
+                                              : (i == prevIdx &&
+                                                      prevLayout != null
+                                                  ? prevLayout.animatedRowTops
+                                                  : (i == nextIdx &&
+                                                          nextLayout != null
+                                                      ? nextLayout
                                                           .animatedRowTops
-                                                      : (i == nextIdx &&
-                                                              nextLayout != null
-                                                          ? nextLayout
-                                                              .animatedRowTops
-                                                          : null)));
+                                                      : null)));
                                       final double liveLineExtraDy =
                                           isPanel0SlideAnimating
                                               ? 0.0
@@ -4827,8 +4940,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                   children: [
                     Text(
                       AppStrings.tr(
-                        'Belum ada lirik tertanam (USLT) pada file MP3 ini.',
-                        'No embedded lyrics (USLT) in this MP3 file yet.',
+                        'Belum ada lirik tertanam pada file ${song.audioFormatLabel} ini.',
+                        'No embedded lyrics in this ${song.audioFormatLabel} file yet.',
                         context,
                       ),
                       textAlign: TextAlign.center,
@@ -4948,7 +5061,8 @@ class NowPlayingViewState extends State<NowPlayingView>
               animatedRowTops: animatedRowTops,
               snapRowPositions: snapRowPositions,
               rowKeyPrefix: 'lyrics_panel_line_$index',
-              firstRowTextKey: ValueKey<String>('lyrics_panel_line_text_$index'),
+              firstRowTextKey:
+                  ValueKey<String>('lyrics_panel_line_text_$index'),
               fontSizeOverride: fontSizeOverride,
               slotHeightOverride: slotHeightOverride,
             ),
@@ -5053,8 +5167,14 @@ class NowPlayingViewState extends State<NowPlayingView>
       );
     }
 
-    final fontSizePrefOffset =
-        (localProvider.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
+    final lyricsFontPt = localProvider.lyricsFontSize;
+    final stagePrefOffset =
+        NowPlayingView.computeStageActiveFontPrefOffset(lyricsFontPt);
+    final homePrefOffset =
+        NowPlayingView.computeHomeActiveFontPrefOffset(lyricsFontPt);
+    final homeMinFontSize =
+        NowPlayingView.computeHomeActiveMinFontSize(lyricsFontPt);
+    final homeSecondaryFontSize = localProvider.secondaryLyricsFontSize;
 
     if (localProvider.lyricsDisplayMode == EmbeddedLyricsDisplayMode.synced &&
         song.hasSyncedLyrics) {
@@ -5065,7 +5185,10 @@ class NowPlayingViewState extends State<NowPlayingView>
           entries: entries,
           columnWidth: stageWidth,
           homeColumnWidth: homeWidthSnapped,
-          preferredOffset: fontSizePrefOffset,
+          preferredOffset: stagePrefOffset,
+          homePreferredOffset: homePrefOffset,
+          homeMinFontSize: homeMinFontSize,
+          homeSecondaryFontSize: homeSecondaryFontSize,
           devicePixelRatio: dpr,
         );
 
@@ -5078,8 +5201,7 @@ class NowPlayingViewState extends State<NowPlayingView>
             _lyricSlideProgress,
           ]),
           builder: (context, _) {
-            final rawActiveIdx =
-                NowPlayingView.resolveActiveSyncedLyricIndex(
+            final rawActiveIdx = NowPlayingView.resolveActiveSyncedLyricIndex(
               entries,
               localProvider.positionMs,
             );
@@ -5096,7 +5218,10 @@ class NowPlayingViewState extends State<NowPlayingView>
             }
 
             final morphSecondaryFontSize =
-                NowPlayingView.computeMorphSecondaryFontSize(clampedT);
+                NowPlayingView.computeMorphSecondaryFontSize(
+              clampedT,
+              homeFontSize: homeSecondaryFontSize,
+            );
             final emptySlotMetrics = NowPlayingView.measureLyricLineAtWidth(
               '',
               containerWidth: containerWidth,
@@ -5131,7 +5256,10 @@ class NowPlayingViewState extends State<NowPlayingView>
               containerWidth: containerWidth,
               homeWidth: homeWidthSnapped,
               zoneHeight: zoneHeight,
-              preferredOffset: fontSizePrefOffset,
+              preferredOffset: stagePrefOffset,
+              homePreferredOffset: homePrefOffset,
+              homeMinFontSize: homeMinFontSize,
+              homeSecondaryFontSize: homeSecondaryFontSize,
               stageScrollDelta: preSyncStageScrollDelta,
               dpr: dpr,
               emptySlotHeight: emptySlotMetrics.slotHeight,
@@ -5184,13 +5312,24 @@ class NowPlayingViewState extends State<NowPlayingView>
                       ? '♪'
                       : entries[2].text.trim())
                   : '';
-              final activeRoleFontSize0 =
+              final homeActiveRoleFontSize0 =
                   _cachedActiveLineMetrics[0]?.fontSize ??
                       NowPlayingView.computeActiveLyricFontSize(
                         text0,
                         maxWidth: homeWidthSnapped,
-                        preferredOffset: fontSizePrefOffset,
+                        preferredOffset: homePrefOffset,
+                        minFontSize: homeMinFontSize,
                       );
+              final stageActiveRoleFontSize0 =
+                  _cachedPanel0ActiveMetrics[0]?.fontSize ??
+                      NowPlayingView.computeActiveLyricFontSize(
+                        text0,
+                        maxWidth: homeWidthSnapped,
+                        preferredOffset: stagePrefOffset,
+                      );
+              final activeRoleFontSize0 = homeActiveRoleFontSize0 +
+                  (stageActiveRoleFontSize0 - homeActiveRoleFontSize0) *
+                      clampedT;
 
               final secLayout0 = has0
                   ? _resolveLineMorphMetricsAndGlide(
@@ -5204,6 +5343,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
                       lockedMetricsOverride: stageLockedSecMetricsFor(0),
+                      allowFontScaleGlide: true,
                     )
                   : _ResolvedLineRowLayout(
                       metrics: emptySlotMetrics,
@@ -5224,6 +5364,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
                       recordAsRenderedState: false,
+                      allowFontScaleGlide: true,
                     )
                   : secLayout0;
               final secLayout1 = has1
@@ -5238,6 +5379,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
                       lockedMetricsOverride: stageLockedSecMetricsFor(1),
+                      allowFontScaleGlide: true,
                     )
                   : _ResolvedLineRowLayout(
                       metrics: emptySlotMetrics,
@@ -5258,6 +5400,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                       devicePixelRatio: dpr,
                       lockedMetricsOverride: stageLockedSecMetricsFor(2),
+                      allowFontScaleGlide: true,
                     )
                   : _ResolvedLineRowLayout(
                       metrics: emptySlotMetrics,
@@ -5300,7 +5443,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                 containerWidth: containerWidth,
                 homeWidth: homeWidthSnapped,
                 zoneHeight: zoneHeight,
-                preferredOffset: fontSizePrefOffset,
+                preferredOffset: stagePrefOffset,
+                homePreferredOffset: homePrefOffset,
+                homeMinFontSize: homeMinFontSize,
+                homeSecondaryFontSize: homeSecondaryFontSize,
                 stageScrollDelta: stageScrollDelta,
                 dpr: dpr,
                 emptySlotHeight: emptySlotMetrics.slotHeight,
@@ -5494,8 +5640,9 @@ class NowPlayingViewState extends State<NowPlayingView>
                               devicePixelRatio: dpr,
                               animatedRowTops: secLayout1.animatedRowTops,
                               snapRowPositions: snapPositions,
-                              rowKeyPrefix:
-                                  has1 ? 'morph_lyric_1' : 'morph_lyric_next_empty',
+                              rowKeyPrefix: has1
+                                  ? 'morph_lyric_1'
+                                  : 'morph_lyric_next_empty',
                               firstRowTextKey: has1
                                   ? const ValueKey<String>('morph_lyric_text_1')
                                   : const ValueKey<String>(
@@ -5566,13 +5713,23 @@ class NowPlayingViewState extends State<NowPlayingView>
                     : entries[nextIdx].text.trim())
                 : '';
 
-            final activeRoleFontSize = _cachedActiveLineMetrics[centerIdx]
-                    ?.fontSize ??
-                NowPlayingView.computeActiveLyricFontSize(
-                  centerText,
-                  maxWidth: homeWidthSnapped,
-                  preferredOffset: fontSizePrefOffset,
-                );
+            final homeActiveRoleFontSize =
+                _cachedActiveLineMetrics[centerIdx]?.fontSize ??
+                    NowPlayingView.computeActiveLyricFontSize(
+                      centerText,
+                      maxWidth: homeWidthSnapped,
+                      preferredOffset: homePrefOffset,
+                      minFontSize: homeMinFontSize,
+                    );
+            final stageActiveRoleFontSize =
+                _cachedPanel0ActiveMetrics[centerIdx]?.fontSize ??
+                    NowPlayingView.computeActiveLyricFontSize(
+                      centerText,
+                      maxWidth: homeWidthSnapped,
+                      preferredOffset: stagePrefOffset,
+                    );
+            final activeRoleFontSize = homeActiveRoleFontSize +
+                (stageActiveRoleFontSize - homeActiveRoleFontSize) * clampedT;
 
             // Live row-level measurement of the 3 core lines against current containerWidth(t)
             // with ±8px wrap hysteresis and 180ms easeOutCubic row-glide animation
@@ -5588,6 +5745,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                     hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                     devicePixelRatio: dpr,
                     lockedMetricsOverride: stageLockedSecMetricsFor(prevIdx),
+                    allowFontScaleGlide: true,
                   )
                 : _ResolvedLineRowLayout(
                     metrics: emptySlotMetrics,
@@ -5608,6 +5766,7 @@ class NowPlayingViewState extends State<NowPlayingView>
               hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
               devicePixelRatio: dpr,
               recordAsRenderedState: true,
+              allowFontScaleGlide: true,
               lockedMetricsOverride: (clampedT >= 1.0 - 1e-4 &&
                       (containerWidth - stageWidth).abs() <= 0.01)
                   ? _cachedPanel0ActiveMetrics[centerIdx]
@@ -5626,6 +5785,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                     hysteresisMarginPx: NowPlayingView.wrapHysteresisMarginPx,
                     devicePixelRatio: dpr,
                     lockedMetricsOverride: stageLockedSecMetricsFor(nextIdx),
+                    allowFontScaleGlide: true,
                   )
                 : _ResolvedLineRowLayout(
                     metrics: emptySlotMetrics,
@@ -5669,7 +5829,10 @@ class NowPlayingViewState extends State<NowPlayingView>
               containerWidth: containerWidth,
               homeWidth: homeWidthSnapped,
               zoneHeight: zoneHeight,
-              preferredOffset: fontSizePrefOffset,
+              preferredOffset: stagePrefOffset,
+              homePreferredOffset: homePrefOffset,
+              homeMinFontSize: homeMinFontSize,
+              homeSecondaryFontSize: homeSecondaryFontSize,
               stageScrollDelta: stageScrollDelta,
               dpr: dpr,
               emptySlotHeight: emptySlotMetrics.slotHeight,
@@ -5715,8 +5878,9 @@ class NowPlayingViewState extends State<NowPlayingView>
             final centerSnap = liveSnaps[centerIdx];
             final nextSnap = hasNext ? liveSnaps[nextIdx] : null;
 
-            final prevTop =
-                (isAnimatingStep && prevSnap != null) ? prevSnap.top : restPrevTop;
+            final prevTop = (isAnimatingStep && prevSnap != null)
+                ? prevSnap.top
+                : restPrevTop;
             final prevSlotH = (isAnimatingStep && prevSnap != null)
                 ? prevSnap.slotHeight
                 : basePrevSlotH;
@@ -5752,8 +5916,9 @@ class NowPlayingViewState extends State<NowPlayingView>
                     palette.nowPlayingPrimary)
                 : palette.nowPlayingPrimary;
 
-            final nextTop =
-                (isAnimatingStep && nextSnap != null) ? nextSnap.top : restNextTop;
+            final nextTop = (isAnimatingStep && nextSnap != null)
+                ? nextSnap.top
+                : restNextTop;
             final nextSlotH = (isAnimatingStep && nextSnap != null)
                 ? nextSnap.slotHeight
                 : baseNextSlotH;
@@ -5784,15 +5949,13 @@ class NowPlayingViewState extends State<NowPlayingView>
                   )
                 : 0.0;
 
-            final restPrevOpacity = hasPrev
-                ? (1.0 + (prevStageOpacity - 1.0) * clampedT)
-                : 1.0;
+            final restPrevOpacity =
+                hasPrev ? (1.0 + (prevStageOpacity - 1.0) * clampedT) : 1.0;
             final restCenterOpacity = isCenterActive
                 ? 1.0
                 : (1.0 + (centerStageOpacity - 1.0) * clampedT);
-            final restNextOpacity = hasNext
-                ? (1.0 + (nextStageOpacity - 1.0) * clampedT)
-                : 1.0;
+            final restNextOpacity =
+                hasNext ? (1.0 + (nextStageOpacity - 1.0) * clampedT) : 1.0;
 
             final prevOpacity = (isAnimatingStep && prevSnap != null)
                 ? prevSnap.opacity
@@ -6150,7 +6313,6 @@ class NowPlayingViewState extends State<NowPlayingView>
                     ],
                   ),
                 ),
-
                 if (extraFadeFactor > 0.0) ...[
                   Positioned(
                     left: 0,
@@ -6276,8 +6438,14 @@ class NowPlayingViewState extends State<NowPlayingView>
       );
     }
 
-    final fontSizePrefOffset =
-        (localProvider.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
+    final lyricsFontPt = localProvider.lyricsFontSize;
+    final stagePrefOffset =
+        NowPlayingView.computeStageActiveFontPrefOffset(lyricsFontPt);
+    final homePrefOffset =
+        NowPlayingView.computeHomeActiveFontPrefOffset(lyricsFontPt);
+    final homeMinFontSize =
+        NowPlayingView.computeHomeActiveMinFontSize(lyricsFontPt);
+    final homeSecondaryFontSize = localProvider.secondaryLyricsFontSize;
 
     // 1. Synced USLT Lyrics Mode (3-line view: previous, active/upcoming, next)
     if (localProvider.lyricsDisplayMode == EmbeddedLyricsDisplayMode.synced &&
@@ -6290,7 +6458,9 @@ class NowPlayingViewState extends State<NowPlayingView>
           song: song,
           entries: entries,
           columnWidth: columnWidthSnapped,
-          preferredOffset: fontSizePrefOffset,
+          preferredOffset: homePrefOffset,
+          minFontSize: homeMinFontSize,
+          secondaryFontSize: homeSecondaryFontSize,
           devicePixelRatio: dpr,
         );
 
@@ -6327,6 +6497,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                     NowPlayingView.measureSecondaryLyricSlot(
                       '',
                       columnWidth: columnWidthSnapped,
+                      fontSize: homeSecondaryFontSize,
                       devicePixelRatio: dpr,
                     );
 
@@ -6339,7 +6510,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                   containerWidth: columnWidthSnapped,
                   homeWidth: columnWidthSnapped,
                   zoneHeight: zoneHeight,
-                  preferredOffset: fontSizePrefOffset,
+                  preferredOffset: stagePrefOffset,
+                  homePreferredOffset: homePrefOffset,
+                  homeMinFontSize: homeMinFontSize,
+                  homeSecondaryFontSize: homeSecondaryFontSize,
                   stageScrollDelta: 0.0,
                   dpr: dpr,
                   emptySlotHeight: emptySlotMetrics.slotHeight,
@@ -6371,7 +6545,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                           NowPlayingView.computeActiveLyricFontSize(
                             text0,
                             maxWidth: columnWidthSnapped,
-                            preferredOffset: fontSizePrefOffset,
+                            preferredOffset: homePrefOffset,
+                            minFontSize: homeMinFontSize,
                           );
 
                   final secLayout0 = has0
@@ -6381,7 +6556,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                           lineIndex: 0,
                           rawText: text0,
                           containerWidth: columnWidthSnapped,
-                          fontSize: MusEveePalette.lyricSecondaryFontSize,
+                          fontSize: homeSecondaryFontSize,
                           isActiveRole: false,
                           hysteresisMarginPx:
                               NowPlayingView.wrapHysteresisMarginPx,
@@ -6416,7 +6591,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                           lineIndex: 1,
                           rawText: text1,
                           containerWidth: columnWidthSnapped,
-                          fontSize: MusEveePalette.lyricSecondaryFontSize,
+                          fontSize: homeSecondaryFontSize,
                           isActiveRole: false,
                           hysteresisMarginPx:
                               NowPlayingView.wrapHysteresisMarginPx,
@@ -6436,7 +6611,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                           lineIndex: 2,
                           rawText: text2,
                           containerWidth: columnWidthSnapped,
-                          fontSize: MusEveePalette.lyricSecondaryFontSize,
+                          fontSize: homeSecondaryFontSize,
                           isActiveRole: false,
                           hysteresisMarginPx:
                               NowPlayingView.wrapHysteresisMarginPx,
@@ -6483,7 +6658,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                     containerWidth: columnWidthSnapped,
                     homeWidth: columnWidthSnapped,
                     zoneHeight: zoneHeight,
-                    preferredOffset: fontSizePrefOffset,
+                    preferredOffset: stagePrefOffset,
+                    homePreferredOffset: homePrefOffset,
+                    homeMinFontSize: homeMinFontSize,
+                    homeSecondaryFontSize: homeSecondaryFontSize,
                     stageScrollDelta: 0.0,
                     dpr: dpr,
                     emptySlotHeight: emptySlotMetrics.slotHeight,
@@ -6769,7 +6947,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                         NowPlayingView.computeActiveLyricFontSize(
                           activeText,
                           maxWidth: columnWidthSnapped,
-                          preferredOffset: fontSizePrefOffset,
+                          preferredOffset: homePrefOffset,
+                          minFontSize: homeMinFontSize,
                         );
 
                 final prevLayout = hasPrev
@@ -6779,7 +6958,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                         lineIndex: prevIdx,
                         rawText: prevText,
                         containerWidth: columnWidthSnapped,
-                        fontSize: MusEveePalette.lyricSecondaryFontSize,
+                        fontSize: homeSecondaryFontSize,
                         isActiveRole: false,
                         hysteresisMarginPx:
                             NowPlayingView.wrapHysteresisMarginPx,
@@ -6813,7 +6992,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                         lineIndex: nextIdx,
                         rawText: nextText,
                         containerWidth: columnWidthSnapped,
-                        fontSize: MusEveePalette.lyricSecondaryFontSize,
+                        fontSize: homeSecondaryFontSize,
                         isActiveRole: false,
                         hysteresisMarginPx:
                             NowPlayingView.wrapHysteresisMarginPx,
@@ -6870,7 +7049,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                   containerWidth: columnWidthSnapped,
                   homeWidth: columnWidthSnapped,
                   zoneHeight: zoneHeight,
-                  preferredOffset: fontSizePrefOffset,
+                  preferredOffset: stagePrefOffset,
+                  homePreferredOffset: homePrefOffset,
+                  homeMinFontSize: homeMinFontSize,
+                  homeSecondaryFontSize: homeSecondaryFontSize,
                   stageScrollDelta: 0.0,
                   dpr: dpr,
                   emptySlotHeight: emptySlotMetrics.slotHeight,
@@ -7172,10 +7354,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                                               animatedRowTops:
                                                   centerRowTopsToRender,
                                               snapRowPositions: snapPositions,
-                                              rowKeyPrefix:
-                                                  'home_lyric_active',
-                                              firstRowTextKey:
-                                                  ValueKey<String>(
+                                              rowKeyPrefix: 'home_lyric_active',
+                                              firstRowTextKey: ValueKey<String>(
                                                 'lyric_line_active_${effectiveIdx}_$activeText',
                                               ),
                                               fontSizeOverride:
@@ -7216,8 +7396,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                                               containerWidth:
                                                   columnWidthSnapped,
                                               centeringT: 0.0,
-                                              textColor: palette
-                                                  .nowPlayingSecondary,
+                                              textColor:
+                                                  palette.nowPlayingSecondary,
                                               devicePixelRatio: dpr,
                                               animatedRowTops:
                                                   nextLayout.animatedRowTops,
@@ -7271,16 +7451,19 @@ class NowPlayingViewState extends State<NowPlayingView>
         final m0 = NowPlayingView.measureSecondaryLyricSlot(
           line0,
           columnWidth: columnWidthSnapped,
+          fontSize: homeSecondaryFontSize,
           devicePixelRatio: dpr,
         );
         final m1 = NowPlayingView.measureSecondaryLyricSlot(
           line1,
           columnWidth: columnWidthSnapped,
+          fontSize: homeSecondaryFontSize,
           devicePixelRatio: dpr,
         );
         final m2 = NowPlayingView.measureSecondaryLyricSlot(
           line2,
           columnWidth: columnWidthSnapped,
+          fontSize: homeSecondaryFontSize,
           devicePixelRatio: dpr,
         );
 
@@ -7471,37 +7654,37 @@ class NowPlayingViewState extends State<NowPlayingView>
               children: [
                 Text(
                   AppStrings.tr(
-                    'Belum ada lirik tertanam (USLT) pada file MP3 ini.',
-                  'No embedded lyrics (USLT) in this MP3 file yet.',
-                  context,
+                    'Belum ada lirik tertanam pada file ${song.audioFormatLabel} ini.',
+                    'No embedded lyrics in this ${song.audioFormatLabel} file yet.',
+                    context,
+                  ),
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    color: palette.nowPlayingSecondary,
+                    fontSize: MusEveePalette.lyricSecondaryFontSize,
+                    fontWeight: FontWeight.w400,
+                    height: 1.4,
+                  ),
                 ),
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  color: palette.nowPlayingSecondary,
-                  fontSize: MusEveePalette.lyricSecondaryFontSize,
-                  fontWeight: FontWeight.w400,
-                  height: 1.4,
+                const SizedBox(height: 8),
+                Text(
+                  AppStrings.tr(
+                    'Ketuk untuk Cari Lirik LRCLIB atau Isi Manual',
+                    'Tap to Search LRCLIB Lyrics or Enter Manually',
+                    context,
+                  ),
+                  textAlign: TextAlign.left,
+                  style: TextStyle(
+                    color: palette.nowPlayingPrimary.withValues(alpha: 0.72),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                AppStrings.tr(
-                  'Ketuk untuk Cari Lirik LRCLIB atau Isi Manual',
-                  'Tap to Search LRCLIB Lyrics or Enter Manually',
-                  context,
-                ),
-                textAlign: TextAlign.left,
-                style: TextStyle(
-                  color: palette.nowPlayingPrimary.withValues(alpha: 0.72),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -7527,7 +7710,7 @@ class NowPlayingViewState extends State<NowPlayingView>
             style: TextStyle(
               color: palette.nowPlayingPrimary,
               fontSize: 16.5,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               height: 1.3,
               letterSpacing: -0.2,
             ),
@@ -7863,26 +8046,31 @@ class NowPlayingViewState extends State<NowPlayingView>
                       overlayRadius: 11,
                     ),
                   ),
-                  child: Slider(
-                    min: 0.0,
-                    max: totalMs.toDouble(),
-                    value: song == null ? 0.0 : currentMs,
-                    onChangeStart: song == null
-                        ? null
-                        : (val) {
-                            setState(() => _dragSeekMs = val);
-                          },
-                    onChanged: song == null
-                        ? null
-                        : (val) {
-                            setState(() => _dragSeekMs = val);
-                          },
-                    onChangeEnd: song == null
-                        ? null
-                        : (val) {
-                            _seekFromUserGesture(localProvider, val.round());
-                            setState(() => _dragSeekMs = null);
-                          },
+                  // Isolate Slider's semantic boundary from ancestor IndexedStack
+                  // geometry walks when NowPlayingView updates while offstage.
+                  child: Semantics(
+                    container: true,
+                    child: Slider(
+                      min: 0.0,
+                      max: totalMs.toDouble(),
+                      value: song == null ? 0.0 : currentMs,
+                      onChangeStart: song == null
+                          ? null
+                          : (val) {
+                              setState(() => _dragSeekMs = val);
+                            },
+                      onChanged: song == null
+                          ? null
+                          : (val) {
+                              setState(() => _dragSeekMs = val);
+                            },
+                      onChangeEnd: song == null
+                          ? null
+                          : (val) {
+                              _seekFromUserGesture(localProvider, val.round());
+                              setState(() => _dragSeekMs = null);
+                            },
+                    ),
                   ),
                 ),
               ),
@@ -7953,16 +8141,22 @@ class NowPlayingViewState extends State<NowPlayingView>
                   : AppStrings.tr('Shuffle Nonaktif', 'Shuffle Off', context),
               isActive: isShuffle,
               palette: palette,
+              tapRotationRad: 0.20,
               onTap: localProvider.toggleShuffle,
-              child: Image.asset(
-                'assets/icons/arrow.png',
-                width: 22,
-                height: 22,
-                fit: BoxFit.contain,
-                color: isShuffle
-                    ? palette.nowPlayingPrimary
-                    : palette.nowPlayingInactiveIcon,
-                colorBlendMode: BlendMode.srcIn,
+              child: MographStatePop(
+                stateKey: isShuffle,
+                scaleBoost: 0.22,
+                rotationKickRad: -0.36,
+                child: Image.asset(
+                  'assets/icons/arrow.png',
+                  width: 22,
+                  height: 22,
+                  fit: BoxFit.contain,
+                  color: isShuffle
+                      ? palette.nowPlayingPrimary
+                      : palette.nowPlayingInactiveIcon,
+                  colorBlendMode: BlendMode.srcIn,
+                ),
               ),
             ),
 
@@ -7973,7 +8167,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                 'Previous Track',
                 context,
               ),
-              child: PressableScale(
+              child: MographSpringTap(
+                pressedScale: 0.82,
+                tapOffsetKick: const Offset(-5.5, 0.0),
+                enabled: song != null,
                 child: InkWell(
                   key: const ValueKey<String>('transport_prev_button'),
                   borderRadius: BorderRadius.circular(24),
@@ -8010,27 +8207,40 @@ class NowPlayingViewState extends State<NowPlayingView>
               message: localProvider.isPlaying
                   ? AppStrings.tr('Jeda', 'Pause', context)
                   : AppStrings.tr('Putar', 'Play', context),
-              child: PressableScale(
+              child: MographSpringTap(
+                pressedScale: 0.84,
                 child: InkWell(
                   key: const ValueKey<String>('transport_play_pause_button'),
                   customBorder: const CircleBorder(),
                   onTap: localProvider.allSongs.isEmpty && song == null
                       ? widget.onNavigateToDownloader
                       : () => localProvider.togglePlayPause(),
-                  child: Container(
-                    width: MusEveePalette.playPauseButtonSize,
-                    height: MusEveePalette.playPauseButtonSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: palette.nowPlayingPrimary,
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      localProvider.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      size: MusEveePalette.playPauseIconSize,
-                      color: palette.nowPlayingOnPrimary,
+                  child: MographStatePop(
+                    stateKey: localProvider.isPlaying,
+                    scaleBoost: 0.16,
+                    duration: const Duration(milliseconds: 300),
+                    child: Container(
+                      width: MusEveePalette.playPauseButtonSize,
+                      height: MusEveePalette.playPauseButtonSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: palette.nowPlayingPrimary,
+                      ),
+                      alignment: Alignment.center,
+                      child: MographAnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        reverseDuration: const Duration(milliseconds: 120),
+                        beginScale: 0.62,
+                        rotationTurns: -0.14,
+                        child: Icon(
+                          localProvider.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey<bool>(localProvider.isPlaying),
+                          size: MusEveePalette.playPauseIconSize,
+                          color: palette.nowPlayingOnPrimary,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -8044,7 +8254,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                 'Next Track',
                 context,
               ),
-              child: PressableScale(
+              child: MographSpringTap(
+                pressedScale: 0.82,
+                tapOffsetKick: const Offset(5.5, 0.0),
+                enabled: song != null,
                 child: InkWell(
                   key: const ValueKey<String>('transport_next_button'),
                   borderRadius: BorderRadius.circular(24),
@@ -8078,8 +8291,23 @@ class NowPlayingViewState extends State<NowPlayingView>
               tooltip: _playModeTooltip(playMode, context),
               isActive: isPlayModeActive,
               palette: palette,
+              tapRotationRad: 0.18,
               onTap: localProvider.cyclePlayMode,
-              child: _buildPlayModeIcon(playMode, palette),
+              child: MographStatePop(
+                stateKey: playMode,
+                scaleBoost: 0.20,
+                rotationKickRad: -0.45,
+                child: MographAnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  reverseDuration: const Duration(milliseconds: 120),
+                  beginScale: 0.72,
+                  rotationTurns: -0.12,
+                  child: KeyedSubtree(
+                    key: ValueKey<MusicoletPlayMode>(playMode),
+                    child: _buildPlayModeIcon(playMode, palette),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -8092,12 +8320,15 @@ class NowPlayingViewState extends State<NowPlayingView>
     required String tooltip,
     required bool isActive,
     required MusEveePalette palette,
+    double tapRotationRad = 0.0,
     required VoidCallback onTap,
     required Widget child,
   }) {
     return Tooltip(
       message: tooltip,
-      child: PressableScale(
+      child: MographSpringTap(
+        pressedScale: 0.82,
+        tapRotationRad: tapRotationRad,
         child: InkWell(
           key: key,
           borderRadius: BorderRadius.circular(24),
@@ -8110,16 +8341,21 @@ class NowPlayingViewState extends State<NowPlayingView>
               children: [
                 child,
                 const SizedBox(height: 3),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  width: 4,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isActive
-                        ? palette.nowPlayingPrimary
-                        : Colors.transparent,
+                AnimatedScale(
+                  scale: isActive ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 240),
+                  curve: isActive ? Curves.easeOutBack : Curves.easeOutCubic,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isActive
+                          ? palette.nowPlayingPrimary
+                          : Colors.transparent,
+                    ),
                   ),
                 ),
               ],
@@ -8285,7 +8521,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     style: TextStyle(
                                       color: palette.nowPlayingPrimary,
                                       fontSize: 15,
-                                      fontWeight: FontWeight.w700,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -8543,8 +8779,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                                                             context,
                                                           ))
                                                     : AppStrings.tr(
-                                                        'Gagal menyimpan perubahan Romaji ke file MP3.',
-                                                        'Failed to save Romaji changes to MP3 file.',
+                                                        'Gagal menyimpan perubahan Romaji ke file ${currentSong.audioFormatLabel}.',
+                                                        'Failed to save Romaji changes to ${currentSong.audioFormatLabel} file.',
                                                         context,
                                                       ),
                                               ),
@@ -8588,8 +8824,8 @@ class NowPlayingViewState extends State<NowPlayingView>
                                                           context,
                                                         ))
                                                   : AppStrings.tr(
-                                                      'Gagal menyimpan perubahan Romaji ke file MP3.',
-                                                      'Failed to save Romaji changes to MP3 file.',
+                                                      'Gagal menyimpan perubahan Romaji ke file ${currentSong.audioFormatLabel}.',
+                                                      'Failed to save Romaji changes to ${currentSong.audioFormatLabel} file.',
                                                       context,
                                                     ),
                                             ),
@@ -8598,24 +8834,58 @@ class NowPlayingViewState extends State<NowPlayingView>
                                       }
                                     },
                             ),
-                            _buildMenuTile(
+                            _buildFontSizeStepperTile(
                               palette: palette,
                               icon: Icons.text_fields_rounded,
                               title: AppStrings.tr(
-                                'Ukuran Font Lirik',
-                                'Lyrics Font Size',
+                                'Ukuran Font Lirik Aktif',
+                                'Active Lyrics Font Size',
                                 ctx,
                               ),
-                              trailing: Text(
-                                '${lp.lyricsFontSize.toStringAsFixed(1)} pt',
-                                style: TextStyle(
-                                  color: palette.nowPlayingPrimary,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              valuePt: lp.lyricsFontSize,
+                              canDecrease: lp.canDecreaseLyricsFontSize,
+                              canIncrease: lp.canIncreaseLyricsFontSize,
+                              onDecrease: lp.decreaseLyricsFontSize,
+                              onIncrease: lp.increaseLyricsFontSize,
+                              minusButtonKey: const ValueKey<String>(
+                                'lyrics_active_font_minus',
                               ),
-                              enabled: true,
-                              onTap: lp.cycleLyricsFontSize,
+                              plusButtonKey: const ValueKey<String>(
+                                'lyrics_active_font_plus',
+                              ),
+                              valueTextKey: const ValueKey<String>(
+                                'lyrics_active_font_value',
+                              ),
+                            ),
+                            _buildFontSizeStepperTile(
+                              palette: palette,
+                              icon: Icons.format_size_rounded,
+                              title: AppStrings.tr(
+                                'Ukuran Font Lirik Redup',
+                                'Dimmed Lyrics Font Size',
+                                ctx,
+                              ),
+                              subtitle: AppStrings.tr(
+                                'Khusus layar Home',
+                                'Home screen only',
+                                ctx,
+                              ),
+                              valuePt: lp.secondaryLyricsFontSize,
+                              canDecrease:
+                                  lp.canDecreaseSecondaryLyricsFontSize,
+                              canIncrease:
+                                  lp.canIncreaseSecondaryLyricsFontSize,
+                              onDecrease: lp.decreaseSecondaryLyricsFontSize,
+                              onIncrease: lp.increaseSecondaryLyricsFontSize,
+                              minusButtonKey: const ValueKey<String>(
+                                'lyrics_secondary_font_minus',
+                              ),
+                              plusButtonKey: const ValueKey<String>(
+                                'lyrics_secondary_font_plus',
+                              ),
+                              valueTextKey: const ValueKey<String>(
+                                'lyrics_secondary_font_value',
+                              ),
                             ),
                             _buildMenuTile(
                               palette: palette,
@@ -8720,26 +8990,29 @@ class NowPlayingViewState extends State<NowPlayingView>
                                         style: TextStyle(
                                           color: palette.nowPlayingPrimary,
                                           fontSize: 13.5,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                       if (lp.volume < 1.0 || boostDb > 0.0)
-                                        TextButton(
-                                          style: TextButton.styleFrom(
-                                            foregroundColor:
-                                                palette.nowPlayingPrimary,
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                          ),
-                                          onPressed: () {
-                                            lp.setVolume(1.0);
-                                            lp.setPreAmpGainDb(0.0);
-                                          },
-                                          child: const Text(
-                                            'Reset 100% (0 dB)',
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.w700,
+                                        MographSpringTap(
+                                          pressedScale: 0.88,
+                                          child: TextButton(
+                                            style: TextButton.styleFrom(
+                                              foregroundColor:
+                                                  palette.nowPlayingPrimary,
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                            onPressed: () {
+                                              lp.setVolume(1.0);
+                                              lp.setPreAmpGainDb(0.0);
+                                            },
+                                            child: const Text(
+                                              'Reset 100% (0 dB)',
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -8747,17 +9020,25 @@ class NowPlayingViewState extends State<NowPlayingView>
                                   ),
                                   Row(
                                     children: [
-                                      IconButton(
-                                        visualDensity: VisualDensity.compact,
-                                        onPressed: () => lp.setVolume(
-                                          lp.volume > 0 ? 0.0 : 1.0,
-                                        ),
-                                        icon: Icon(
-                                          lp.volume <= 0.01
-                                              ? Icons.volume_off_rounded
-                                              : Icons.volume_up_rounded,
-                                          size: 20,
-                                          color: palette.nowPlayingPrimary,
+                                      MographSpringTap(
+                                        pressedScale: 0.80,
+                                        child: MographStatePop(
+                                          stateKey: lp.volume <= 0.01,
+                                          scaleBoost: 0.18,
+                                          child: IconButton(
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            onPressed: () => lp.setVolume(
+                                              lp.volume > 0 ? 0.0 : 1.0,
+                                            ),
+                                            icon: Icon(
+                                              lp.volume <= 0.01
+                                                  ? Icons.volume_off_rounded
+                                                  : Icons.volume_up_rounded,
+                                              size: 20,
+                                              color: palette.nowPlayingPrimary,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                       Expanded(
@@ -8790,7 +9071,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                           style: TextStyle(
                                             color: palette.nowPlayingPrimary,
                                             fontSize: 12.5,
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                       ),
@@ -8839,7 +9120,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                                           style: TextStyle(
                                             color: palette.nowPlayingSecondary,
                                             fontSize: 11.5,
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                       ),
@@ -8873,10 +9154,98 @@ class NowPlayingViewState extends State<NowPlayingView>
         style: TextStyle(
           color: palette.nowPlayingSecondary,
           fontSize: 11,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
           letterSpacing: 0.6,
         ),
       ),
+    );
+  }
+
+  Widget _buildFontSizeStepperTile({
+    required MusEveePalette palette,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required double valuePt,
+    required bool canDecrease,
+    required bool canIncrease,
+    required VoidCallback onDecrease,
+    required VoidCallback onIncrease,
+    required Key minusButtonKey,
+    required Key plusButtonKey,
+    Key? valueTextKey,
+  }) {
+    Widget buildStepButton({
+      required Key key,
+      required IconData buttonIcon,
+      required bool enabled,
+      required VoidCallback onPressed,
+    }) {
+      return MographSpringTap(
+        enabled: enabled,
+        pressedScale: 0.88,
+        child: GestureDetector(
+          key: key,
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onPressed : null,
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: palette.surfaceSubtle,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: palette.hairline, width: 0.8),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              buttonIcon,
+              size: 16,
+              color: enabled
+                  ? palette.nowPlayingPrimary
+                  : palette.nowPlayingInactiveIcon,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _buildMenuTile(
+      palette: palette,
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      squashOnTap: false,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildStepButton(
+            key: minusButtonKey,
+            buttonIcon: Icons.remove_rounded,
+            enabled: canDecrease,
+            onPressed: onDecrease,
+          ),
+          SizedBox(
+            width: 54,
+            child: Text(
+              '${valuePt.toStringAsFixed(1)} pt',
+              key: valueTextKey,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: palette.nowPlayingPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          buildStepButton(
+            key: plusButtonKey,
+            buttonIcon: Icons.add_rounded,
+            enabled: canIncrease,
+            onPressed: onIncrease,
+          ),
+        ],
+      ),
+      enabled: true,
     );
   }
 
@@ -8888,6 +9257,7 @@ class NowPlayingViewState extends State<NowPlayingView>
     Widget? trailing,
     bool isDestructive = false,
     bool enabled = true,
+    bool squashOnTap = true,
     VoidCallback? onTap,
   }) {
     final fgColor = isDestructive
@@ -8896,30 +9266,34 @@ class NowPlayingViewState extends State<NowPlayingView>
             ? palette.nowPlayingPrimary
             : palette.nowPlayingInactiveIcon);
 
-    return ListTile(
-      dense: true,
-      enabled: enabled,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-      leading: Icon(icon, size: 20, color: fgColor),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: fgColor,
-          fontSize: 13.5,
-          fontWeight: FontWeight.w600,
+    return MographSpringTap(
+      enabled: enabled && squashOnTap,
+      pressedScale: 0.975,
+      child: ListTile(
+        dense: true,
+        enabled: enabled,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+        leading: Icon(icon, size: 20, color: fgColor),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: fgColor,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w500,
+          ),
         ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle,
+                style: TextStyle(
+                  color: palette.nowPlayingSecondary,
+                  fontSize: 11.5,
+                ),
+              )
+            : null,
+        trailing: trailing,
+        onTap: enabled ? onTap : null,
       ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: TextStyle(
-                color: palette.nowPlayingSecondary,
-                fontSize: 11.5,
-              ),
-            )
-          : null,
-      trailing: trailing,
-      onTap: enabled ? onTap : null,
     );
   }
 
@@ -8962,14 +9336,14 @@ class NowPlayingViewState extends State<NowPlayingView>
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Text(
                     AppStrings.tr(
-                      'Belum Ada Lirik Tertanam (USLT)',
-                      'No Embedded Lyrics Yet (USLT)',
+                      'Belum Ada Lirik Tertanam',
+                      'No Embedded Lyrics Yet',
                       ctx,
                     ),
                     style: TextStyle(
                       color: palette.nowPlayingPrimary,
                       fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -9078,7 +9452,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                         style: TextStyle(
                           color: palette.nowPlayingPrimary,
                           fontSize: 15,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -9220,7 +9594,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                     style: TextStyle(
                       color: palette.nowPlayingPrimary,
                       fontSize: 15.5,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -9238,10 +9612,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                   Expanded(
                     child: Consumer<LocalMusicProvider>(
                       builder: (ctx, lp, _) {
-                        final liveSong = lp.currentSong?.filePath ==
-                                song.filePath
-                            ? lp.currentSong!
-                            : song;
+                        final liveSong =
+                            lp.currentSong?.filePath == song.filePath
+                                ? lp.currentSong!
+                                : song;
                         if (liveSong.hasSyncedLyrics &&
                             lp.lyricsDisplayMode ==
                                 EmbeddedLyricsDisplayMode.synced) {
@@ -9253,8 +9627,10 @@ class NowPlayingViewState extends State<NowPlayingView>
                                 140.0,
                                 MediaQuery.of(ctx).size.width - 44.0,
                               );
-                              final prefOffset =
-                                  (lp.lyricsFontSize - 15.5).clamp(-4.0, 2.0);
+                              final prefOffset = NowPlayingView
+                                  .computeStageActiveFontPrefOffset(
+                                lp.lyricsFontSize,
+                              );
                               return ListView.builder(
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 16),
@@ -9320,8 +9696,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                           itemBuilder: (ctx, idx) {
                             final line = plainLines[idx];
                             return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 6),
+                              padding: const EdgeInsets.symmetric(vertical: 6),
                               child: Text(
                                 line,
                                 style: TextStyle(
@@ -9371,14 +9746,14 @@ class NowPlayingViewState extends State<NowPlayingView>
           ),
           title: Text(
             AppStrings.tr(
-              'Informasi File & Tag ID3',
-              'File & ID3 Tag Information',
+              'Informasi File & Tag Audio',
+              'File & Audio Tag Information',
               ctx,
             ),
             style: TextStyle(
               color: palette.nowPlayingPrimary,
               fontSize: 15.5,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           content: SingleChildScrollView(
@@ -9386,42 +9761,94 @@ class NowPlayingViewState extends State<NowPlayingView>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                _infoRow(palette, 'Judul', song.title),
-                _infoRow(palette, 'Artis', song.artist),
-                _infoRow(palette, 'Album', song.album),
-                if (song.year.isNotEmpty) _infoRow(palette, 'Tahun', song.year),
-                _infoRow(palette, 'Folder', song.folderName),
-                _infoRow(palette, 'Path File', song.filePath),
-                _infoRow(palette, 'Durasi', song.formattedDuration),
-                _infoRow(palette, 'Ukuran', song.formattedFileSize),
                 _infoRow(
                   palette,
-                  'Kualitas Audio',
+                  AppStrings.tr('Judul', 'Title', ctx),
+                  song.title,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Artis', 'Artist', ctx),
+                  song.artist,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Album', 'Album', ctx),
+                  song.album,
+                ),
+                if (song.year.isNotEmpty)
+                  _infoRow(
+                    palette,
+                    AppStrings.tr('Tahun', 'Year', ctx),
+                    song.year,
+                  ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Folder', 'Folder', ctx),
+                  song.folderName,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Path File', 'File Path', ctx),
+                  song.filePath,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Durasi', 'Duration', ctx),
+                  song.formattedDuration,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Ukuran', 'Size', ctx),
+                  song.formattedFileSize,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Format Audio', 'Audio Format', ctx),
+                  song.audioFormatLabel,
+                ),
+                _infoRow(
+                  palette,
+                  AppStrings.tr('Kualitas Audio', 'Audio Quality', ctx),
                   '${song.bitrateKbps} kbps • ${song.sampleRateHz} Hz',
                 ),
                 _infoRow(
                   palette,
-                  'Tag Sampul (APIC)',
-                  song.hasCover ? 'Tersedia (Embedded)' : 'Tidak ada',
+                  AppStrings.tr('Cover Tertanam', 'Embedded Cover', ctx),
+                  song.hasCover
+                      ? AppStrings.tr(
+                          'Tersedia (Embedded)',
+                          'Available (Embedded)',
+                          ctx,
+                        )
+                      : AppStrings.tr('Tidak ada', 'None', ctx),
                 ),
                 _infoRow(
                   palette,
-                  'Tag Lirik (USLT)',
+                  AppStrings.tr('Lirik Tertanam', 'Embedded Lyrics', ctx),
                   song.hasSyncedLyrics
-                      ? 'Synced LRC [mm:ss.xx]'
-                      : (song.hasLyrics ? 'Plain Lyrics' : 'Tidak ada'),
+                      ? AppStrings.tr(
+                          'LRC Berjalan [mm:ss.xx]',
+                          'Synced LRC [mm:ss.xx]',
+                          ctx,
+                        )
+                      : (song.hasLyrics
+                          ? AppStrings.tr('Lirik Biasa', 'Plain Lyrics', ctx)
+                          : AppStrings.tr('Tidak ada', 'None', ctx)),
                 ),
               ],
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(
-                AppStrings.tr('Tutup', 'Close', ctx),
-                style: TextStyle(
-                  color: palette.nowPlayingPrimary,
-                  fontWeight: FontWeight.w700,
+            MographSpringTap(
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  AppStrings.tr('Tutup', 'Close', ctx),
+                  style: TextStyle(
+                    color: palette.nowPlayingPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -9505,7 +9932,7 @@ class NowPlayingViewState extends State<NowPlayingView>
                       style: TextStyle(
                         color: palette.nowPlayingPrimary,
                         fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -9568,7 +9995,11 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          'Lirik ${cand.languageTag} berhasil ditanamkan ke MP3.',
+                                          AppStrings.tr(
+                                            'Lirik ${AppStrings.formatLyricsLanguageTag(cand.languageTag)} berhasil ditanamkan ke ${song.audioFormatLabel}.',
+                                            'Lyrics ${AppStrings.formatLyricsLanguageTag(cand.languageTag)} embedded into ${song.audioFormatLabel}.',
+                                            context,
+                                          ),
                                         ),
                                       ),
                                     );
@@ -9578,7 +10009,11 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          'Gagal menanamkan lirik ke MP3: $e',
+                                          AppStrings.tr(
+                                            'Gagal menanamkan lirik ke ${song.audioFormatLabel}: $e',
+                                            'Failed to embed lyrics into ${song.audioFormatLabel}: $e',
+                                            context,
+                                          ),
                                         ),
                                       ),
                                     );
@@ -9596,16 +10031,18 @@ class NowPlayingViewState extends State<NowPlayingView>
                                     Row(
                                       children: [
                                         Text(
-                                          cand.languageTag,
+                                          AppStrings.formatLyricsLanguageTag(
+                                            cand.languageTag,
+                                          ),
                                           style: TextStyle(
                                             color: palette.nowPlayingPrimary,
                                             fontSize: 12,
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
-                                          '${cand.hasSynced ? 'Synced LRC' : 'Plain'} • ${cand.formattedDuration}',
+                                          '${cand.hasSynced ? AppStrings.tr('LRC Berjalan', 'Synced LRC', ctx) : AppStrings.tr('Biasa', 'Plain', ctx)} • ${cand.formattedDuration}',
                                           style: TextStyle(
                                             color: palette.nowPlayingSecondary,
                                             fontSize: 11.5,
@@ -9653,12 +10090,16 @@ class NowPlayingViewState extends State<NowPlayingView>
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: palette.nowPlayingBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: palette.hairline, width: 0.8),
+          ),
           title: Text(
             AppStrings.tr('Hapus File Lagu?', 'Delete Song File?', ctx),
             style: TextStyle(
               color: palette.nowPlayingPrimary,
               fontSize: 16,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           content: Text(
@@ -9670,20 +10111,24 @@ class NowPlayingViewState extends State<NowPlayingView>
             style: TextStyle(color: palette.nowPlayingSecondary, fontSize: 13),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(
-                AppStrings.tr('Batal', 'Cancel', ctx),
-                style: TextStyle(color: palette.nowPlayingSecondary),
+            MographSpringTap(
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(
+                  AppStrings.tr('Batal', 'Cancel', ctx),
+                  style: TextStyle(color: palette.nowPlayingSecondary),
+                ),
               ),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: MusEveePalette.error,
-                foregroundColor: Colors.white,
+            MographSpringTap(
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: MusEveePalette.error,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(AppStrings.tr('Hapus', 'Delete', ctx)),
               ),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(AppStrings.tr('Hapus', 'Delete', ctx)),
             ),
           ],
         );
@@ -9697,8 +10142,16 @@ class NowPlayingViewState extends State<NowPlayingView>
           SnackBar(
             content: Text(
               ok
-                  ? 'File lagu berhasil dihapus.'
-                  : 'Gagal menghapus file lagu.',
+                  ? AppStrings.tr(
+                      'File lagu berhasil dihapus.',
+                      'Song file deleted.',
+                      context,
+                    )
+                  : AppStrings.tr(
+                      'Gagal menghapus file lagu.',
+                      'Failed to delete song file.',
+                      context,
+                    ),
             ),
           ),
         );

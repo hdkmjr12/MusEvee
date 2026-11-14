@@ -105,6 +105,7 @@ class MusicoletBottomStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
     final tooltips = _tabTooltips;
     final tabCount = tooltips.length;

@@ -4,17 +4,20 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/track_metadata.dart';
+import '../utils/app_strings.dart';
 
 class BrowsedDirectoryEntry {
   final String name;
   final String path;
-  final int mp3Count;
+  final int audioCount;
 
   const BrowsedDirectoryEntry({
     required this.name,
     required this.path,
-    required this.mp3Count,
+    required this.audioCount,
   });
+
+  int get mp3Count => audioCount;
 }
 
 class FolderService {
@@ -343,11 +346,11 @@ class FolderService {
             _excludedSystemFolderNames.contains(lower)) {
           continue;
         }
-        int mp3Count = 0;
+        int audioCount = 0;
         try {
           await for (final child in entity.list(followLinks: false)) {
             if (child is File && isSupportedAudioFilePath(child.path)) {
-              mp3Count++;
+              audioCount++;
             }
           }
         } catch (_) {}
@@ -355,7 +358,7 @@ class FolderService {
           BrowsedDirectoryEntry(
             name: name,
             path: entity.path.replaceAll('\\', '/'),
-            mp3Count: mp3Count,
+            audioCount: audioCount,
           ),
         );
       }
@@ -410,7 +413,7 @@ class FolderService {
   }) async {
     final cleaned = sanitizeFolderName(rawName);
     if (cleaned.isEmpty) {
-      throw Exception('Nama folder tidak boleh kosong.');
+      throw Exception(AppStrings.svcFolderNameEmpty);
     }
 
     final baseDir = (parentDirPath != null && parentDirPath.trim().isNotEmpty)
@@ -470,47 +473,103 @@ class FolderService {
     List<String> folders,
   ) async {
     if (!Platform.isAndroid) return null;
+    final batch = await findDuplicateFoldersBatch([fileName], folders);
+    return batch[fileName.toLowerCase()];
+  }
 
-    final targetLower = fileName.toLowerCase();
-    final baseWithoutExt = stripAudioExtension(targetLower);
+  /// Scans each folder in [folders] at most once and returns a map of
+  /// lowercase filename (`track.sanitizedFileName.toLowerCase()`) -> matching folder.
+  Future<Map<String, String>> findDuplicateFoldersBatch(
+    List<String> fileNames,
+    List<String> folders,
+  ) async {
+    if (!Platform.isAndroid || fileNames.isEmpty || folders.isEmpty) {
+      return const {};
+    }
+    final dirs = <String, Directory>{
+      for (final folder in folders)
+        folder: Directory(resolveFolderDirectoryPath(folder)),
+    };
+    return findDuplicateFoldersBatchInDirectories(fileNames, dirs);
+  }
 
-    for (final folder in folders) {
+  @visibleForTesting
+  Future<Map<String, String>> findDuplicateFoldersBatchInDirectories(
+    List<String> fileNames,
+    Map<String, Directory> folderDirectories,
+  ) async {
+    if (fileNames.isEmpty || folderDirectories.isEmpty) {
+      return const {};
+    }
+
+    // Group target lowercase filenames by their stripped audio base stem so
+    // multiple targets with the same stem resolve cleanly in O(1).
+    final stemToKeys = <String, List<String>>{};
+    final allTargetKeys = <String>{};
+    for (final rawName in fileNames) {
+      final targetLower = rawName.toLowerCase();
+      if (!allTargetKeys.add(targetLower)) continue;
+      final baseWithoutExt = stripAudioExtension(targetLower);
+      if (baseWithoutExt.isEmpty) continue;
+      stemToKeys.putIfAbsent(baseWithoutExt, () => <String>[]).add(targetLower);
+    }
+
+    if (allTargetKeys.isEmpty) return const {};
+
+    final results = <String, String>{};
+
+    for (final entry in folderDirectories.entries) {
+      if (results.length >= allTargetKeys.length) break;
+      final folder = entry.key;
+      final dir = entry.value;
       try {
-        final dir = Directory(resolveFolderDirectoryPath(folder));
         if (!await dir.exists()) continue;
 
-        for (final candidateName in <String>[
-          fileName,
-          '$baseWithoutExt.mp3',
-          '$baseWithoutExt.flac',
-        ]) {
-          final exactFile = File('${dir.path}/$candidateName');
-          if (await exactFile.exists() &&
-              await exactFile.length() >= _minValidMusicBytes) {
-            return folder;
-          }
-        }
-
         await for (final entity in dir.list(followLinks: false)) {
-          if (entity is File) {
-            final name = entity.path
-                .split(Platform.pathSeparator)
-                .last
-                .toLowerCase();
-            if (!isSupportedAudioFilePath(name)) continue;
-            final entityBase = stripAudioExtension(name);
-            if ((name == targetLower ||
-                    entityBase == baseWithoutExt ||
-                    entityBase.startsWith('$baseWithoutExt (')) &&
-                await entity.length() >= _minValidMusicBytes) {
-              return folder;
+          if (results.length >= allTargetKeys.length) break;
+          if (entity is! File) continue;
+
+          final name =
+              entity.path.split(Platform.pathSeparator).last.toLowerCase();
+          if (!isSupportedAudioFilePath(name)) continue;
+
+          final entityBase = stripAudioExtension(name);
+          final matchedKeys = <String>[];
+
+          final exactStemKeys = stemToKeys[entityBase];
+          if (exactStemKeys != null) {
+            matchedKeys.addAll(exactStemKeys);
+          }
+
+          // Match numbered duplicates such as `artist - song (1).mp3`
+          // identically to `entityBase.startsWith('$baseWithoutExt (')`.
+          var parenIdx = entityBase.indexOf(' (');
+          while (parenIdx != -1) {
+            final prefix = entityBase.substring(0, parenIdx);
+            final prefixKeys = stemToKeys[prefix];
+            if (prefixKeys != null) {
+              matchedKeys.addAll(prefixKeys);
+            }
+            parenIdx = entityBase.indexOf(' (', parenIdx + 2);
+          }
+
+          if (matchedKeys.isEmpty) continue;
+
+          final unmappedKeys = matchedKeys
+              .where((k) => !results.containsKey(k))
+              .toList(growable: false);
+          if (unmappedKeys.isEmpty) continue;
+
+          if (await entity.length() >= _minValidMusicBytes) {
+            for (final key in unmappedKeys) {
+              results[key] = folder;
             }
           }
         }
       } catch (_) {}
     }
 
-    return null;
+    return results;
   }
 
   /// Checks across all [folders] (plus any extra subdirectories in `/storage/emulated/0/Music/`)
@@ -640,7 +699,7 @@ class FolderService {
   }) async {
     final sourceFile = File(currentFilePath);
     if (!await sourceFile.exists()) {
-      throw Exception('File asal tidak ditemukan: $currentFilePath');
+      throw Exception(AppStrings.svcSourceFileNotFound(currentFilePath));
     }
 
     final cleanFolder = normalizePickedFolderTarget(targetFolderName);
@@ -664,7 +723,7 @@ class FolderService {
     final wroteOk = await writeBytesToMusicFile(destPath, bytes);
     if (!wroteOk) {
       throw Exception(
-        'Gagal menulis file ke folder $cleanFolder. Pastikan izin penyimpanan diberikan.',
+        AppStrings.svcFolderWriteFailed(cleanFolder),
       );
     }
 
@@ -748,7 +807,8 @@ class FolderService {
       if (needsAllFiles && autoRequestPermission) {
         final granted = await requestAllFilesAccess();
         if (granted) {
-          final retry = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+          final retry =
+              await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
             'deleteLocalAudioFile',
             {
               'path': path,
@@ -809,7 +869,8 @@ class FolderService {
       if (!cancelled && needsAllFiles && autoRequestPermission) {
         final granted = await requestAllFilesAccess();
         if (granted) {
-          final retry = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+          final retry =
+              await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
             'writeBytesToMusicFile',
             {
               'path': path,
@@ -859,4 +920,3 @@ class FolderService {
         .trim();
   }
 }
-

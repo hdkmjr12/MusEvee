@@ -7,15 +7,23 @@ import 'providers/local_music_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/musevee_palette.dart';
+import 'utils/app_strings.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  final initialBrightness =
+      WidgetsBinding.instance.platformDispatcher.platformBrightness;
+  final isInitialLight = initialBrightness == Brightness.light;
+  final initialPalette =
+      isInitialLight ? MusEveePalette.light : MusEveePalette.dark;
+  final initialIconBrightness =
+      isInitialLight ? Brightness.dark : Brightness.light;
   SystemChrome.setSystemUIOverlayStyle(
     SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: MusEveePalette.dark.bottomBar,
-      systemNavigationBarIconBrightness: Brightness.light,
+      statusBarIconBrightness: initialIconBrightness,
+      systemNavigationBarColor: initialPalette.bottomBar,
+      systemNavigationBarIconBrightness: initialIconBrightness,
     ),
   );
   runApp(const MusEveeApp());
@@ -32,7 +40,7 @@ class MusEveeApp extends StatefulWidget {
   State<MusEveeApp> createState() => _MusEveeAppState();
 }
 
-class _MusEveeAppState extends State<MusEveeApp> {
+class _MusEveeAppState extends State<MusEveeApp> with WidgetsBindingObserver {
   late final SettingsProvider _settingsProvider;
   late final bool _ownsSettingsProvider;
   late final LocalMusicProvider _localMusicProvider;
@@ -41,6 +49,7 @@ class _MusEveeAppState extends State<MusEveeApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.settingsProvider != null) {
       _settingsProvider = widget.settingsProvider!;
       _ownsSettingsProvider = false;
@@ -54,7 +63,8 @@ class _MusEveeAppState extends State<MusEveeApp> {
     );
 
     // Wire 2-way instant synchronization without ChangeNotifierProxyProvider rebuild overhead
-    _localMusicProvider.onLocalLibraryMutated = _downloaderProvider.syncWithLocalLibrary;
+    _localMusicProvider.onLocalLibraryMutated =
+        _downloaderProvider.syncWithLocalLibrary;
     _downloaderProvider.onLibraryChanged = () {
       _localMusicProvider.refreshLibrary();
     };
@@ -93,7 +103,23 @@ class _MusEveeAppState extends State<MusEveeApp> {
   }
 
   @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    if (_settingsProvider.themeMode == ThemeMode.system && mounted) {
+      _applySystemUiOverlayStyle(_settingsProvider.themeMode);
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _localMusicProvider.dispose();
     _downloaderProvider.dispose();
     if (_ownsSettingsProvider) {
@@ -103,7 +129,13 @@ class _MusEveeAppState extends State<MusEveeApp> {
   }
 
   void _applySystemUiOverlayStyle(ThemeMode mode) {
-    final isLight = mode == ThemeMode.light;
+    final effectiveBrightness = switch (mode) {
+      ThemeMode.light => Brightness.light,
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.system =>
+        WidgetsBinding.instance.platformDispatcher.platformBrightness,
+    };
+    final isLight = effectiveBrightness == Brightness.light;
     final palette = isLight ? MusEveePalette.light : MusEveePalette.dark;
     final iconBrightness = isLight ? Brightness.dark : Brightness.light;
     SystemChrome.setSystemUIOverlayStyle(
@@ -139,9 +171,48 @@ class _MusEveeAppState extends State<MusEveeApp> {
             themeMode: settings.themeMode,
             darkTheme: _buildDarkTheme(),
             theme: _buildLightTheme(),
+            builder: (context, child) => SystemLocaleScope(
+              languageCode: WidgetsBinding
+                  .instance.platformDispatcher.locale.languageCode,
+              child: child ?? const SizedBox.shrink(),
+            ),
             home: const HomeScreen(),
           );
         },
+      ),
+    );
+  }
+
+  DialogThemeData _buildDialogTheme(MusEveePalette p) {
+    return DialogThemeData(
+      backgroundColor: p.nowPlayingBg,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: p.hairline, width: 0.8),
+      ),
+    );
+  }
+
+  BottomSheetThemeData _buildBottomSheetTheme(MusEveePalette p) {
+    return BottomSheetThemeData(
+      backgroundColor: p.nowPlayingBg,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+    );
+  }
+
+  PopupMenuThemeData _buildPopupMenuTheme(MusEveePalette p) {
+    return PopupMenuThemeData(
+      color: p.surfaceCard,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: p.hairline, width: 0.8),
       ),
     );
   }
@@ -155,10 +226,10 @@ class _MusEveeAppState extends State<MusEveeApp> {
       scaffoldBackgroundColor: p.bgCanvas,
       extensions: const <ThemeExtension<dynamic>>[MusEveePalette.dark],
       colorScheme: ColorScheme.dark(
-        primary: p.accent,
-        onPrimary: Colors.white,
-        secondary: MusEveePalette.light.accent,
-        onSecondary: Colors.white,
+        primary: p.nowPlayingPrimary,
+        onPrimary: p.nowPlayingOnPrimary,
+        secondary: p.nowPlayingArtist,
+        onSecondary: p.nowPlayingBg,
         surface: p.surfaceCard,
         onSurface: p.textPrimary,
         error: MusEveePalette.error,
@@ -179,22 +250,9 @@ class _MusEveeAppState extends State<MusEveeApp> {
           side: BorderSide(color: p.hairline, width: 0.8),
         ),
       ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: p.surfaceCard,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: p.hairline, width: 0.8),
-        ),
-      ),
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: p.surfaceCard,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-      ),
+      dialogTheme: _buildDialogTheme(p),
+      bottomSheetTheme: _buildBottomSheetTheme(p),
+      popupMenuTheme: _buildPopupMenuTheme(p),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: p.surfaceSubtle,
@@ -214,20 +272,20 @@ class _MusEveeAppState extends State<MusEveeApp> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: p.accent, width: 1.2),
+          borderSide: BorderSide(color: p.nowPlayingPrimary, width: 1.2),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: p.accent,
-          foregroundColor: Colors.white,
+          backgroundColor: p.nowPlayingPrimary,
+          foregroundColor: p.nowPlayingOnPrimary,
           disabledBackgroundColor: p.surfaceSubtle,
           disabledForegroundColor: p.textMuted,
           elevation: 0,
           minimumSize: const Size(48, 44),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             fontSize: 13.5,
             letterSpacing: -0.1,
           ),
@@ -255,7 +313,7 @@ class _MusEveeAppState extends State<MusEveeApp> {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: p.surfaceSubtle,
-        selectedColor: p.accent,
+        selectedColor: p.nowPlayingPrimary,
         disabledColor: p.surfaceSubtle,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         shape: RoundedRectangleBorder(
@@ -287,10 +345,10 @@ class _MusEveeAppState extends State<MusEveeApp> {
       scaffoldBackgroundColor: p.bgCanvas,
       extensions: const <ThemeExtension<dynamic>>[MusEveePalette.light],
       colorScheme: ColorScheme.light(
-        primary: p.accent,
-        onPrimary: Colors.white,
-        secondary: p.accent,
-        onSecondary: Colors.white,
+        primary: p.nowPlayingPrimary,
+        onPrimary: p.nowPlayingOnPrimary,
+        secondary: p.nowPlayingArtist,
+        onSecondary: p.nowPlayingBg,
         surface: p.surfaceCard,
         onSurface: p.textPrimary,
         error: MusEveePalette.error,
@@ -311,22 +369,9 @@ class _MusEveeAppState extends State<MusEveeApp> {
           side: BorderSide(color: p.hairline, width: 0.8),
         ),
       ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: p.surfaceCard,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: p.hairline, width: 0.8),
-        ),
-      ),
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: p.surfaceCard,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-      ),
+      dialogTheme: _buildDialogTheme(p),
+      bottomSheetTheme: _buildBottomSheetTheme(p),
+      popupMenuTheme: _buildPopupMenuTheme(p),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: p.surfaceSubtle,
@@ -346,20 +391,20 @@ class _MusEveeAppState extends State<MusEveeApp> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: p.accent, width: 1.2),
+          borderSide: BorderSide(color: p.nowPlayingPrimary, width: 1.2),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: p.accent,
-          foregroundColor: Colors.white,
+          backgroundColor: p.nowPlayingPrimary,
+          foregroundColor: p.nowPlayingOnPrimary,
           disabledBackgroundColor: p.surfaceSubtle,
           disabledForegroundColor: p.textMuted,
           elevation: 0,
           minimumSize: const Size(48, 44),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             fontSize: 13.5,
             letterSpacing: -0.1,
           ),
@@ -387,7 +432,7 @@ class _MusEveeAppState extends State<MusEveeApp> {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: p.surfaceSubtle,
-        selectedColor: p.accent,
+        selectedColor: p.nowPlayingPrimary,
         disabledColor: p.surfaceSubtle,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         shape: RoundedRectangleBorder(

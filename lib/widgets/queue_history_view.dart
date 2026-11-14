@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/download_item.dart';
 import '../providers/downloader_provider.dart';
 import '../theme/musevee_palette.dart';
+import '../utils/app_strings.dart';
+import 'pressable_scale.dart';
 import 'tag_editor_sheet.dart';
 
 class QueueHistoryView extends StatelessWidget {
@@ -20,6 +22,7 @@ class QueueHistoryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
     final activeQueueItems = provider.queueItems
         .where(
@@ -40,10 +43,10 @@ class QueueHistoryView extends StatelessWidget {
 
     final isDirectDownloadActive =
         provider.state == DownloaderState.downloadingAudio ||
-        provider.state == DownloaderState.taggingAudio;
+            provider.state == DownloaderState.taggingAudio;
 
     return Container(
-      color: palette.bgCanvas,
+      color: palette.nowPlayingBg,
       child: CustomScrollView(
         slivers: [
           // SEKSI ATAS: ANTREAN AKTIF
@@ -56,7 +59,7 @@ class QueueHistoryView extends StatelessWidget {
                   _buildSectionHeader(
                     palette: palette,
                     icon: Icons.downloading_rounded,
-                    title: 'Antrean Unduhan Aktif',
+                    title: AppStrings.activeDownloadQueueSection,
                     count: activeQueueItems.length +
                         (isDirectDownloadActive ? 1 : 0),
                   ),
@@ -92,7 +95,7 @@ class QueueHistoryView extends StatelessWidget {
                     child: _buildSectionHeader(
                       palette: palette,
                       icon: Icons.history_rounded,
-                      title: 'Riwayat Unduhan Selesai',
+                      title: AppStrings.completedDownloadHistorySection,
                       count: completedItems.length,
                     ),
                   ),
@@ -106,9 +109,9 @@ class QueueHistoryView extends StatelessWidget {
                         ),
                       ),
                       onPressed: provider.clearCompletedQueueItems,
-                      child: const Text(
-                        'Bersihkan',
-                        style: TextStyle(
+                      child: Text(
+                        AppStrings.clearLabel,
+                        style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -152,15 +155,19 @@ class QueueHistoryView extends StatelessWidget {
     final hairline = palette.hairline;
     return Row(
       children: [
-        Icon(icon, size: 18, color: palette.accent),
+        Icon(icon, size: 18, color: palette.nowPlayingPrimary),
         const SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            color: palette.textPrimary,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: palette.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.2,
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -190,7 +197,7 @@ class QueueHistoryView extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: palette.surfaceCard,
+        color: palette.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
@@ -204,7 +211,7 @@ class QueueHistoryView extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Tidak ada unduhan FFmpeg yang sedang berjalan.',
+              AppStrings.noActiveDownloads,
               style: TextStyle(color: palette.textMuted, fontSize: 12.5),
             ),
           ),
@@ -224,10 +231,10 @@ class QueueHistoryView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: palette.surfaceCard,
+        color: palette.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: palette.accent.withValues(alpha: 0.45),
+          color: palette.nowPlayingPrimary.withValues(alpha: 0.35),
           width: 0.8,
         ),
       ),
@@ -240,7 +247,7 @@ class QueueHistoryView extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: palette.surfaceSubtle,
+                  color: palette.nowPlayingBg,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: hairline, width: 0.8),
                 ),
@@ -268,7 +275,7 @@ class QueueHistoryView extends StatelessWidget {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -288,7 +295,7 @@ class QueueHistoryView extends StatelessWidget {
               Text(
                 '$pct%',
                 style: TextStyle(
-                  color: palette.accent,
+                  color: palette.nowPlayingPrimary,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                 ),
@@ -300,8 +307,10 @@ class QueueHistoryView extends StatelessWidget {
             value: provider.progress.clamp(0.0, 1.0),
             minHeight: 3.5,
             borderRadius: BorderRadius.circular(2),
-            backgroundColor: palette.surfaceSubtle,
-            valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
+            backgroundColor: palette.nowPlayingPrimary.withValues(alpha: 0.14),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              palette.nowPlayingPrimary,
+            ),
           ),
           const SizedBox(height: 7),
           Text(
@@ -323,7 +332,7 @@ class QueueHistoryView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: palette.surfaceCard,
+        color: palette.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
@@ -336,7 +345,7 @@ class QueueHistoryView extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: palette.surfaceSubtle,
+                  color: palette.nowPlayingBg,
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: hairline, width: 0.8),
                 ),
@@ -364,7 +373,7 @@ class QueueHistoryView extends StatelessWidget {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -388,17 +397,21 @@ class QueueHistoryView extends StatelessWidget {
                     width: 6,
                     height: 6,
                     decoration: BoxDecoration(
-                      color: isQueued ? MusEveePalette.amber : palette.accent,
+                      color: isQueued
+                          ? MusEveePalette.amber
+                          : palette.nowPlayingPrimary,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    isQueued ? 'Menunggu' : '$pct%',
+                    isQueued ? AppStrings.waitingLabel : '$pct%',
                     style: TextStyle(
-                      color: isQueued ? MusEveePalette.amber : palette.accent,
+                      color: isQueued
+                          ? MusEveePalette.amber
+                          : palette.nowPlayingPrimary,
                       fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: isQueued ? FontWeight.w600 : FontWeight.w700,
                     ),
                   ),
                 ],
@@ -411,8 +424,11 @@ class QueueHistoryView extends StatelessWidget {
               value: item.progress.clamp(0.0, 1.0),
               minHeight: 3.5,
               borderRadius: BorderRadius.circular(2),
-              backgroundColor: palette.surfaceSubtle,
-              valueColor: AlwaysStoppedAnimation<Color>(palette.accent),
+              backgroundColor:
+                  palette.nowPlayingPrimary.withValues(alpha: 0.14),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                palette.nowPlayingPrimary,
+              ),
             ),
           ],
           const SizedBox(height: 7),
@@ -441,7 +457,7 @@ class QueueHistoryView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
-        color: palette.surfaceCard,
+        color: palette.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
@@ -452,31 +468,37 @@ class QueueHistoryView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Cover Art 50x50 (Tap to play directly in MusEvee!)
-              GestureDetector(
-                onTap: (!isFailed &&
-                        item.savedFilePath != null &&
-                        onPlaySavedFile != null)
-                    ? () => onPlaySavedFile!(item.savedFilePath!)
-                    : null,
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: palette.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: hairline, width: 0.8),
+              MographSpringTap(
+                pressedScale: 0.92,
+                enabled: !isFailed &&
+                    item.savedFilePath != null &&
+                    onPlaySavedFile != null,
+                child: GestureDetector(
+                  onTap: (!isFailed &&
+                          item.savedFilePath != null &&
+                          onPlaySavedFile != null)
+                      ? () => onPlaySavedFile!(item.savedFilePath!)
+                      : null,
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: palette.nowPlayingBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: hairline, width: 0.8),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: item.metadata.coverUrl.isNotEmpty
+                        ? Image.network(
+                            item.metadata.coverUrl,
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                _buildPlaceholder(50, palette),
+                          )
+                        : _buildPlaceholder(50, palette),
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: item.metadata.coverUrl.isNotEmpty
-                      ? Image.network(
-                          item.metadata.coverUrl,
-                          width: 50,
-                          height: 50,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              _buildPlaceholder(50, palette),
-                        )
-                      : _buildPlaceholder(50, palette),
                 ),
               ),
               const SizedBox(width: 11),
@@ -491,7 +513,7 @@ class QueueHistoryView extends StatelessWidget {
                       style: TextStyle(
                         color: palette.textPrimary,
                         fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -519,13 +541,15 @@ class QueueHistoryView extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: isFailed
                                     ? MusEveePalette.error
-                                    : palette.accent,
+                                    : palette.nowPlayingPrimary,
                                 shape: BoxShape.circle,
                               ),
                             ),
                             const SizedBox(width: 5),
                             Text(
-                              isFailed ? 'Gagal' : item.targetFolderName,
+                              isFailed
+                                  ? AppStrings.failedLabel
+                                  : item.targetFolderName,
                               style: TextStyle(
                                 color: isFailed
                                     ? MusEveePalette.error
@@ -549,9 +573,13 @@ class QueueHistoryView extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 5),
-                              const Text(
-                                'USLT Lyrics',
-                                style: TextStyle(
+                              Text(
+                                AppStrings.tr(
+                                  'Lirik Tertanam',
+                                  'Embedded Lyrics',
+                                  context,
+                                ),
+                                style: const TextStyle(
                                   color: MusEveePalette.emerald,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -570,74 +598,83 @@ class QueueHistoryView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (onPlaySavedFile != null) ...[
-                      IconButton(
-                        tooltip: 'Putar di Now Playing',
-                        style: IconButton.styleFrom(
-                          backgroundColor:
-                              palette.accent.withValues(alpha: 0.16),
-                          minimumSize: const Size(32, 32),
-                          padding: const EdgeInsets.all(5),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
+                      MographSpringTap(
+                        pressedScale: 0.88,
+                        child: IconButton(
+                          tooltip: AppStrings.playInNowPlayingTooltip,
+                          style: IconButton.styleFrom(
+                            backgroundColor: palette.nowPlayingPrimary,
+                            minimumSize: const Size(32, 32),
+                            padding: const EdgeInsets.all(5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
-                        ),
-                        onPressed: () => onPlaySavedFile!(item.savedFilePath!),
-                        icon: Icon(
-                          Icons.play_arrow_rounded,
-                          size: 18,
-                          color: palette.accent,
+                          onPressed: () =>
+                              onPlaySavedFile!(item.savedFilePath!),
+                          icon: Icon(
+                            Icons.play_arrow_rounded,
+                            size: 18,
+                            color: palette.nowPlayingOnPrimary,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 5),
                     ],
-                    IconButton(
-                      tooltip: 'Edit Tag Ulang',
-                      style: IconButton.styleFrom(
-                        backgroundColor: palette.surfaceSubtle,
-                        minimumSize: const Size(32, 32),
-                        padding: const EdgeInsets.all(6),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          side: BorderSide(color: hairline, width: 0.8),
+                    MographSpringTap(
+                      pressedScale: 0.88,
+                      child: IconButton(
+                        tooltip: AppStrings.editTagAgainTooltip,
+                        style: IconButton.styleFrom(
+                          backgroundColor: palette.nowPlayingBg,
+                          minimumSize: const Size(32, 32),
+                          padding: const EdgeInsets.all(6),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            side: BorderSide(color: hairline, width: 0.8),
+                          ),
                         ),
-                      ),
-                      onPressed: () => TagEditorSheet.showForHistoryItem(
-                        context,
-                        provider: provider,
-                        item: item,
-                      ),
-                      icon: Icon(
-                        Icons.edit_outlined,
-                        size: 15,
-                        color: palette.textPrimary,
+                        onPressed: () => TagEditorSheet.showForHistoryItem(
+                          context,
+                          provider: provider,
+                          item: item,
+                        ),
+                        icon: Icon(
+                          Icons.edit_outlined,
+                          size: 15,
+                          color: palette.textPrimary,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 5),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: palette.surfaceSubtle,
-                        foregroundColor: palette.textPrimary,
-                        minimumSize: const Size(0, 32),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
+                    MographSpringTap(
+                      pressedScale: 0.94,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: palette.nowPlayingBg,
+                          foregroundColor: palette.textPrimary,
+                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          side: BorderSide(color: hairline, width: 0.8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                         ),
-                        side: BorderSide(color: hairline, width: 0.8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
+                        onPressed: () => onMoveFolder(provider, item),
+                        icon: Icon(
+                          Icons.drive_file_move_outlined,
+                          size: 14,
+                          color: palette.nowPlayingPrimary,
                         ),
-                      ),
-                      onPressed: () => onMoveFolder(provider, item),
-                      icon: Icon(
-                        Icons.drive_file_move_outlined,
-                        size: 14,
-                        color: palette.accent,
-                      ),
-                      label: const Text(
-                        'Pindah',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                        label: Text(
+                          AppStrings.moveLabel,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
@@ -645,27 +682,30 @@ class QueueHistoryView extends StatelessWidget {
                 ),
               ] else if (isFailed) ...[
                 const SizedBox(width: 6),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: palette.textPrimary,
-                    backgroundColor: palette.surfaceSubtle,
-                    minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                MographSpringTap(
+                  pressedScale: 0.94,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: palette.textPrimary,
+                      backgroundColor: palette.nowPlayingBg,
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                    onPressed: () => provider.enqueueTrack(
+                      item.metadata,
+                      folderName: item.targetFolderName,
+                      preferSynced: item.preferSyncedLyrics,
                     ),
-                  ),
-                  onPressed: () => provider.enqueueTrack(
-                    item.metadata,
-                    folderName: item.targetFolderName,
-                    preferSynced: item.preferSyncedLyrics,
-                  ),
-                  child: const Text(
-                    'Ulangi',
-                    style: TextStyle(fontSize: 11.5),
+                    child: Text(
+                      AppStrings.retryShortLabel,
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
                   ),
                 ),
               ],
@@ -695,7 +735,7 @@ class QueueHistoryView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: palette.surfaceCard,
+        color: palette.surfaceSubtle,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: hairline, width: 0.8),
       ),
@@ -708,11 +748,11 @@ class QueueHistoryView extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Belum ada riwayat unduhan pada sesi ini.',
+                  AppStrings.noDownloadHistory,
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -723,7 +763,7 @@ class QueueHistoryView extends StatelessWidget {
             Divider(height: 1, color: hairline),
             const SizedBox(height: 10),
             Text(
-              'Ringkasan Koleksi Folder Lokal:',
+              AppStrings.localFolderCollectionSummary,
               style: TextStyle(
                 color: palette.textMuted,
                 fontSize: 11.5,
@@ -742,12 +782,12 @@ class QueueHistoryView extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: palette.surfaceSubtle,
+                    color: palette.nowPlayingBg,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: hairline, width: 0.8),
                   ),
                   child: Text(
-                    '$folder: $count Lagu',
+                    AppStrings.folderSongCountChip(folder, count),
                     style: TextStyle(
                       color: palette.textPrimary,
                       fontSize: 12,
@@ -767,7 +807,7 @@ class QueueHistoryView extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      color: palette.surfaceSubtle,
+      color: palette.nowPlayingBg,
       alignment: Alignment.center,
       child: Icon(
         Icons.music_note_rounded,

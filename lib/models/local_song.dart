@@ -226,6 +226,12 @@ class LocalSong {
     );
   }
 
+  bool get isFlac =>
+      filePath.trim().toLowerCase().endsWith('.flac') ||
+      fileName.trim().toLowerCase().endsWith('.flac');
+
+  String get audioFormatLabel => isFlac ? 'FLAC' : 'MP3';
+
   bool get hasCover =>
       coverFilePath != null && coverFilePath!.trim().isNotEmpty;
 

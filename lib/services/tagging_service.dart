@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/track_metadata.dart';
+import '../utils/app_strings.dart';
 import 'folder_service.dart';
 
 class TaggingException implements Exception {
@@ -35,11 +36,13 @@ class TaggingService {
     if (!Platform.isAndroid) return;
 
     try {
-      final storageStatus = await Permission.storage.status
-          .timeout(const Duration(seconds: 3));
-      debugPrint('[AUTO_E2E] TAHAP_5: Permission.storage status = $storageStatus');
+      final storageStatus =
+          await Permission.storage.status.timeout(const Duration(seconds: 3));
+      debugPrint(
+          '[AUTO_E2E] TAHAP_5: Permission.storage status = $storageStatus');
     } catch (e) {
-      debugPrint('[AUTO_E2E] TAHAP_5: Pengecekan Permission.storage dilewati: $e');
+      debugPrint(
+          '[AUTO_E2E] TAHAP_5: Pengecekan Permission.storage dilewati: $e');
     }
   }
 
@@ -86,8 +89,9 @@ class TaggingService {
     try {
       // 1. Download high-res cover art to temporary directory
       if (metadata.coverUrl.trim().isNotEmpty) {
-        onProgress?.call(0.15, 'Mengunduh cover art resolusi tinggi...');
-        debugPrint('[AUTO_E2E] TAHAP_5: Mengunduh cover art dari ${metadata.coverUrl}');
+        onProgress?.call(0.15, AppStrings.svcDownloadingHiResCover);
+        debugPrint(
+            '[AUTO_E2E] TAHAP_5: Mengunduh cover art dari ${metadata.coverUrl}');
         try {
           await _dio
               .download(metadata.coverUrl, coverFile.path)
@@ -100,14 +104,18 @@ class TaggingService {
           }
         } catch (e, s) {
           coverBytes = null;
-          debugPrint('[AUTO_E2E] TAHAP_5: Gagal mengunduh cover art (lanjut tanpa cover): $e\n$s');
+          debugPrint(
+              '[AUTO_E2E] TAHAP_5: Gagal mengunduh cover art (lanjut tanpa cover): $e\n$s');
         }
       }
 
       // 2. Convert audio stream to MP3 using FFmpeg at the configured bitrate
       onProgress?.call(
         0.45,
-        'Mengonversi audio ke MP3 ${resolvedBitrate}kbps...',
+        AppStrings.tr(
+          'Mengonversi audio ke MP3 ${resolvedBitrate}kbps...',
+          'Converting audio to MP3 ${resolvedBitrate}kbps...',
+        ),
       );
 
       final ffmpegArgs = <String>[
@@ -139,7 +147,10 @@ class TaggingService {
           await tempOutputMp3.length() <= 10000) {
         debugPrint('[AUTO_E2E] TAHAP_5: FFmpeg gagal. Log:\n$outputLog');
         throw TaggingException(
-          'FFmpeg gagal mengonversi audio ke MP3 ${resolvedBitrate}kbps. Log: $outputLog',
+          AppStrings.tr(
+            'FFmpeg gagal mengonversi audio ke MP3 ${resolvedBitrate}kbps. Log: $outputLog',
+            'FFmpeg failed to convert audio to MP3 ${resolvedBitrate}kbps. Log: $outputLog',
+          ),
         );
       }
 
@@ -147,7 +158,10 @@ class TaggingService {
       // directly into tempOutputMp3, matching the exact binary layout of Musicolet-compatible MP3s.
       onProgress?.call(
         0.75,
-        'Menyuntikkan cover art HD & lirik USLT ke dalam MP3 (ID3v2.4)...',
+        AppStrings.tr(
+          'Menyuntikkan cover art HD & lirik USLT ke dalam MP3 (ID3v2.4)...',
+          'Embedding HD cover art & USLT lyrics into MP3 (ID3v2.4)...',
+        ),
       );
       await _writeCompleteId3v24Tag(
         mp3File: tempOutputMp3,
@@ -162,7 +176,7 @@ class TaggingService {
       // 4. Save final MP3 file to /storage/emulated/0/Music/{targetFolderName} (without any .lrc file)
       onProgress?.call(
         0.88,
-        'Menyimpan file MP3 ke folder $targetFolderName...',
+        AppStrings.svcSavingFormatToFolder('MP3', targetFolderName),
       );
       final savedFilePath = await _saveToTargetDirectory(
         tempOutputMp3,
@@ -178,13 +192,13 @@ class TaggingService {
         '[AUTO_E2E] TAHAP_5: File MP3 BERHASIL disimpan di: $savedFilePath (ukuran: $savedSize bytes)',
       );
 
-      onProgress?.call(1.0, 'Selesai! Tersimpan di: $savedFilePath');
+      onProgress?.call(1.0, AppStrings.svcSavedAtPath(savedFilePath));
       return savedFilePath;
     } on TaggingException {
       rethrow;
     } catch (e, s) {
       debugPrint('[AUTO_E2E] TAHAP_5: Exception saat konversi/tagging: $e\n$s');
-      throw TaggingException('Gagal memproses konversi dan tagging MP3: $e');
+      throw TaggingException(AppStrings.svcMp3TaggingFailed(e));
     } finally {
       // Cleanup temporary files
       for (final file in [rawAudioFile, coverFile, tempOutputMp3]) {
@@ -227,7 +241,7 @@ class TaggingService {
     try {
       // 1. Download high-res 1000x1000 cover art
       if (metadata.coverUrl.trim().isNotEmpty) {
-        onProgress?.call(0.15, 'Mengunduh cover art resolusi tinggi...');
+        onProgress?.call(0.15, AppStrings.svcDownloadingHiResCover);
         try {
           await _dio
               .download(metadata.coverUrl, coverFile.path)
@@ -244,7 +258,10 @@ class TaggingService {
       // 2. Remux lossless FLAC audio stream via FFmpeg (-c:a copy, 100% bit-perfect)
       onProgress?.call(
         0.45,
-        'Menyalin stream Hi-Res FLAC tanpa kompresi ulang (-c:a copy)...',
+        AppStrings.tr(
+          'Menyalin stream Hi-Res FLAC tanpa kompresi ulang (-c:a copy)...',
+          'Copying Hi-Res FLAC stream losslessly (-c:a copy)...',
+        ),
       );
       final embeddedLyrics = metadata.lyricsForEmbedding(
         preferSyncedLyrics: preferSyncedLyrics,
@@ -308,7 +325,10 @@ class TaggingService {
       // LYRICS, UNSYNCEDLYRICS) & METADATA_BLOCK_PICTURE (type 6) in binary fLaC header
       onProgress?.call(
         0.75,
-        'Menyuntikkan Vorbis Comments & Cover Art HD ke dalam FLAC...',
+        AppStrings.tr(
+          'Menyuntikkan Vorbis Comments & Cover Art HD ke dalam FLAC...',
+          'Embedding Vorbis Comments & HD Cover Art into FLAC...',
+        ),
       );
       await writeCompleteFlacMetadataBlocks(
         flacFile: tempOutputFlac,
@@ -320,7 +340,7 @@ class TaggingService {
       // 4. Save final .flac file to target folder
       onProgress?.call(
         0.88,
-        'Menyimpan file FLAC ke folder $targetFolderName...',
+        AppStrings.svcSavingFormatToFolder('FLAC', targetFolderName),
       );
       final savedFilePath = await _saveToTargetDirectory(
         tempOutputFlac,
@@ -329,13 +349,14 @@ class TaggingService {
       );
 
       await FolderService().scanMediaFile(savedFilePath);
-      onProgress?.call(1.0, 'Selesai! Tersimpan di: $savedFilePath');
+      onProgress?.call(1.0, AppStrings.svcSavedAtPath(savedFilePath));
       return savedFilePath;
     } on TaggingException {
       rethrow;
     } catch (e, s) {
-      debugPrint('[AUTO_E2E] TAHAP_5_FLAC: Exception saat tagging FLAC: $e\n$s');
-      throw TaggingException('Gagal memproses tagging FLAC: $e');
+      debugPrint(
+          '[AUTO_E2E] TAHAP_5_FLAC: Exception saat tagging FLAC: $e\n$s');
+      throw TaggingException(AppStrings.svcTaggingFailed('FLAC', e));
     } finally {
       for (final file in [rawFlacFile, coverFile, tempOutputFlac]) {
         try {
@@ -377,7 +398,12 @@ class TaggingService {
 
     final existingFile = File(filePath);
     if (!await existingFile.exists()) {
-      throw const TaggingException('File MP3 lokal tidak ditemukan di perangkat.');
+      throw TaggingException(
+        AppStrings.tr(
+          'File MP3 lokal tidak ditemukan di perangkat.',
+          'Local MP3 file not found on device.',
+        ),
+      );
     }
 
     final tempDir = await getTemporaryDirectory();
@@ -468,8 +494,8 @@ class TaggingService {
         updatedBytes,
       );
       if (!wroteInPlace) {
-        throw const TaggingException(
-          'Gagal menyimpan tag ke file MP3. Izinkan akses file musik jika diminta oleh sistem.',
+        throw TaggingException(
+          AppStrings.svcRetagPermissionFailed('MP3'),
         );
       }
       finalSavedPath = existingFile.path;
@@ -491,8 +517,11 @@ class TaggingService {
   }) async {
     final existingFile = File(filePath);
     if (!await existingFile.exists()) {
-      throw const TaggingException(
-        'File FLAC lokal tidak ditemukan di perangkat.',
+      throw TaggingException(
+        AppStrings.tr(
+          'File FLAC lokal tidak ditemukan di perangkat.',
+          'Local FLAC file not found on device.',
+        ),
       );
     }
 
@@ -558,8 +587,8 @@ class TaggingService {
         updatedBytes,
       );
       if (!wroteInPlace) {
-        throw const TaggingException(
-          'Gagal menyimpan tag ke file FLAC. Izinkan akses file musik jika diminta oleh sistem.',
+        throw TaggingException(
+          AppStrings.svcRetagPermissionFailed('FLAC'),
         );
       }
       finalSavedPath = existingFile.path;
@@ -587,8 +616,7 @@ class TaggingService {
         final headerByte = bytes[offset];
         final isLast = (headerByte & 0x80) != 0;
         final blockType = headerByte & 0x7F;
-        final blockLen =
-            (bytes[offset + 1] << 16) |
+        final blockLen = (bytes[offset + 1] << 16) |
             (bytes[offset + 2] << 8) |
             bytes[offset + 3];
         offset += 4;
@@ -626,8 +654,7 @@ class TaggingService {
         bytes[0] == 0x49 &&
         bytes[1] == 0x44 &&
         bytes[2] == 0x33) {
-      final id3Size =
-          ((bytes[6] & 0x7F) << 21) |
+      final id3Size = ((bytes[6] & 0x7F) << 21) |
           ((bytes[7] & 0x7F) << 14) |
           ((bytes[8] & 0x7F) << 7) |
           (bytes[9] & 0x7F);
@@ -669,8 +696,7 @@ class TaggingService {
       final headerByte = rawBytes[offset];
       final isLast = (headerByte & 0x80) != 0;
       final blockType = headerByte & 0x7F;
-      final blockLen =
-          (rawBytes[offset + 1] << 16) |
+      final blockLen = (rawBytes[offset + 1] << 16) |
           (rawBytes[offset + 2] << 8) |
           rawBytes[offset + 3];
       offset += 4;
@@ -856,7 +882,8 @@ class TaggingService {
           ((bytes[7] & 0x7F) << 14) |
           ((bytes[8] & 0x7F) << 7) |
           (bytes[9] & 0x7F);
-      final endOffset = (10 + tagSize) <= bytes.length ? (10 + tagSize) : bytes.length;
+      final endOffset =
+          (10 + tagSize) <= bytes.length ? (10 + tagSize) : bytes.length;
       for (int i = 10; i + 16 < endOffset; i++) {
         // Look for JPEG SOI marker FF D8 FF inside the ID3 tag area
         if (bytes[i] == 0xFF && bytes[i + 1] == 0xD8 && bytes[i + 2] == 0xFF) {
@@ -915,7 +942,8 @@ class TaggingService {
     // 2. TALB (Album)
     if (metadata.album.trim().isNotEmpty) {
       framesBuilder.add(
-        _buildId3v24TextFrame('TALB', metadata.album.trim(), encodingByte: 0x03),
+        _buildId3v24TextFrame('TALB', metadata.album.trim(),
+            encodingByte: 0x03),
       );
     }
 
@@ -933,17 +961,20 @@ class TaggingService {
     // 4. TIT2 (Title)
     if (metadata.title.trim().isNotEmpty) {
       framesBuilder.add(
-        _buildId3v24TextFrame('TIT2', metadata.title.trim(), encodingByte: 0x03),
+        _buildId3v24TextFrame('TIT2', metadata.title.trim(),
+            encodingByte: 0x03),
       );
     }
 
     // 5. TPE1 (Artist) & TPE2 (Album Artist)
     if (metadata.artist.trim().isNotEmpty) {
       framesBuilder.add(
-        _buildId3v24TextFrame('TPE1', metadata.artist.trim(), encodingByte: 0x03),
+        _buildId3v24TextFrame('TPE1', metadata.artist.trim(),
+            encodingByte: 0x03),
       );
       framesBuilder.add(
-        _buildId3v24TextFrame('TPE2', metadata.artist.trim(), encodingByte: 0x03),
+        _buildId3v24TextFrame('TPE2', metadata.artist.trim(),
+            encodingByte: 0x03),
       );
     }
 
@@ -1021,9 +1052,8 @@ class TaggingService {
     String text, {
     required int encodingByte,
   }) {
-    final textBytes = encodingByte == 0x00
-        ? ascii.encode(text)
-        : utf8.encode(text);
+    final textBytes =
+        encodingByte == 0x00 ? ascii.encode(text) : utf8.encode(text);
     final int payloadSize = 1 + textBytes.length;
     final frame = Uint8List(10 + payloadSize);
 
@@ -1146,7 +1176,8 @@ class TaggingService {
             return targetFile.path;
           }
         } catch (e) {
-          debugPrint('[AUTO_E2E] TAHAP_5: Penulisan langsung ke $exactPath gagal ($e), mencoba nama unik Scoped Storage...');
+          debugPrint(
+              '[AUTO_E2E] TAHAP_5: Penulisan langsung ke $exactPath gagal ($e), mencoba nama unik Scoped Storage...');
         }
 
         // Attempt B: If overwriting an existing file from an older app UID was blocked
@@ -1165,42 +1196,44 @@ class TaggingService {
             return uniqueFile.path;
           }
         } catch (e) {
-          debugPrint('[AUTO_E2E] TAHAP_5: Penulisan nama unik ke $dirPath gagal: $e');
+          debugPrint(
+              '[AUTO_E2E] TAHAP_5: Penulisan nama unik ke $dirPath gagal: $e');
         }
       }
     }
 
-    // Fallback 1: Application external storage directory (/storage/emulated/0/Android/data/.../files/SpotMeta)
+    // Fallback 1: Application external storage directory (/storage/emulated/0/Android/data/.../files/MusEvee)
     try {
       final extDir = await getExternalStorageDirectory();
       if (extDir != null) {
-        final spotMetaExtDir = Directory(
-          '${extDir.path}${Platform.pathSeparator}SpotMeta',
+        final musEveeExtDir = Directory(
+          '${extDir.path}${Platform.pathSeparator}MusEvee',
         );
-        if (!await spotMetaExtDir.exists()) {
-          await spotMetaExtDir.create(recursive: true);
+        if (!await musEveeExtDir.exists()) {
+          await musEveeExtDir.create(recursive: true);
         }
         final fallbackPath =
-            '${spotMetaExtDir.path}${Platform.pathSeparator}$fileName';
+            '${musEveeExtDir.path}${Platform.pathSeparator}$fileName';
         final targetFile = File(fallbackPath);
         await targetFile.writeAsBytes(bytes, flush: true);
         await removeStaleCompanionLrc(targetFile.path);
         return targetFile.path;
       }
     } catch (e) {
-      debugPrint('[AUTO_E2E] TAHAP_5: Fallback getExternalStorageDirectory gagal: $e');
+      debugPrint(
+          '[AUTO_E2E] TAHAP_5: Fallback getExternalStorageDirectory gagal: $e');
     }
 
     // Fallback 2: Application documents directory
     final docsDir = await getApplicationDocumentsDirectory();
-    final spotMetaDocsDir = Directory(
-      '${docsDir.path}${Platform.pathSeparator}SpotMeta',
+    final musEveeDocsDir = Directory(
+      '${docsDir.path}${Platform.pathSeparator}MusEvee',
     );
-    if (!await spotMetaDocsDir.exists()) {
-      await spotMetaDocsDir.create(recursive: true);
+    if (!await musEveeDocsDir.exists()) {
+      await musEveeDocsDir.create(recursive: true);
     }
     final docsPath =
-        '${spotMetaDocsDir.path}${Platform.pathSeparator}$fileName';
+        '${musEveeDocsDir.path}${Platform.pathSeparator}$fileName';
     final targetFile = File(docsPath);
     await targetFile.writeAsBytes(bytes, flush: true);
     await removeStaleCompanionLrc(targetFile.path);

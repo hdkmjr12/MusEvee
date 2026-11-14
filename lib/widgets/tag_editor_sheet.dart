@@ -8,6 +8,8 @@ import '../providers/local_music_provider.dart';
 import '../services/lyrics_service.dart';
 import '../services/romaji_service.dart';
 import '../theme/musevee_palette.dart';
+import '../utils/app_strings.dart';
+import 'pressable_scale.dart';
 
 class TagEditorSheet extends StatefulWidget {
   final DownloaderProvider provider;
@@ -34,9 +36,9 @@ class TagEditorSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: palette.surfaceCard,
+      backgroundColor: palette.nowPlayingBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (_) => TagEditorSheet(provider: provider, track: track),
     );
@@ -51,9 +53,9 @@ class TagEditorSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: palette.surfaceCard,
+      backgroundColor: palette.nowPlayingBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (_) => TagEditorSheet(
         provider: provider,
@@ -75,9 +77,9 @@ class TagEditorSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: palette.surfaceCard,
+      backgroundColor: palette.nowPlayingBg,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (_) => TagEditorSheet(
         provider: downloaderProvider,
@@ -197,9 +199,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
   }
 
   void _applyLyricsCandidate(LyricsCandidate cand) {
-    final textToUse = cand.hasSynced
-        ? (cand.syncedLyrics ?? '')
-        : (cand.plainLyrics ?? '');
+    final textToUse =
+        cand.hasSynced ? (cand.syncedLyrics ?? '') : (cand.plainLyrics ?? '');
     if (widget.historyItem == null && widget.localSong == null) {
       widget.provider.selectLyricsCandidate(cand);
     }
@@ -299,8 +300,10 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
         if (!mounted) return;
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tag ID3 & Embedded Lyrics berhasil disimpan ke MP3.'),
+          SnackBar(
+            content: Text(
+              AppStrings.editorSavedId3(widget.localSong!.audioFormatLabel),
+            ),
           ),
         );
       } else if (widget.historyItem != null) {
@@ -317,8 +320,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
         if (!mounted) return;
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Info lagu & lirik berhasil diperbarui.'),
+          SnackBar(
+            content: Text(AppStrings.editorUpdatedHistory),
           ),
         );
       } else {
@@ -334,15 +337,15 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
         if (!mounted) return;
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Info lagu & lirik berhasil disimpan.'),
+          SnackBar(
+            content: Text(AppStrings.editorSavedMetadata),
           ),
         );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal menyimpan perubahan: $e')),
+        SnackBar(content: Text(AppStrings.editorSaveFailed(e))),
       );
     } finally {
       if (mounted) {
@@ -353,6 +356,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final isLocalOrHistory =
@@ -370,10 +374,10 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               // Drag Handle
               Center(
                 child: Container(
-                  width: 36,
+                  width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: palette.textMuted.withValues(alpha: 0.35),
+                    color: palette.nowPlayingSecondary.withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -384,16 +388,19 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       color: palette.surfaceSubtle,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: hairline, width: 0.8),
                     ),
-                    child: Icon(
-                      Icons.edit_outlined,
-                      color: palette.accent,
-                      size: 18,
+                    alignment: Alignment.center,
+                    child: Image.asset(
+                      'assets/pencil.png',
+                      width: 17,
+                      height: 17,
+                      color: palette.nowPlayingPrimary,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -402,22 +409,24 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isLocalOrHistory
-                              ? 'Edit Tag & Embedded Lyrics'
-                              : 'Edit Info & Lirik',
+                          AppStrings.editorTitle(isLocalOrHistory),
                           style: TextStyle(
+                            fontFamily: 'Poppins',
                             color: palette.textPrimary,
                             fontSize: 15.5,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                             letterSpacing: -0.3,
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isLocalOrHistory
-                              ? 'Menulis ulang tag ID3v2.4 & USLT langsung ke file MP3'
-                              : 'Sesuaikan judul, artis, dan lirik lagu sebelum unduh',
+                          AppStrings.editorSubtitle(
+                            isLocalOrHistory,
+                            formatLabel: widget.localSong?.audioFormatLabel ??
+                                widget.historyItem?.audioFormatLabel,
+                          ),
                           style: TextStyle(
+                            fontFamily: 'Poppins',
                             color: palette.textMuted,
                             fontSize: 11.5,
                           ),
@@ -426,21 +435,29 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                     ),
                   ),
                   if (_hasJapaneseInFields)
-                    ActionChip(
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor: palette.surfaceSubtle,
-                      side: BorderSide(color: hairline, width: 0.8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      onPressed:
-                          _isConvertingRomaji ? null : _convertFieldsToRomaji,
-                      label: Text(
-                        _isConvertingRomaji ? 'Proses...' : '✨ Auto-Romaji',
-                        style: TextStyle(
-                          color: palette.accent,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
+                    MographSpringTap(
+                      pressedScale: 0.94,
+                      enabled: !_isConvertingRomaji,
+                      child: ActionChip(
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: palette.surfaceSubtle,
+                        side: BorderSide(color: hairline, width: 0.8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        onPressed: _isConvertingRomaji
+                            ? null
+                            : _convertFieldsToRomaji,
+                        label: Text(
+                          _isConvertingRomaji
+                              ? AppStrings.editorProcessingRomaji
+                              : AppStrings.previewAutoRomaji,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: palette.nowPlayingPrimary,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
@@ -450,14 +467,14 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
 
               _buildField(
                 controller: _titleController,
-                label: 'Judul Lagu',
+                label: AppStrings.editorSongTitleLabel,
                 icon: Icons.music_note_rounded,
                 palette: palette,
               ),
               const SizedBox(height: 10),
               _buildField(
                 controller: _artistController,
-                label: 'Artis',
+                label: AppStrings.editorArtistLabel,
                 icon: Icons.person_outline_rounded,
                 palette: palette,
               ),
@@ -468,7 +485,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                     flex: 2,
                     child: _buildField(
                       controller: _albumController,
-                      label: 'Album',
+                      label: AppStrings.editorAlbumLabel,
                       icon: Icons.album_outlined,
                       palette: palette,
                     ),
@@ -477,7 +494,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   Expanded(
                     child: _buildField(
                       controller: _yearController,
-                      label: 'Tahun',
+                      label: AppStrings.editorYearLabel,
                       icon: Icons.calendar_today_outlined,
                       palette: palette,
                     ),
@@ -487,60 +504,73 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               const SizedBox(height: 12),
 
               // Lyrics Header with Ganti Lirik & Auto-Romaji buttons
-              Row(
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   Text(
-                    'Embedded Lyrics (USLT):',
+                    AppStrings.editorLyricsHeader,
                     style: TextStyle(
+                      fontFamily: 'Poppins',
                       color: palette.textPrimary,
                       fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                       letterSpacing: -0.2,
                     ),
                   ),
-                  const Spacer(),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(6),
-                    onTap: _toggleLyricsPicker,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 3,
-                      ),
-                      child: Text(
-                        _showLyricsCandidates ? 'Tutup Pilihan' : 'Ganti Lirik',
-                        style: TextStyle(
-                          color: palette.accent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (_canConvertLyricsToRomaji) ...[
-                    const SizedBox(width: 6),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap:
-                          _isConvertingRomaji ? null : _convertLyricsToRomaji,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        child: Text(
-                          _isConvertingRomaji
-                              ? 'Mengonversi...'
-                              : '✨ Auto-Romaji',
-                          style: TextStyle(
-                            color: palette.accent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      PressableScale(
+                        pressedScale: 0.94,
+                        onTap: _toggleLyricsPicker,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          child: Text(
+                            _showLyricsCandidates
+                                ? AppStrings.previewClose
+                                : AppStrings.previewChangeLyrics,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: palette.nowPlayingPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      if (_canConvertLyricsToRomaji)
+                        PressableScale(
+                          pressedScale: 0.94,
+                          enabled: !_isConvertingRomaji,
+                          onTap: _convertLyricsToRomaji,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
+                            child: Text(
+                              _isConvertingRomaji
+                                  ? AppStrings.previewConvertingRomaji
+                                  : AppStrings.previewAutoRomaji,
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: palette.nowPlayingPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
               if (_showLyricsCandidates) ...[
@@ -561,15 +591,16 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: palette.accent,
+                                color: palette.nowPlayingPrimary,
                               ),
                             ),
                           ),
                         )
                       : widget.provider.lyricsCandidates.isEmpty
                           ? Text(
-                              'Versi lirik lain tidak ditemukan di LRCLIB.',
+                              AppStrings.previewNoLyricsCandidates,
                               style: TextStyle(
+                                fontFamily: 'Poppins',
                                 color: palette.textMuted,
                                 fontSize: 11.5,
                               ),
@@ -589,25 +620,23 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                       ? _selectedCandidateId == cand.id
                                       : idx == 0;
                                   return InkWell(
-                                    borderRadius: BorderRadius.circular(6),
+                                    borderRadius: BorderRadius.circular(8),
                                     onTap: () => _applyLyricsCandidate(cand),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 6,
+                                        horizontal: 10,
+                                        vertical: 8,
                                       ),
                                       decoration: BoxDecoration(
                                         color: isChosen
-                                            ? palette.accent.withValues(
-                                                alpha: 0.14,
-                                              )
-                                            : palette.surfaceCard,
-                                        borderRadius: BorderRadius.circular(6),
+                                            ? palette.surfaceCard
+                                            : palette.nowPlayingBg,
+                                        borderRadius: BorderRadius.circular(8),
                                         border: Border.all(
                                           color: isChosen
-                                              ? palette.accent
+                                              ? palette.nowPlayingPrimary
                                               : hairline,
-                                          width: 0.8,
+                                          width: isChosen ? 1.1 : 0.8,
                                         ),
                                       ),
                                       child: Row(
@@ -621,9 +650,9 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                               isChosen
                                                   ? Icons.radio_button_checked
                                                   : Icons.radio_button_off,
-                                              size: 15,
+                                              size: 16,
                                               color: isChosen
-                                                  ? palette.accent
+                                                  ? palette.nowPlayingPrimary
                                                   : palette.textMuted,
                                             ),
                                           ),
@@ -636,22 +665,29 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                                                 Row(
                                                   children: [
                                                     Text(
-                                                      cand.languageTag,
+                                                      AppStrings
+                                                          .formatLyricsLanguageTag(
+                                                        cand.languageTag,
+                                                      ),
                                                       style: TextStyle(
-                                                        color: palette.accent,
+                                                        fontFamily: 'Poppins',
+                                                        color:
+                                                            palette.textPrimary,
                                                         fontSize: 11.5,
                                                         fontWeight:
-                                                            FontWeight.w700,
+                                                            FontWeight.w600,
                                                       ),
                                                     ),
                                                     const SizedBox(width: 6),
                                                     Text(
-                                                      '${cand.hasSynced ? 'LRC' : 'Biasa'} • ${cand.formattedDuration}',
+                                                      '${cand.hasSynced ? 'LRC' : (AppStrings.isIndonesian ? 'Biasa' : 'Plain')} • ${cand.formattedDuration}',
                                                       style: TextStyle(
-                                                        color: palette.textMuted,
+                                                        fontFamily: 'Poppins',
+                                                        color:
+                                                            palette.textMuted,
                                                         fontSize: 11,
                                                         fontWeight:
-                                                            FontWeight.w600,
+                                                            FontWeight.w500,
                                                       ),
                                                     ),
                                                   ],
@@ -684,6 +720,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               TextField(
                 controller: _lyricsController,
                 maxLines: 7,
+                cursorColor: palette.nowPlayingPrimary,
                 onChanged: (_) => setState(() {}),
                 style: TextStyle(
                   color: palette.textPrimary,
@@ -691,9 +728,9 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   height: 1.45,
                 ),
                 decoration: InputDecoration(
-                  hintText:
-                      'Tulis atau tempel lirik lagu ([mm:ss.xx] atau polos)...',
-                  hintStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
+                  hintText: AppStrings.editorLyricsHint,
+                  hintStyle:
+                      TextStyle(color: palette.textMuted, fontSize: 12.5),
                   filled: true,
                   fillColor: palette.surfaceSubtle,
                   border: OutlineInputBorder(
@@ -706,7 +743,10 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: palette.accent, width: 1.2),
+                    borderSide: BorderSide(
+                      color: palette.nowPlayingPrimary,
+                      width: 1.2,
+                    ),
                   ),
                 ),
               ),
@@ -715,45 +755,69 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: palette.textPrimary,
-                        backgroundColor: palette.surfaceSubtle,
-                        side: BorderSide(color: hairline, width: 0.8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    child: MographSpringTap(
+                      pressedScale: 0.96,
+                      enabled: !_isSaving,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: palette.textPrimary,
+                          backgroundColor: palette.surfaceSubtle,
+                          side: BorderSide(color: hairline, width: 0.8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          minimumSize: const Size(0, 46),
                         ),
-                        minimumSize: const Size(0, 44),
+                        onPressed: _isSaving
+                            ? null
+                            : () => Navigator.of(context).pop(),
+                        child: Text(
+                          AppStrings.editorCancelButton,
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
-                      onPressed:
-                          _isSaving ? null : () => Navigator.of(context).pop(),
-                      child: const Text('Batal'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 2,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: palette.accent,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(0, 44),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    child: MographSpringTap(
+                      pressedScale: 0.97,
+                      enabled: !_isSaving,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: palette.nowPlayingPrimary,
+                          foregroundColor: palette.nowPlayingOnPrimary,
+                          minimumSize: const Size(0, 46),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: _isSaving ? null : _saveChanges,
+                        icon: _isSaving
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: palette.nowPlayingOnPrimary,
+                                ),
+                              )
+                            : const Icon(Icons.check_rounded, size: 18),
+                        label: Text(
+                          AppStrings.editorSaveButton,
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      onPressed: _isSaving ? null : _saveChanges,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.check_rounded, size: 18),
-                      label: const Text('Simpan'),
                     ),
                   ),
                 ],
@@ -774,11 +838,17 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
     final hairline = palette.hairline;
     return TextField(
       controller: controller,
+      cursorColor: palette.nowPlayingPrimary,
       onChanged: (_) => setState(() {}),
       style: TextStyle(color: palette.textPrimary, fontSize: 13.5),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
+        floatingLabelStyle: TextStyle(
+          color: palette.nowPlayingPrimary,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+        ),
         prefixIcon: Icon(icon, size: 18, color: palette.textMuted),
         filled: true,
         fillColor: palette.surfaceSubtle,
@@ -787,16 +857,16 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
           vertical: 12,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: hairline, width: 0.8),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: hairline, width: 0.8),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: palette.accent, width: 1.2),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: palette.nowPlayingPrimary, width: 1.2),
         ),
       ),
     );

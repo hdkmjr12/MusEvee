@@ -109,7 +109,7 @@ class LyricsService {
                 receiveTimeout: const Duration(seconds: 10),
                 headers: const {
                   'User-Agent':
-                      'SpotMetaDownloader/1.0.0 (https://github.com/spotmeta)',
+                      'MusEvee/4.9.0 (https://github.com/hdkmjr12/MusEvee)',
                   'Accept': 'application/json',
                 },
               ),

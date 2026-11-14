@@ -136,11 +136,11 @@ void main() {
       await expectLater(providerFromUnknown.initialized, completes);
       expect(providerFromUnknown.downloadQuality, DownloadQuality.best);
       expect(providerFromUnknown.downloadBitrateKbps, 320);
-      expect(providerFromUnknown.themeMode, ThemeMode.dark);
+      expect(providerFromUnknown.themeMode, ThemeMode.system);
     });
 
     test(
-        '5. SettingsProvider reads v4.7 JSON file without "themeMode" key as ThemeMode.dark and persists Light/Dark toggles',
+        '5. SettingsProvider reads v4.7 JSON file without "themeMode" key as ThemeMode.system (Auto) and persists System/Light/Dark toggles',
         () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'musevee_settings_v47_compat_',
@@ -160,26 +160,36 @@ void main() {
       final provider = SettingsProvider(storageDirectory: tempDir);
       await provider.initialized;
       expect(provider.downloadQuality, DownloadQuality.balanced);
-      expect(provider.themeMode, ThemeMode.dark);
-      expect(provider.isDarkMode, isTrue);
+      expect(provider.themeMode, ThemeMode.system);
 
       await provider.setThemeMode(ThemeMode.light);
       expect(provider.themeMode, ThemeMode.light);
       expect(provider.isDarkMode, isFalse);
+
+      await provider.setThemeMode(ThemeMode.dark);
+      expect(provider.themeMode, ThemeMode.dark);
+      expect(provider.isDarkMode, isTrue);
+
+      await provider.setThemeMode(ThemeMode.system);
+      expect(provider.themeMode, ThemeMode.system);
       provider.dispose();
 
       final reloaded = SettingsProvider(storageDirectory: tempDir);
       addTearDown(reloaded.dispose);
       await reloaded.initialized;
       expect(reloaded.downloadQuality, DownloadQuality.balanced);
-      expect(reloaded.themeMode, ThemeMode.light);
-      expect(reloaded.isDarkMode, isFalse);
+      expect(reloaded.themeMode, ThemeMode.system);
     });
   });
 
   testWidgets(
-      '6. SettingsView renders in both Dark and Light themes without error and toggling theme updates MaterialApp.themeMode and SettingsProvider',
+      '6. SettingsView renders monochrome dropdowns in Auto/Dark/Light modes, follows system brightness in Auto mode, and updates MaterialApp.themeMode and SettingsProvider',
       (WidgetTester tester) async {
+    tester.binding.platformDispatcher.platformBrightnessTestValue =
+        Brightness.dark;
+    addTearDown(
+        tester.binding.platformDispatcher.clearPlatformBrightnessTestValue);
+
     final settingsProvider = SettingsProvider();
     addTearDown(settingsProvider.dispose);
 
@@ -214,21 +224,37 @@ void main() {
 
     expect(find.text('Tampilan'), findsOneWidget);
     expect(find.text('Tema Aplikasi'), findsOneWidget);
-    expect(find.text('Gelap'), findsOneWidget);
-    expect(find.text('Terang'), findsOneWidget);
+    expect(find.text('Auto'), findsOneWidget);
+    expect(find.text('Mengikuti tema sistem (Gelap)'), findsOneWidget);
     expect(find.text('Unduhan'), findsOneWidget);
-    expect(find.text('Hi-Res Lossless — FLAC'), findsOneWidget);
     expect(find.text('Terbaik — 320 kbps'), findsOneWidget);
-    expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
-    expect(find.text('Hemat — 128 kbps'), findsOneWidget);
     expect(find.text('MusEvee v4.9'), findsOneWidget);
 
-    MaterialApp appWidget = tester.widget<MaterialApp>(find.byType(MaterialApp));
-    expect(appWidget.themeMode, ThemeMode.dark);
-    expect(settingsProvider.themeMode, ThemeMode.dark);
+    // Verify monochrome colors (no blue accent on section title or manage badge)
+    final appearanceHeader = tester.widget<Text>(find.text('Tampilan'));
+    expect(appearanceHeader.style?.color, isNot(MusEveePalette.dark.accent));
+    expect(appearanceHeader.style?.color, isNot(MusEveePalette.light.accent));
+    final manageButtonLabel = tester.widget<Text>(find.text('Kelola'));
+    expect(manageButtonLabel.style?.color,
+        MusEveePalette.dark.nowPlayingOnPrimary);
+
+    MaterialApp appWidget =
+        tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(appWidget.themeMode, ThemeMode.system);
+    expect(settingsProvider.themeMode, ThemeMode.system);
     expect(settingsProvider.downloadQuality, DownloadQuality.best);
 
-    // Tap "Terang" theme option -> switches MaterialApp.themeMode to ThemeMode.light
+    // System brightness flips Light while Auto is active -> UI follows system automatically
+    tester.binding.platformDispatcher.platformBrightnessTestValue =
+        Brightness.light;
+    await tester.pumpAndSettle();
+    expect(find.text('Mengikuti tema sistem (Terang)'), findsOneWidget);
+
+    // Open App Theme dropdown and select "Terang" -> ThemeMode.light
+    await tester.tap(find.byKey(const ValueKey('theme_mode_dropdown')));
+    await tester.pumpAndSettle();
+    expect(find.text('Gelap'), findsOneWidget);
+    expect(find.text('Terang'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('theme_mode_light')));
     await tester.pumpAndSettle();
 
@@ -237,28 +263,49 @@ void main() {
     expect(settingsProvider.themeMode, ThemeMode.light);
     expect(tester.takeException(), isNull);
 
-    // Tap "Hemat — 128 kbps" option while in Light theme
-    final efficientTile = find.byKey(
+    // Open Download Quality dropdown while in Light theme and select "Hemat — 128 kbps"
+    final qualityDropdown = find.byKey(
+      const ValueKey('download_quality_dropdown'),
+    );
+    await tester.ensureVisible(qualityDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(qualityDropdown);
+    await tester.pumpAndSettle();
+    expect(find.text('Hi-Res Lossless — FLAC'), findsOneWidget);
+    expect(find.text('Seimbang — 192 kbps'), findsOneWidget);
+    expect(find.text('Hemat — 128 kbps'), findsOneWidget);
+
+    final efficientItem = find.byKey(
       const ValueKey('download_quality_efficient'),
     );
-    await tester.ensureVisible(efficientTile);
-    await tester.pumpAndSettle();
-    await tester.tap(efficientTile);
+    await tester.tap(efficientItem);
     await tester.pumpAndSettle();
 
     expect(settingsProvider.downloadQuality, DownloadQuality.efficient);
     expect(settingsProvider.downloadBitrateKbps, 128);
 
-    // Tap "Gelap" theme option -> switches back to ThemeMode.dark
-    final darkThemeTile = find.byKey(const ValueKey('theme_mode_dark'));
-    await tester.ensureVisible(darkThemeTile);
+    // Open App Theme dropdown and select "Gelap" -> ThemeMode.dark
+    final themeDropdown = find.byKey(const ValueKey('theme_mode_dropdown'));
+    await tester.ensureVisible(themeDropdown);
     await tester.pumpAndSettle();
-    await tester.tap(darkThemeTile);
+    await tester.tap(themeDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('theme_mode_dark')));
     await tester.pumpAndSettle();
 
     appWidget = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(appWidget.themeMode, ThemeMode.dark);
     expect(settingsProvider.themeMode, ThemeMode.dark);
+
+    // Switch back to "Auto" -> ThemeMode.system
+    await tester.tap(themeDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('theme_mode_system')));
+    await tester.pumpAndSettle();
+
+    appWidget = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(appWidget.themeMode, ThemeMode.system);
+    expect(settingsProvider.themeMode, ThemeMode.system);
   });
 
   testWidgets(
@@ -274,7 +321,8 @@ void main() {
     final lerpedMid = MusEveePalette.dark.lerp(MusEveePalette.light, 0.5);
     expect(
       lerpedMid.bgCanvas,
-      Color.lerp(MusEveePalette.dark.bgCanvas, MusEveePalette.light.bgCanvas, 0.5),
+      Color.lerp(
+          MusEveePalette.dark.bgCanvas, MusEveePalette.light.bgCanvas, 0.5),
     );
 
     final localProvider = LocalMusicProvider();
@@ -295,7 +343,8 @@ void main() {
       bitrateKbps: 320,
       sampleRateHz: 44100,
       dominantColorValue: 0xFF7B2CBF,
-      usltLyrics: '[00:01.00] Muteki no egao de arasu media\n[00:05.00] Shiritai sono himitsu mysterious',
+      usltLyrics:
+          '[00:01.00] Muteki no egao de arasu media\n[00:05.00] Shiritai sono himitsu mysterious',
       lastModifiedMs: 1700000000000,
     );
     localProvider.seedSongsForTesting([song]);
@@ -309,7 +358,8 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider<LocalMusicProvider>.value(value: localProvider),
+          ChangeNotifierProvider<LocalMusicProvider>.value(
+              value: localProvider),
           ChangeNotifierProvider<DownloaderProvider>.value(value: dlProvider),
         ],
         child: MaterialApp(
@@ -529,6 +579,11 @@ void main() {
     testWidgets(
         '10. SettingsView opens Kelola Sumber Add-on Hi-Res modal sheet, toggles switch, and adds custom add-on URL',
         (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 780);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       final settingsProvider = SettingsProvider();
       addTearDown(settingsProvider.dispose);
 
@@ -549,7 +604,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Select Hi-Res Lossless — FLAC radio option
+      // Open Download Quality dropdown and select Hi-Res Lossless — FLAC
+      await tester.tap(find.byKey(const ValueKey('download_quality_dropdown')));
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('download_quality_hiResFlac')),
       );
@@ -583,6 +640,23 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('hires_addon_reset_btn')));
       await tester.pumpAndSettle();
       expect(settingsProvider.hiResAddons.first.enabled, isTrue);
+
+      // Verify Add-on Manager switch & sync icon use monochrome Dark tokens
+      final addonSwitch = tester.widget<Switch>(
+        find.byKey(ValueKey('hires_addon_switch_$firstAddonId')),
+      );
+      expect(
+        addonSwitch.activeThumbColor,
+        equals(MusEveePalette.dark.nowPlayingOnPrimary),
+      );
+      expect(
+        addonSwitch.activeTrackColor,
+        equals(MusEveePalette.dark.nowPlayingPrimary),
+      );
+      final syncIcon = tester.widget<Icon>(find.byIcon(Icons.sync_rounded));
+      expect(syncIcon.color, equals(MusEveePalette.dark.nowPlayingPrimary));
+      expect(syncIcon.color, isNot(equals(MusEveePalette.dark.accent)));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets(
@@ -644,8 +718,8 @@ void main() {
       );
       await tester.pump();
 
-      // Verify Queue header uses SemiBold (w600), active song title uses SemiBold (w600), inactive song title uses Medium (w500)
-      final queueHeaderText = tester.widget<Text>(find.text('Queue (1/2)'));
+      // Verify Queue header is localized without counters and uses SemiBold (w600), active song title uses SemiBold (w600), inactive song title uses Medium (w500)
+      final queueHeaderText = tester.widget<Text>(find.text('Playback Queue'));
       expect(queueHeaderText.style?.fontWeight, FontWeight.w600);
       final activeSongTitle = tester.widget<Text>(find.text('Idol'));
       expect(activeSongTitle.style?.fontWeight, FontWeight.w600);
@@ -757,6 +831,7 @@ void main() {
               yield firstHalf;
               throw const SocketException('Simulated connection drop at 50%');
             }
+
             return http.StreamedResponse(
               dropStream(),
               200,
@@ -768,7 +843,8 @@ void main() {
             );
           } else {
             // Second request must carry Range: bytes=163840- and return 206 Partial Content
-            observedRangeHeader = request.headers['Range'] ?? request.headers['range'];
+            observedRangeHeader =
+                request.headers['Range'] ?? request.headers['range'];
             final secondHalf = fullFlacBytes.sublist(halfLen);
             return http.StreamedResponse(
               Stream.value(secondHalf),
@@ -827,6 +903,92 @@ void main() {
       expect(downloadedBytes, equals(fullFlacBytes));
       // Progress must monotonically advance (0.05 search -> 0.5 -> 1.0) without resetting to 0
       expect(progressFractions, [0.05, 0.5, 1.0]);
+    });
+
+    test(
+        '13. HiResAddonService.scoreCandidateTrack rejects wrong-artist lookalikes and matches cross-script titles (Propose by 9Lana vs Naisho no Pierced Earrings)',
+        () {
+      const targetWithIsrc = TrackMetadata(
+        spotifyUrl: 'https://www.deezer.com/track/2936968281',
+        title: 'propose',
+        artist: '9Lana',
+        album: 'propose',
+        releaseYear: '2024',
+        durationSeconds: 234,
+        coverUrl: '',
+        isrc: 'JPU902402382',
+      );
+      const targetWithoutIsrc = TrackMetadata(
+        spotifyUrl: 'search:9Lana - propose',
+        title: 'propose',
+        artist: '9Lana',
+        album: 'propose',
+        releaseYear: '2024',
+        durationSeconds: 234,
+        coverUrl: '',
+      );
+
+      final wrongOriginalArtist = <String, dynamic>{
+        'trackId': '169340596832452608',
+        'title': 'Propose',
+        'artistNames': <String>['Naisho no Pierced Earrings'],
+        'duration': 232106,
+        'isrc': 'JPZ922307420',
+      };
+      final wrongDifferentSong = <String, dynamic>{
+        'trackId': '189356387309649920',
+        'title': 'プロポーズ',
+        'artistNames': <String>['natori'],
+        'duration': 178380,
+        'isrc': 'JPU902501948',
+      };
+      final rightArtistInstrumental = <String, dynamic>{
+        'trackId': '154037892321120256',
+        'title': 'プロポーズ - Instrumental',
+        'artistNames': <String>['9Lana'],
+        'duration': 234120,
+        'isrc': 'JPU902402487',
+      };
+      final right9LanaTrack = <String, dynamic>{
+        'trackId': '170697937989402624',
+        'title': 'プロポーズ',
+        'artistNames': <String>['9Lana'],
+        'duration': 234400,
+        'isrc': 'JPU902402382',
+      };
+
+      // Both with and without ISRC, wrong-artist & instrumental tracks must score 0
+      expect(
+        HiResAddonService.scoreCandidateTrack(
+            targetWithIsrc, wrongOriginalArtist),
+        0,
+      );
+      expect(
+        HiResAddonService.scoreCandidateTrack(
+            targetWithoutIsrc, wrongOriginalArtist),
+        0,
+      );
+      expect(
+        HiResAddonService.scoreCandidateTrack(
+            targetWithoutIsrc, wrongDifferentSong),
+        0,
+      );
+      expect(
+        HiResAddonService.scoreCandidateTrack(
+            targetWithIsrc, rightArtistInstrumental),
+        0,
+      );
+
+      // Exact artist + ISRC or cross-script Katakana ("プロポーズ") loanword match wins cleanly (>= 55)
+      expect(
+        HiResAddonService.scoreCandidateTrack(targetWithIsrc, right9LanaTrack),
+        greaterThanOrEqualTo(150),
+      );
+      expect(
+        HiResAddonService.scoreCandidateTrack(
+            targetWithoutIsrc, right9LanaTrack),
+        greaterThanOrEqualTo(100),
+      );
     });
   });
 }

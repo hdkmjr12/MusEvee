@@ -31,7 +31,7 @@ class MusEveeLogo extends StatelessWidget {
           return Icon(
             Icons.music_note_rounded,
             size: size * 0.85,
-            color: palette.accent,
+            color: palette.nowPlayingPrimary,
           );
         },
       ),

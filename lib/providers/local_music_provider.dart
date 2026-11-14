@@ -159,7 +159,25 @@ class LocalMusicProvider extends ChangeNotifier {
     'com.spotmeta.downloader/system',
   );
 
-  static const List<double> fontSizePresets = [11.5, 13.5, 15.5, 18.0, 20.5];
+  static const List<double> fontSizePresets = [
+    8.5,
+    9.5,
+    10.5,
+    11.5,
+    13.5,
+    15.5,
+    18.0,
+    20.5,
+  ];
+  static const List<double> secondaryFontSizePresets = [
+    9.5,
+    10.5,
+    11.5,
+    12.5,
+    13.5,
+    14.5,
+    15.5,
+  ];
   static const List<double> legacyFontSizePresets = [13.5, 15.5, 18.0, 20.5];
   static const String hiddenFoldersFileName = 'musevee_hidden_folders_v1.json';
   static const String playStatsFileName = 'musevee_play_stats_v1.json';
@@ -292,22 +310,32 @@ class LocalMusicProvider extends ChangeNotifier {
   EmbeddedLyricsDisplayMode _lyricsDisplayMode =
       EmbeddedLyricsDisplayMode.synced;
   bool _autoScrollLyrics = true;
-  int _fontSizeIndex = 2; // 15.5sp default
+  int _fontSizeIndex = 5; // 15.5sp default (active lyrics)
+  int _secondaryFontSizeIndex = 4; // 13.5sp default (Home dimmed lyrics)
+
+  static int _resolveClosestPresetIndex(
+    List<double> presets,
+    double savedPt,
+    int fallbackIndex,
+  ) {
+    int bestIdx = fallbackIndex;
+    double minDiff = double.infinity;
+    for (int i = 0; i < presets.length; i++) {
+      final diff = (presets[i] - savedPt).abs();
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  }
 
   @visibleForTesting
   static int resolveFontSizeIndexFromSession(Map<dynamic, dynamic> sess) {
+    final defaultIdx = fontSizePresets.indexOf(15.5);
     final savedPt = (sess['lyricsFontSizePt'] as num?)?.toDouble();
     if (savedPt != null) {
-      int bestIdx = 2;
-      double minDiff = double.infinity;
-      for (int i = 0; i < fontSizePresets.length; i++) {
-        final diff = (fontSizePresets[i] - savedPt).abs();
-        if (diff < minDiff) {
-          minDiff = diff;
-          bestIdx = i;
-        }
-      }
-      return bestIdx;
+      return _resolveClosestPresetIndex(fontSizePresets, savedPt, defaultIdx);
     }
     final fIdx = (sess['fontSizeIndex'] as num?)?.toInt();
     if (fIdx != null) {
@@ -320,12 +348,29 @@ class LocalMusicProvider extends ChangeNotifier {
         return fIdx;
       }
     }
-    return 2;
+    return defaultIdx;
+  }
+
+  @visibleForTesting
+  static int resolveSecondaryFontSizeIndexFromSession(
+    Map<dynamic, dynamic> sess,
+  ) {
+    final defaultIdx = secondaryFontSizePresets.indexOf(13.5);
+    final savedPt = (sess['secondaryLyricsFontSizePt'] as num?)?.toDouble();
+    if (savedPt != null) {
+      return _resolveClosestPresetIndex(
+        secondaryFontSizePresets,
+        savedPt,
+        defaultIdx,
+      );
+    }
+    return defaultIdx;
   }
 
   @visibleForTesting
   void restoreFontSizeFromSessionMap(Map<dynamic, dynamic> sess) {
     _fontSizeIndex = resolveFontSizeIndexFromSession(sess);
+    _secondaryFontSizeIndex = resolveSecondaryFontSizeIndexFromSession(sess);
     notifyListeners();
   }
 
@@ -391,16 +436,23 @@ class LocalMusicProvider extends ChangeNotifier {
   EmbeddedLyricsDisplayMode get lyricsDisplayMode => _lyricsDisplayMode;
   bool get autoScrollLyrics => _autoScrollLyrics;
   double get lyricsFontSize => fontSizePresets[_fontSizeIndex];
+  bool get canDecreaseLyricsFontSize => _fontSizeIndex > 0;
+  bool get canIncreaseLyricsFontSize =>
+      _fontSizeIndex < fontSizePresets.length - 1;
+  double get secondaryLyricsFontSize =>
+      secondaryFontSizePresets[_secondaryFontSizeIndex];
+  bool get canDecreaseSecondaryLyricsFontSize => _secondaryFontSizeIndex > 0;
+  bool get canIncreaseSecondaryLyricsFontSize =>
+      _secondaryFontSizeIndex < secondaryFontSizePresets.length - 1;
 
   List<LyricsCandidate> get localLyricsCandidates =>
       List.unmodifiable(_localLyricsCandidates);
   bool get isLoadingLyricsCandidates => _isLoadingLyricsCandidates;
   bool get isProcessingLocalTag => _isProcessingLocalTag;
-  Uint8List? get currentFullCoverBytes =>
-      (_currentFullCoverSongPath != null &&
-              _currentFullCoverSongPath == currentSong?.filePath)
-          ? _currentFullCoverBytes
-          : null;
+  Uint8List? get currentFullCoverBytes => (_currentFullCoverSongPath != null &&
+          _currentFullCoverSongPath == currentSong?.filePath)
+      ? _currentFullCoverBytes
+      : null;
 
   String get localSearchQuery => _localSearchQuery;
   bool get filterFavoritesOnly => _filterFavoritesOnly;
@@ -433,9 +485,8 @@ class LocalMusicProvider extends ChangeNotifier {
       isFolderHidden(song.folderPath, folderName: song.folderName);
 
   void _rebuildVisibleSongs() {
-    _allSongs = _discoveredSongs
-        .where((s) => !isSongInHiddenFolder(s))
-        .toList();
+    _allSongs =
+        _discoveredSongs.where((s) => !isSongInHiddenFolder(s)).toList();
     _invalidateGroupingCaches();
   }
 
@@ -448,9 +499,8 @@ class LocalMusicProvider extends ChangeNotifier {
 
     for (final song in _discoveredSongs) {
       final path = song.folderPath;
-      final name = song.folderName.trim().isNotEmpty
-          ? song.folderName.trim()
-          : 'Music';
+      final name =
+          song.folderName.trim().isNotEmpty ? song.folderName.trim() : 'Music';
       final key = _normalizeFolderKey(path.isNotEmpty ? path : name);
       if (key.isEmpty) continue;
       displayPathByKey.putIfAbsent(key, () => path);
@@ -751,8 +801,7 @@ class LocalMusicProvider extends ChangeNotifier {
 
     final remainingKeys = grouped.keys
         .where(
-          (k) =>
-              !seenLower.contains(k.toLowerCase()) && grouped[k]!.isNotEmpty,
+          (k) => !seenLower.contains(k.toLowerCase()) && grouped[k]!.isNotEmpty,
         )
         .toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -788,9 +837,8 @@ class LocalMusicProvider extends ChangeNotifier {
 
     final map = <String, List<LocalSong>>{};
     for (final song in _allSongs) {
-      final key = song.artist.trim().isNotEmpty
-          ? song.artist.trim()
-          : 'Unknown Artist';
+      final key =
+          song.artist.trim().isNotEmpty ? song.artist.trim() : 'Unknown Artist';
       map.putIfAbsent(key, () => []).add(song);
     }
     final sortedKeys = map.keys.toList()
@@ -1071,10 +1119,10 @@ class LocalMusicProvider extends ChangeNotifier {
       bool libraryMutated = false;
 
       if (deltaResult != null) {
-        final rawPresent = deltaResult['presentPaths'] as List<dynamic>? ??
-            const <dynamic>[];
-        final rawUpdated = deltaResult['updatedTracks'] as List<dynamic>? ??
-            const <dynamic>[];
+        final rawPresent =
+            deltaResult['presentPaths'] as List<dynamic>? ?? const <dynamic>[];
+        final rawUpdated =
+            deltaResult['updatedTracks'] as List<dynamic>? ?? const <dynamic>[];
 
         final presentSet = rawPresent
             .map((e) => e?.toString() ?? '')
@@ -1133,7 +1181,9 @@ class LocalMusicProvider extends ChangeNotifier {
                 .toSet();
             for (final rem in removedSongs) {
               final cov = rem.coverFilePath;
-              if (cov != null && cov.isNotEmpty && !activeCovers.contains(cov)) {
+              if (cov != null &&
+                  cov.isNotEmpty &&
+                  !activeCovers.contains(cov)) {
                 try {
                   final cf = File(cov);
                   if (await cf.exists()) {
@@ -1345,9 +1395,8 @@ class LocalMusicProvider extends ChangeNotifier {
       }
     } else {
       _queueEntries = List<QueueEntry>.from(baseEntries);
-      _currentIndex = startWithSong != null
-          ? chosenIdx
-          : (baseEntries.isNotEmpty ? 0 : -1);
+      _currentIndex =
+          startWithSong != null ? chosenIdx : (baseEntries.isNotEmpty ? 0 : -1);
     }
   }
 
@@ -1412,8 +1461,7 @@ class LocalMusicProvider extends ChangeNotifier {
     final wasPlaying = _isPlaying;
     _isPlaying = isPlaying;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final blockedBySeekGuard =
-        nowMs < _seekGuardUntilEpochMs &&
+    final blockedBySeekGuard = nowMs < _seekGuardUntilEpochMs &&
         (positionMs - _positionMs).abs() > 600;
     if (!blockedBySeekGuard &&
         positionMs >= 0 &&
@@ -1512,8 +1560,8 @@ class LocalMusicProvider extends ChangeNotifier {
           (e) => e.queueId == _queueEntries[existingIdx].queueId,
         );
         if (origIdx != -1) {
-          _originalQueueEntries[origIdx] = _originalQueueEntries[origIdx]
-              .copyWith(song: song);
+          _originalQueueEntries[origIdx] =
+              _originalQueueEntries[origIdx].copyWith(song: song);
         }
       } else {
         final entry = QueueEntry(queueId: _allocateQueueId(), song: song);
@@ -1705,6 +1753,28 @@ class LocalMusicProvider extends ChangeNotifier {
     );
   }
 
+  /// Plays or appends an explicit list of selected [songs], deduplicating by
+  /// `filePath`, with optional Fisher-Yates [shuffle] and [appendToCurrentQueue].
+  Future<int> playCombinedSongs(
+    List<LocalSong> songs, {
+    bool shuffle = false,
+    bool appendToCurrentQueue = false,
+  }) async {
+    if (songs.isEmpty) return 0;
+    final seenPaths = <String>{};
+    final unique = <LocalSong>[];
+    for (final song in songs) {
+      if (seenPaths.add(song.filePath)) {
+        unique.add(song);
+      }
+    }
+    return _mergeAndPlayOrAppendSongs(
+      unique,
+      shuffle: shuffle,
+      appendToCurrentQueue: appendToCurrentQueue,
+    );
+  }
+
   Future<int> _mergeAndPlayOrAppendSongs(
     List<LocalSong> uniqueSongs, {
     required bool shuffle,
@@ -1714,9 +1784,8 @@ class LocalMusicProvider extends ChangeNotifier {
 
     if (appendToCurrentQueue && _queueEntries.isNotEmpty) {
       final existingPaths = _queueEntries.map((e) => e.song.filePath).toSet();
-      final toAppend = uniqueSongs
-          .where((s) => existingPaths.add(s.filePath))
-          .toList();
+      final toAppend =
+          uniqueSongs.where((s) => existingPaths.add(s.filePath)).toList();
       if (toAppend.isEmpty) return 0;
 
       final newEntries = toAppend
@@ -2029,8 +2098,7 @@ class LocalMusicProvider extends ChangeNotifier {
       final origAnchor = activeId != null
           ? _originalQueueEntries.indexWhere((e) => e.queueId == activeId)
           : -1;
-      if (origAnchor != -1 &&
-          origAnchor + 1 <= _originalQueueEntries.length) {
+      if (origAnchor != -1 && origAnchor + 1 <= _originalQueueEntries.length) {
         _originalQueueEntries.insert(origAnchor + 1, entry);
       } else {
         _originalQueueEntries.add(entry);
@@ -2160,9 +2228,8 @@ class LocalMusicProvider extends ChangeNotifier {
           _originalQueueEntries = List<QueueEntry>.from(_queueEntries);
         }
         if (active != null) {
-          final rest = _queueEntries
-              .where((e) => e.queueId != active.queueId)
-              .toList();
+          final rest =
+              _queueEntries.where((e) => e.queueId != active.queueId).toList();
           _fisherYatesShuffle(rest);
           _queueEntries = [active, ...rest];
           _currentIndex = 0;
@@ -2216,6 +2283,41 @@ class LocalMusicProvider extends ChangeNotifier {
 
   void cycleLyricsFontSize() {
     _fontSizeIndex = (_fontSizeIndex + 1) % fontSizePresets.length;
+    notifyListeners();
+    _savePlayerSession();
+  }
+
+  void decreaseLyricsFontSize() {
+    if (!canDecreaseLyricsFontSize) return;
+    _fontSizeIndex--;
+    notifyListeners();
+    _savePlayerSession();
+  }
+
+  void increaseLyricsFontSize() {
+    if (!canIncreaseLyricsFontSize) return;
+    _fontSizeIndex++;
+    notifyListeners();
+    _savePlayerSession();
+  }
+
+  void cycleSecondaryLyricsFontSize() {
+    _secondaryFontSizeIndex =
+        (_secondaryFontSizeIndex + 1) % secondaryFontSizePresets.length;
+    notifyListeners();
+    _savePlayerSession();
+  }
+
+  void decreaseSecondaryLyricsFontSize() {
+    if (!canDecreaseSecondaryLyricsFontSize) return;
+    _secondaryFontSizeIndex--;
+    notifyListeners();
+    _savePlayerSession();
+  }
+
+  void increaseSecondaryLyricsFontSize() {
+    if (!canIncreaseSecondaryLyricsFontSize) return;
+    _secondaryFontSizeIndex++;
     notifyListeners();
     _savePlayerSession();
   }
@@ -2372,15 +2474,20 @@ class LocalMusicProvider extends ChangeNotifier {
 
       String newPath = song.filePath;
       if (_shouldInvokeNativeChannel) {
-        newPath = await _taggingService.retagExistingMp3(
+        newPath = await _taggingService.retagExistingAudio(
           filePath: song.filePath,
           updatedMetadata: updatedMeta,
           preferSyncedLyrics: effectivePreferSynced,
         );
       }
 
+      final normalizedNewPath = newPath.replaceAll('\\', '/');
+      final updatedFileName = normalizedNewPath.split('/').last.trim();
       final updatedInMemory = hydratedSong.copyWith(
         filePath: newPath,
+        fileName: updatedFileName.isNotEmpty
+            ? updatedFileName
+            : hydratedSong.fileName,
         title: updatedMeta.title,
         artist: updatedMeta.artist,
         album: updatedMeta.album,
@@ -2604,9 +2711,8 @@ class LocalMusicProvider extends ChangeNotifier {
               releaseYear: restoredSong.year,
               lyricsText: cachedDoc.originalUslt,
               preferSyncedLyrics: restoredSong.hasSyncedLyrics,
-              syncedLyrics: restoredSong.hasSyncedLyrics
-                  ? cachedDoc.originalUslt
-                  : null,
+              syncedLyrics:
+                  restoredSong.hasSyncedLyrics ? cachedDoc.originalUslt : null,
               preserveRomajiCache: true,
             );
           } catch (_) {
@@ -3145,6 +3251,10 @@ class LocalMusicProvider extends ChangeNotifier {
           if (sess['lyricsFontSizePt'] is num || sess['fontSizeIndex'] is num) {
             _fontSizeIndex = resolveFontSizeIndexFromSession(sess);
           }
+          if (sess['secondaryLyricsFontSizePt'] is num) {
+            _secondaryFontSizeIndex =
+                resolveSecondaryFontSizeIndexFromSession(sess);
+          }
 
           final qPaths = (sess['queuePaths'] as List?)
                   ?.map((e) => e.toString())
@@ -3159,7 +3269,8 @@ class LocalMusicProvider extends ChangeNotifier {
           for (final p in qPaths) {
             final song = byPath[p];
             if (song != null) {
-              builtQueue.add(QueueEntry(queueId: _allocateQueueId(), song: song));
+              builtQueue
+                  .add(QueueEntry(queueId: _allocateQueueId(), song: song));
             }
           }
           if (builtQueue.isNotEmpty) {
@@ -3246,6 +3357,7 @@ class LocalMusicProvider extends ChangeNotifier {
         'autoScrollLyrics': _autoScrollLyrics,
         'fontSizeIndex': _fontSizeIndex,
         'lyricsFontSizePt': lyricsFontSize,
+        'secondaryLyricsFontSizePt': secondaryLyricsFontSize,
         'currentIndex': _currentIndex,
         'positionMs': _positionMs,
         'queuePaths': _queueEntries.map((e) => e.song.filePath).toList(),
@@ -3388,15 +3500,14 @@ class LocalMusicProvider extends ChangeNotifier {
           });
         return sorted;
       case SmartPlaylistId.recentlyPlayed:
-        final played = _allSongs
-            .where((s) => playCountFor(s.filePath) > 0)
-            .toList()
-          ..sort((a, b) {
-            final cmp =
-                lastPlayedMsFor(b.filePath).compareTo(lastPlayedMsFor(a.filePath));
-            if (cmp != 0) return cmp;
-            return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-          });
+        final played =
+            _allSongs.where((s) => playCountFor(s.filePath) > 0).toList()
+              ..sort((a, b) {
+                final cmp = lastPlayedMsFor(b.filePath)
+                    .compareTo(lastPlayedMsFor(a.filePath));
+                if (cmp != 0) return cmp;
+                return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+              });
         return played;
       case SmartPlaylistId.mostPlayed:
         final played = _allSongs
@@ -3406,16 +3517,14 @@ class LocalMusicProvider extends ChangeNotifier {
             final countCmp =
                 playCountFor(b.filePath).compareTo(playCountFor(a.filePath));
             if (countCmp != 0) return countCmp;
-            final recCmp =
-                lastPlayedMsFor(b.filePath).compareTo(lastPlayedMsFor(a.filePath));
+            final recCmp = lastPlayedMsFor(b.filePath)
+                .compareTo(lastPlayedMsFor(a.filePath));
             if (recCmp != 0) return recCmp;
             return a.title.toLowerCase().compareTo(b.title.toLowerCase());
           });
         return played;
       case SmartPlaylistId.notPlayed:
-        return _allSongs
-            .where((s) => playCountFor(s.filePath) == 0)
-            .toList();
+        return _allSongs.where((s) => playCountFor(s.filePath) == 0).toList();
       default:
         return const <LocalSong>[];
     }
@@ -3478,7 +3587,9 @@ class LocalMusicProvider extends ChangeNotifier {
     List<String> initialPaths = const [],
   }) async {
     final now = DateTime.now();
-    final trimmed = name.trim().isEmpty ? 'Playlist Baru' : name.trim();
+    final trimmed = name.trim().isEmpty
+        ? (AppStrings.isIndonesian ? 'Playlist Baru' : 'New Playlist')
+        : name.trim();
     final seen = <String>{};
     final playlist = LocalPlaylist(
       id: 'pl_${now.microsecondsSinceEpoch}',
@@ -3563,7 +3674,8 @@ class LocalMusicProvider extends ChangeNotifier {
     await _savePlaylists();
   }
 
-  Future<void> reorderPlaylistSong(String id, int oldIndex, int newIndex) async {
+  Future<void> reorderPlaylistSong(
+      String id, int oldIndex, int newIndex) async {
     final idx = _playlists.indexWhere((p) => p.id == id);
     if (idx == -1) return;
     final current = List<String>.from(_playlists[idx].songPaths);

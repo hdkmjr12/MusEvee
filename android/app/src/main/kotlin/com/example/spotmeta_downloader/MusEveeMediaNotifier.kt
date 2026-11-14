@@ -22,6 +22,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import java.io.File
+import java.util.Locale
 
 /**
  * MusEvee native media notification: framework [MediaSession] +
@@ -107,15 +108,28 @@ class MusEveeMediaNotifier(
         }
     }
 
+    private fun isIndonesianLocale(): Boolean {
+        val lang = Locale.getDefault().language.lowercase(Locale.ROOT)
+        return lang == "id" || lang == "in"
+    }
+
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        if (notificationManager.getNotificationChannel(CHANNEL_ID) != null) return
+        val isId = isIndonesianLocale()
+        val channelName = if (isId) "Pemutar MusEvee" else "MusEvee Player"
+        val channelDesc = if (isId) {
+            "Kontrol pemutaran musik MusEvee"
+        } else {
+            "MusEvee music playback controls"
+        }
+        val existing = notificationManager.getNotificationChannel(CHANNEL_ID)
+        if (existing != null && existing.name?.toString() == channelName) return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Pemutar MusEvee",
+            channelName,
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Kontrol pemutaran musik MusEvee"
+            description = channelDesc
             setShowBadge(false)
             setSound(null, null)
             enableVibration(false)
@@ -232,16 +246,23 @@ class MusEveeMediaNotifier(
             Notification.Builder(appContext)
         }
 
+        val isId = isIndonesianLocale()
+        val pauseLabel = if (isId) "Jeda" else "Pause"
+        val playLabel = if (isId) "Putar" else "Play"
+        val prevLabel = if (isId) "Sebelumnya" else "Previous"
+        val nextLabel = if (isId) "Berikutnya" else "Next"
+        val closeLabel = if (isId) "Tutup" else "Close"
+
         val playPauseAction = if (isPlaying) {
             Notification.Action.Builder(
                 android.R.drawable.ic_media_pause,
-                "Jeda",
+                pauseLabel,
                 broadcastIntent(ACTION_PAUSE, 11)
             ).build()
         } else {
             Notification.Action.Builder(
                 android.R.drawable.ic_media_play,
-                "Putar",
+                playLabel,
                 broadcastIntent(ACTION_PLAY, 12)
             ).build()
         }
@@ -258,11 +279,11 @@ class MusEveeMediaNotifier(
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setOngoing(isPlaying)
-            .setColor(0xFF3898EC.toInt())
+            .setColor(0xFF0E1014.toInt())
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_media_previous,
-                    "Sebelumnya",
+                    prevLabel,
                     broadcastIntent(ACTION_PREVIOUS, 13)
                 ).build()
             )
@@ -270,14 +291,14 @@ class MusEveeMediaNotifier(
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_media_next,
-                    "Berikutnya",
+                    nextLabel,
                     broadcastIntent(ACTION_NEXT, 14)
                 ).build()
             )
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_menu_close_clear_cancel,
-                    "Tutup",
+                    closeLabel,
                     broadcastIntent(ACTION_STOP, 15)
                 ).build()
             )

@@ -5,17 +5,21 @@ import '../providers/settings_provider.dart';
 import '../services/hires_addon_service.dart';
 import '../theme/musevee_palette.dart';
 import '../utils/app_strings.dart';
+import 'local_library_views.dart'
+    show cleanMonochromeHeaderDecoration, statusBarHeaderPadding;
 import 'pressable_scale.dart';
 
 /// Minimalist Musicolet-styled Settings tab (`index 5`).
-/// Contains Appearance (Dark/Light Theme), Download Audio Quality (including
-/// Hi-Res Lossless FLAC + Add-on Source Manager), and version footer.
+/// Contains Appearance (Auto/Dark/Light Theme dropdown), Download Audio Quality
+/// dropdown (including Hi-Res Lossless FLAC + Add-on Source Manager), and version footer.
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
+    final effectiveIsDark = Theme.of(context).brightness == Brightness.dark;
 
     return Consumer<SettingsProvider>(
       builder: (context, settingsProvider, _) {
@@ -23,22 +27,23 @@ class SettingsView extends StatelessWidget {
         final selectedTheme = settingsProvider.themeMode;
         final activeAddonsCount = settingsProvider.enabledHiResAddonsCount;
 
-        final themeOptions = <({
-          ThemeMode mode,
-          String keyName,
-          IconData icon,
-          String title,
-          String subtitle,
-        })>[
-          (
-            mode: ThemeMode.dark,
+        final themeOptions = <_MonochromeDropdownOption<ThemeMode>>[
+          _MonochromeDropdownOption<ThemeMode>(
+            value: ThemeMode.system,
+            keyName: 'theme_mode_system',
+            icon: Icons.brightness_auto_rounded,
+            title: AppStrings.themeAutoTitle,
+            subtitle: AppStrings.themeAutoSubtitle,
+          ),
+          _MonochromeDropdownOption<ThemeMode>(
+            value: ThemeMode.dark,
             keyName: 'theme_mode_dark',
             icon: Icons.dark_mode_rounded,
             title: AppStrings.themeDarkTitle,
             subtitle: AppStrings.themeDarkSubtitle,
           ),
-          (
-            mode: ThemeMode.light,
+          _MonochromeDropdownOption<ThemeMode>(
+            value: ThemeMode.light,
             keyName: 'theme_mode_light',
             icon: Icons.light_mode_rounded,
             title: AppStrings.themeLightTitle,
@@ -46,35 +51,35 @@ class SettingsView extends StatelessWidget {
           ),
         ];
 
-        final options = <({
-          DownloadQuality quality,
-          String title,
-          String subtitle,
-          bool isHiRes,
-        })>[
-          (
-            quality: DownloadQuality.hiResFlac,
+        final qualityOptions = <_MonochromeDropdownOption<DownloadQuality>>[
+          _MonochromeDropdownOption<DownloadQuality>(
+            value: DownloadQuality.hiResFlac,
+            keyName: 'download_quality_${DownloadQuality.hiResFlac.name}',
+            icon: Icons.high_quality_rounded,
             title: AppStrings.qualityHiResTitle,
             subtitle: AppStrings.qualityHiResSubtitle,
-            isHiRes: true,
+            badgeText: 'FLAC',
           ),
-          (
-            quality: DownloadQuality.best,
+          _MonochromeDropdownOption<DownloadQuality>(
+            value: DownloadQuality.best,
+            keyName: 'download_quality_${DownloadQuality.best.name}',
+            icon: Icons.graphic_eq_rounded,
             title: AppStrings.qualityBestTitle,
             subtitle: AppStrings.qualityBestSubtitle,
-            isHiRes: false,
           ),
-          (
-            quality: DownloadQuality.balanced,
+          _MonochromeDropdownOption<DownloadQuality>(
+            value: DownloadQuality.balanced,
+            keyName: 'download_quality_${DownloadQuality.balanced.name}',
+            icon: Icons.audiotrack_rounded,
             title: AppStrings.qualityBalancedTitle,
             subtitle: AppStrings.qualityBalancedSubtitle,
-            isHiRes: false,
           ),
-          (
-            quality: DownloadQuality.efficient,
+          _MonochromeDropdownOption<DownloadQuality>(
+            value: DownloadQuality.efficient,
+            keyName: 'download_quality_${DownloadQuality.efficient.name}',
+            icon: Icons.audiotrack_rounded,
             title: AppStrings.qualityEfficientTitle,
             subtitle: AppStrings.qualityEfficientSubtitle,
-            isHiRes: false,
           ),
         ];
 
@@ -83,33 +88,38 @@ class SettingsView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Musicolet Sub-Header
+              // Clean Monochrome Header matching Folders & Playlists
               Container(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                decoration: BoxDecoration(
-                  color: palette.surfaceCard,
-                  border: Border(
-                    bottom: BorderSide(color: palette.hairline, width: 0.8),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.settings_rounded,
-                      color: palette.textPrimary,
-                      size: 19,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      AppStrings.settingsHeaderTitle,
-                      style: TextStyle(
+                padding: statusBarHeaderPadding(context),
+                decoration: cleanMonochromeHeaderDecoration(context),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 40),
+                  child: Row(
+                    children: [
+                      Image.asset(
+                        'assets/icons/settings.png',
+                        width: 19,
+                        height: 19,
+                        fit: BoxFit.contain,
                         color: palette.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
+                        colorBlendMode: BlendMode.srcIn,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          AppStrings.settingsHeaderTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -126,16 +136,16 @@ class SettingsView extends StatelessWidget {
                       child: Text(
                         AppStrings.settingsAppearanceSection,
                         style: TextStyle(
-                          color: palette.accent,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
+                          color: palette.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.4,
                         ),
                       ),
                     ),
                     const SizedBox(height: 6),
 
-                    // Card: Tema Aplikasi (Dark / Light)
+                    // Card: Tema Aplikasi (Dropdown: Auto / Gelap / Terang)
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -154,25 +164,22 @@ class SettingsView extends StatelessWidget {
                             style: TextStyle(
                               color: palette.textPrimary,
                               fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 10),
-                          for (int i = 0; i < themeOptions.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 8),
-                            _buildThemeOptionTile(
-                              palette: palette,
-                              keyName: themeOptions[i].keyName,
-                              icon: themeOptions[i].icon,
-                              title: themeOptions[i].title,
-                              subtitle: themeOptions[i].subtitle,
-                              isSelected:
-                                  selectedTheme == themeOptions[i].mode,
-                              onSelect: () => settingsProvider.setThemeMode(
-                                themeOptions[i].mode,
-                              ),
-                            ),
-                          ],
+                          _MonochromeDropdownField<ThemeMode>(
+                            dropdownKey: const ValueKey('theme_mode_dropdown'),
+                            selectedValue: selectedTheme,
+                            selectedSubtitleOverride:
+                                selectedTheme == ThemeMode.system
+                                    ? AppStrings.themeAutoResolvedSubtitle(
+                                        isDark: effectiveIsDark,
+                                      )
+                                    : null,
+                            options: themeOptions,
+                            onSelected: settingsProvider.setThemeMode,
+                          ),
                         ],
                       ),
                     ),
@@ -188,16 +195,16 @@ class SettingsView extends StatelessWidget {
                       child: Text(
                         AppStrings.settingsDownloadsSection,
                         style: TextStyle(
-                          color: palette.accent,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
+                          color: palette.textMuted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.4,
                         ),
                       ),
                     ),
                     const SizedBox(height: 6),
 
-                    // Card: Kualitas Audio Unduhan + Progressive Disclosure Add-on Card
+                    // Card: Kualitas Audio Unduhan (Dropdown) + Add-on Shortcut Card
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -216,24 +223,17 @@ class SettingsView extends StatelessWidget {
                             style: TextStyle(
                               color: palette.textPrimary,
                               fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 10),
-                          for (int i = 0; i < options.length; i++) ...[
-                            if (i > 0) const SizedBox(height: 8),
-                            _buildQualityOptionTile(
-                              palette: palette,
-                              quality: options[i].quality,
-                              title: options[i].title,
-                              subtitle: options[i].subtitle,
-                              isHiRes: options[i].isHiRes,
-                              isSelected:
-                                  selectedQuality == options[i].quality,
-                              onSelect: () => settingsProvider
-                                  .setDownloadQuality(options[i].quality),
-                            ),
-                          ],
+                          _MonochromeDropdownField<DownloadQuality>(
+                            dropdownKey:
+                                const ValueKey('download_quality_dropdown'),
+                            selectedValue: selectedQuality,
+                            options: qualityOptions,
+                            onSelected: settingsProvider.setDownloadQuality,
+                          ),
                           const SizedBox(height: 10),
                           _buildHiResAddonManageShortcutCard(
                             context: context,
@@ -303,7 +303,7 @@ class SettingsView extends StatelessWidget {
                 Icon(
                   Icons.extension_outlined,
                   size: 19,
-                  color: palette.accent,
+                  color: palette.nowPlayingPrimary,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -332,11 +332,11 @@ class SettingsView extends StatelessWidget {
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 9,
+                    vertical: 4.5,
                   ),
                   decoration: BoxDecoration(
-                    color: palette.accent.withValues(alpha: 0.14),
+                    color: palette.nowPlayingPrimary,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
@@ -345,7 +345,7 @@ class SettingsView extends StatelessWidget {
                       Text(
                         AppStrings.hiResAddonManageButton,
                         style: TextStyle(
-                          color: palette.accent,
+                          color: palette.nowPlayingOnPrimary,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                         ),
@@ -354,7 +354,7 @@ class SettingsView extends StatelessWidget {
                       Icon(
                         Icons.chevron_right_rounded,
                         size: 16,
-                        color: palette.accent,
+                        color: palette.nowPlayingOnPrimary,
                       ),
                     ],
                   ),
@@ -375,186 +375,299 @@ class SettingsView extends StatelessWidget {
       builder: (sheetCtx) => const _HiResAddonManagerSheet(),
     );
   }
+}
 
-  Widget _buildThemeOptionTile({
-    required MusEveePalette palette,
-    required String keyName,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool isSelected,
-    required VoidCallback onSelect,
-  }) {
-    return PressableScale(
-      pressedScale: 0.985,
-      child: Material(
-        key: ValueKey(keyName),
-        color: isSelected
-            ? palette.accent.withValues(alpha: 0.14)
-            : palette.surfaceSubtle,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: isSelected
-                ? palette.accent.withValues(alpha: 0.75)
-                : palette.hairline,
-            width: isSelected ? 1.1 : 0.8,
+class _MonochromeDropdownOption<T> {
+  final T value;
+  final String keyName;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? badgeText;
+
+  const _MonochromeDropdownOption({
+    required this.value,
+    required this.keyName,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.badgeText,
+  });
+}
+
+class _MonochromeDropdownField<T> extends StatefulWidget {
+  final Key dropdownKey;
+  final T selectedValue;
+  final String? selectedSubtitleOverride;
+  final List<_MonochromeDropdownOption<T>> options;
+  final ValueChanged<T> onSelected;
+
+  const _MonochromeDropdownField({
+    required this.dropdownKey,
+    required this.selectedValue,
+    required this.options,
+    required this.onSelected,
+    this.selectedSubtitleOverride,
+  });
+
+  @override
+  State<_MonochromeDropdownField<T>> createState() =>
+      _MonochromeDropdownFieldState<T>();
+}
+
+class _MonochromeDropdownFieldState<T>
+    extends State<_MonochromeDropdownField<T>> {
+  bool _isOpen = false;
+
+  _MonochromeDropdownOption<T> get _selectedOption {
+    for (final option in widget.options) {
+      if (option.value == widget.selectedValue) {
+        return option;
+      }
+    }
+    return widget.options.first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final selected = _selectedOption;
+    final displaySubtitle =
+        widget.selectedSubtitleOverride ?? selected.subtitle;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final menuWidth =
+            constraints.hasBoundedWidth ? constraints.maxWidth : 280.0;
+
+        return Theme(
+          data: Theme.of(context).copyWith(
+            highlightColor: palette.nowPlayingPrimary.withValues(alpha: 0.06),
+            splashColor: palette.nowPlayingPrimary.withValues(alpha: 0.08),
           ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onSelect,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Icon(
-                  isSelected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: 20,
-                  color: isSelected ? palette.accent : palette.textMuted,
-                ),
-                const SizedBox(width: 10),
-                Icon(
-                  icon,
-                  size: 18,
-                  color: isSelected ? palette.accent : palette.textMuted,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: palette.textPrimary,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
+          child: PopupMenuButton<T>(
+            key: widget.dropdownKey,
+            initialValue: selected.value,
+            position: PopupMenuPosition.under,
+            offset: const Offset(0, 6),
+            color: palette.surfaceCard,
+            surfaceTintColor: Colors.transparent,
+            elevation: 8,
+            shadowColor: Colors.black.withValues(
+              alpha: context.isDarkMode ? 0.55 : 0.14,
+            ),
+            constraints: BoxConstraints(
+              minWidth: menuWidth,
+              maxWidth: menuWidth,
+            ),
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: palette.hairline, width: 0.9),
+            ),
+            onOpened: () => setState(() => _isOpen = true),
+            onCanceled: () => setState(() => _isOpen = false),
+            onSelected: (value) {
+              setState(() => _isOpen = false);
+              widget.onSelected(value);
+            },
+            itemBuilder: (menuCtx) {
+              return widget.options.map((option) {
+                final isSelected = option.value == selected.value;
+                return PopupMenuItem<T>(
+                  key: ValueKey<String>(option.keyName),
+                  value: option.value,
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? palette.surfaceSubtle
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          option.icon,
+                          size: 18,
+                          color: isSelected
+                              ? palette.nowPlayingPrimary
+                              : palette.textMuted,
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          color: palette.textMuted,
-                          fontSize: 11.5,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      option.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: palette.textPrimary,
+                                        fontSize: 13,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  if (option.badgeText != null) ...[
+                                    const SizedBox(width: 6),
+                                    _buildFormatPill(
+                                      palette,
+                                      option.badgeText!,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 1.5),
+                              Text(
+                                option.subtitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.textMuted,
+                                  fontSize: 11,
+                                  height: 1.25,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        if (isSelected) ...[
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.check_rounded,
+                            size: 18,
+                            color: palette.nowPlayingPrimary,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(growable: false);
+            },
+            child: MographSpringTap(
+              pressedScale: 0.985,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _isOpen
+                        ? palette.nowPlayingPrimary.withValues(alpha: 0.55)
+                        : palette.hairline,
+                    width: _isOpen ? 1.1 : 0.8,
                   ),
                 ),
-              ],
+                child: Row(
+                  children: [
+                    Icon(
+                      selected.icon,
+                      size: 19,
+                      color: palette.nowPlayingPrimary,
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  selected.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: palette.textPrimary,
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (selected.badgeText != null) ...[
+                                const SizedBox(width: 6),
+                                _buildFormatPill(palette, selected.badgeText!),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            displaySubtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 11.5,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: _isOpen ? 0.5 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        size: 20,
+                        color: _isOpen
+                            ? palette.nowPlayingPrimary
+                            : palette.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildQualityOptionTile({
-    required MusEveePalette palette,
-    required DownloadQuality quality,
-    required String title,
-    required String subtitle,
-    required bool isHiRes,
-    required bool isSelected,
-    required VoidCallback onSelect,
-  }) {
-    return PressableScale(
-      pressedScale: 0.985,
-      child: Material(
-        key: ValueKey('download_quality_${quality.name}'),
-        color: isSelected
-            ? palette.accent.withValues(alpha: 0.14)
-            : palette.surfaceSubtle,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: isSelected
-                ? palette.accent.withValues(alpha: 0.75)
-                : palette.hairline,
-            width: isSelected ? 1.1 : 0.8,
-          ),
+  Widget _buildFormatPill(MusEveePalette palette, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: palette.nowPlayingPrimary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: palette.nowPlayingPrimary.withValues(alpha: 0.35),
+          width: 0.7,
         ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onSelect,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Icon(
-                  isSelected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: 20,
-                  color: isSelected ? palette.accent : palette.textMuted,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              title,
-                              style: TextStyle(
-                                color: palette.textPrimary,
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          if (isHiRes) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 5.5,
-                                vertical: 1.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: MusEveePalette.amber.withValues(
-                                  alpha: 0.18,
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: MusEveePalette.amber.withValues(
-                                    alpha: 0.55,
-                                  ),
-                                  width: 0.7,
-                                ),
-                              ),
-                              child: const Text(
-                                'FLAC',
-                                style: TextStyle(
-                                  color: MusEveePalette.amber,
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          color: palette.textMuted,
-                          fontSize: 11.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: palette.nowPlayingPrimary,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
         ),
       ),
     );
@@ -600,9 +713,9 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
       context: context,
       builder: (dialogCtx) {
         return AlertDialog(
-          backgroundColor: palette.surfaceCard,
+          backgroundColor: palette.nowPlayingBg,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             side: BorderSide(color: palette.hairline, width: 0.8),
           ),
           title: Text(
@@ -610,13 +723,14 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
             style: TextStyle(
               color: palette.textPrimary,
               fontSize: 15,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
           content: TextField(
             key: const ValueKey('hires_addon_url_input'),
             controller: controller,
             autofocus: true,
+            cursorColor: palette.nowPlayingPrimary,
             style: TextStyle(color: palette.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               hintText: AppStrings.hiResAddonAddDialogHint,
@@ -631,29 +745,47 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
                 borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: palette.hairline, width: 0.8),
               ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: palette.hairline, width: 0.8),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(
+                  color: palette.nowPlayingPrimary,
+                  width: 1.2,
+                ),
+              ),
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: Text(
-                AppStrings.hiResAddonCancelButton,
-                style: TextStyle(color: palette.textMuted, fontSize: 12.5),
+            MographSpringTap(
+              pressedScale: 0.90,
+              child: TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: Text(
+                  AppStrings.hiResAddonCancelButton,
+                  style: TextStyle(color: palette.textMuted, fontSize: 12.5),
+                ),
               ),
             ),
-            FilledButton(
-              key: const ValueKey('hires_addon_url_submit_btn'),
-              style: FilledButton.styleFrom(
-                backgroundColor: palette.accent,
-              ),
-              onPressed: () =>
-                  Navigator.of(dialogCtx).pop(controller.text.trim()),
-              child: Text(
-                AppStrings.hiResAddonSaveButton,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
+            MographSpringTap(
+              pressedScale: 0.94,
+              child: FilledButton(
+                key: const ValueKey('hires_addon_url_submit_btn'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: palette.nowPlayingPrimary,
+                  foregroundColor: palette.nowPlayingOnPrimary,
+                ),
+                onPressed: () =>
+                    Navigator.of(dialogCtx).pop(controller.text.trim()),
+                child: Text(
+                  AppStrings.hiResAddonSaveButton,
+                  style: TextStyle(
+                    color: palette.nowPlayingOnPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -680,6 +812,7 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    SystemLocaleScope.watch(context);
     final palette = context.palette;
     final maxSheetHeight = MediaQuery.of(context).size.height * 0.84;
 
@@ -691,7 +824,7 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
           key: const ValueKey('hires_addon_manager_sheet'),
           constraints: BoxConstraints(maxHeight: maxSheetHeight),
           decoration: BoxDecoration(
-            color: palette.bgCanvas,
+            color: palette.nowPlayingBg,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
             border: Border(
               top: BorderSide(color: palette.hairline, width: 0.8),
@@ -718,69 +851,17 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
 
                 // Header
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 14, 10),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              AppStrings.hiResAddonModalTitle,
-                              style: TextStyle(
-                                color: palette.textPrimary,
-                                fontSize: 15.5,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          TextButton.icon(
-                            key: const ValueKey('hires_addon_refresh_btn'),
-                            onPressed: _isRefreshing
-                                ? null
-                                : () => _refreshHealth(settingsProvider),
-                            icon: _isRefreshing
-                                ? SizedBox(
-                                    width: 13,
-                                    height: 13,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 1.8,
-                                      color: palette.accent,
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.sync_rounded,
-                                    size: 15,
-                                    color: palette.accent,
-                                  ),
-                            label: Text(
-                              AppStrings.hiResAddonRefreshStatus,
-                              style: TextStyle(
-                                color: palette.accent,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          TextButton.icon(
-                            key: const ValueKey('hires_addon_reset_btn'),
-                            onPressed: () => settingsProvider
-                                .resetAddonsToDefaultPresets(),
-                            icon: Icon(
-                              Icons.restart_alt_rounded,
-                              size: 15,
-                              color: palette.textMuted,
-                            ),
-                            label: Text(
-                              AppStrings.hiResAddonResetPresets,
-                              style: TextStyle(
-                                color: palette.textMuted,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        AppStrings.hiResAddonModalTitle,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -791,6 +872,98 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.4,
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          MographSpringTap(
+                            pressedScale: 0.94,
+                            enabled: !_isRefreshing,
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('hires_addon_refresh_btn'),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: palette.surfaceSubtle,
+                                foregroundColor: palette.nowPlayingPrimary,
+                                minimumSize: const Size(0, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                side: BorderSide(
+                                  color: palette.hairline,
+                                  width: 0.8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              onPressed: _isRefreshing
+                                  ? null
+                                  : () => _refreshHealth(settingsProvider),
+                              icon: _isRefreshing
+                                  ? SizedBox(
+                                      width: 13,
+                                      height: 13,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.8,
+                                        color: palette.nowPlayingPrimary,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.sync_rounded,
+                                      size: 15,
+                                      color: palette.nowPlayingPrimary,
+                                    ),
+                              label: Text(
+                                AppStrings.hiResAddonRefreshStatus,
+                                style: TextStyle(
+                                  color: palette.nowPlayingPrimary,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          MographSpringTap(
+                            pressedScale: 0.94,
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('hires_addon_reset_btn'),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: palette.surfaceSubtle,
+                                foregroundColor: palette.textMuted,
+                                minimumSize: const Size(0, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                side: BorderSide(
+                                  color: palette.hairline,
+                                  width: 0.8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              onPressed: () =>
+                                  settingsProvider.resetAddonsToDefaultPresets(),
+                              icon: Icon(
+                                Icons.restart_alt_rounded,
+                                size: 15,
+                                color: palette.textMuted,
+                              ),
+                              label: Text(
+                                AppStrings.hiResAddonResetPresets,
+                                style: TextStyle(
+                                  color: palette.textMuted,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -898,8 +1071,7 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
                                       children: [
                                         Icon(
                                           addon.downloadsAllowed
-                                              ? Icons
-                                                  .arrow_circle_down_outlined
+                                              ? Icons.arrow_circle_down_outlined
                                               : Icons.cloud_off_outlined,
                                           size: 13.5,
                                           color: palette.textMuted,
@@ -940,12 +1112,12 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
                               ),
                               const SizedBox(width: 8),
 
-                              // Emerald Switch ON/OFF
-                              Switch(
+                              // Monochrome Adaptive Switch ON/OFF
+                              Switch.adaptive(
                                 key: ValueKey('hires_addon_switch_${addon.id}'),
                                 value: addon.enabled,
-                                activeThumbColor: Colors.white,
-                                activeTrackColor: MusEveePalette.emerald,
+                                activeThumbColor: palette.nowPlayingOnPrimary,
+                                activeTrackColor: palette.nowPlayingPrimary,
                                 onChanged: (val) {
                                   settingsProvider.toggleAddonEnabled(
                                     addon.id,
@@ -981,27 +1153,27 @@ class _HiResAddonManagerSheetState extends State<_HiResAddonManagerSheet> {
                 // "+ Tambah URL Add-on" Button at Bottom
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                  child: OutlinedButton.icon(
-                    key: const ValueKey('hires_addon_add_url_btn'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: palette.accent,
-                      side: BorderSide(
-                        color: palette.accent.withValues(alpha: 0.65),
-                        width: 0.9,
+                  child: MographSpringTap(
+                    pressedScale: 0.96,
+                    child: FilledButton.icon(
+                      key: const ValueKey('hires_addon_add_url_btn'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: palette.nowPlayingPrimary,
+                        foregroundColor: palette.nowPlayingOnPrimary,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: () =>
-                        _showAddAddonUrlDialog(context, settingsProvider),
-                    icon: const Icon(Icons.add_link_rounded, size: 18),
-                    label: Text(
-                      AppStrings.hiResAddonAddUrlButton,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                      onPressed: () =>
+                          _showAddAddonUrlDialog(context, settingsProvider),
+                      icon: const Icon(Icons.add_link_rounded, size: 18),
+                      label: Text(
+                        AppStrings.hiResAddonAddUrlButton,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../models/curated_playlist.dart';
 import '../models/download_item.dart';
 import '../models/local_song.dart';
 import '../models/track_metadata.dart';
@@ -105,7 +106,7 @@ class DownloaderProvider extends ChangeNotifier {
   bool _isProcessingQueue = false;
 
   double _progress = 0.0;
-  String _statusMessage = 'Siap mencari lagu.';
+  String _statusMessage = AppStrings.dpReadyToSearch;
   String? _errorMessage;
   String? _savedFilePath;
   bool _isPrivateOrUnavailableCollectionError = false;
@@ -113,14 +114,61 @@ class DownloaderProvider extends ChangeNotifier {
   bool _statusBannerDismissed = false;
   Timer? _bannerAutoDismissTimer;
 
-  // Discovery Carousels State (`For You`, `Global Trending`, `Indonesia Trending`)
+  // Discovery Carousels State (`This week's top songs`, `For You`, `Playlists for you`, `New releases`, `Top Indonesian songs`)
   List<TrackMetadata> _forYouTracks = const [];
   List<TrackMetadata> _globalTrendingTracks = const [];
   List<TrackMetadata> _indonesiaTrendingTracks = const [];
+  List<TrackMetadata> _newReleasesTracks = const [];
+  List<CuratedPlaylist> _curatedPlaylists = defaultCuratedPlaylists;
   List<String> _forYouSeedArtists = const [];
   bool _isLoadingDiscovery = false;
   bool _isDiscoveryOffline = false;
   bool _hasLoadedDiscovery = false;
+
+  static const List<CuratedPlaylist> defaultCuratedPlaylists = [
+    CuratedPlaylist(
+      id: 'galau',
+      deezerPlaylistId: '15234906703',
+      title: 'Lagu Galau Indonesia 2026',
+      songCount: 97,
+      spotifyUrl: 'https://www.deezer.com/playlist/15234906703',
+    ),
+    CuratedPlaylist(
+      id: 'top_hits_indo',
+      deezerPlaylistId: '15681651181',
+      title: 'Lagu Top Hits Indonesia 2026',
+      songCount: 78,
+      spotifyUrl: 'https://www.deezer.com/playlist/15681651181',
+    ),
+    CuratedPlaylist(
+      id: 'viral_hits',
+      deezerPlaylistId: '4403076402',
+      title: 'TikTok Hits World',
+      songCount: 80,
+      spotifyUrl: 'https://www.deezer.com/playlist/4403076402',
+    ),
+    CuratedPlaylist(
+      id: 'jpop_favorites',
+      deezerPlaylistId: '6049895724',
+      title: 'Top J-Pop',
+      songCount: 61,
+      spotifyUrl: 'https://www.deezer.com/playlist/6049895724',
+    ),
+    CuratedPlaylist(
+      id: 'lofi_chill',
+      deezerPlaylistId: '3338949242',
+      title: 'Chill Lofi',
+      songCount: 90,
+      spotifyUrl: 'https://www.deezer.com/playlist/3338949242',
+    ),
+    CuratedPlaylist(
+      id: 'todays_top_hits',
+      deezerPlaylistId: '2098157264',
+      title: 'Global Hits',
+      songCount: 50,
+      spotifyUrl: 'https://www.deezer.com/playlist/2098157264',
+    ),
+  ];
 
   DownloaderState get state => _state;
   TrackMetadata? get trackMetadata => _trackMetadata;
@@ -136,6 +184,10 @@ class DownloaderProvider extends ChangeNotifier {
       List.unmodifiable(_globalTrendingTracks);
   List<TrackMetadata> get indonesiaTrendingTracks =>
       List.unmodifiable(_indonesiaTrendingTracks);
+  List<TrackMetadata> get newReleasesTracks =>
+      List.unmodifiable(_newReleasesTracks);
+  List<CuratedPlaylist> get curatedPlaylists =>
+      List.unmodifiable(_curatedPlaylists);
   List<String> get forYouSeedArtists => List.unmodifiable(_forYouSeedArtists);
   bool get isLoadingDiscovery => _isLoadingDiscovery;
   bool get isDiscoveryOffline => _isDiscoveryOffline;
@@ -254,12 +306,16 @@ class DownloaderProvider extends ChangeNotifier {
   bool isSpotifyCollectionInput(String rawInput) =>
       _metadataService.isSpotifyCollectionInput(rawInput);
 
+  bool isCollectionInput(String rawInput) =>
+      _metadataService.isCollectionInput(rawInput);
+
   bool isYoutubeInput(String rawInput) =>
       _metadataService.isYoutubeInput(rawInput);
 
   /// Returns the folder name if [track] already exists in one of the Music folders.
   String? duplicateFolderFor(TrackMetadata track) {
-    return _duplicateFolderMap[track.sanitizedFileName.toLowerCase()];
+    return _duplicateFolderMap[track.sanitizedFileName.toLowerCase()] ??
+        _duplicateFolderMap[track.sanitizedFlacFileName.toLowerCase()];
   }
 
   // ===========================================================================
@@ -553,7 +609,9 @@ class DownloaderProvider extends ChangeNotifier {
     if (_selectedFolder == FolderService.defaultNeutralFolder &&
         folders.isNotEmpty &&
         !folders.any(
-          (f) => f.toLowerCase() == FolderService.defaultNeutralFolder.toLowerCase(),
+          (f) =>
+              f.toLowerCase() ==
+              FolderService.defaultNeutralFolder.toLowerCase(),
         )) {
       _selectedFolder = folders.first;
     } else if (_selectedFolder.isNotEmpty &&
@@ -618,9 +676,8 @@ class DownloaderProvider extends ChangeNotifier {
                 releaseYear: updatedSong.year.isNotEmpty
                     ? updatedSong.year
                     : nextMeta.releaseYear,
-                syncedLyrics: updatedSong.hasSyncedLyrics
-                    ? updatedSong.usltLyrics
-                    : null,
+                syncedLyrics:
+                    updatedSong.hasSyncedLyrics ? updatedSong.usltLyrics : null,
                 plainLyrics: updatedSong.hasLyrics
                     ? RomajiService.stripTimestamps(updatedSong.usltLyrics!)
                     : '',
@@ -629,10 +686,10 @@ class DownloaderProvider extends ChangeNotifier {
             }
             _queueItems[i] = item.copyWith(
               metadata: nextMeta,
-              targetFolderName: updatedSong != null &&
-                      updatedSong.folderName.isNotEmpty
-                  ? updatedSong.folderName
-                  : item.targetFolderName,
+              targetFolderName:
+                  updatedSong != null && updatedSong.folderName.isNotEmpty
+                      ? updatedSong.folderName
+                      : item.targetFolderName,
               savedFilePath: newPath,
             );
           }
@@ -658,7 +715,8 @@ class DownloaderProvider extends ChangeNotifier {
   }
 
   Future<String> selectOrAddCustomFolder(String rawPathOrName) async {
-    final normalized = _folderService.normalizePickedFolderTarget(rawPathOrName);
+    final normalized =
+        _folderService.normalizePickedFolderTarget(rawPathOrName);
     await _folderService.saveCustomFolder(normalized);
     await _refreshFolderCountsOnly();
     await selectFolder(normalized);
@@ -702,7 +760,7 @@ class DownloaderProvider extends ChangeNotifier {
     _lyricsCandidates = const [];
     _selectedLyricsCandidate = null;
     _progress = 0.0;
-    _statusMessage = 'Siap mencari lagu.';
+    _statusMessage = AppStrings.dpReadyToSearch;
     _errorMessage = null;
     _savedFilePath = null;
     _isOfflineError = false;
@@ -715,16 +773,56 @@ class DownloaderProvider extends ChangeNotifier {
   // DISCOVERY CAROUSELS (`For You`, `Global Trending`, `Indonesia Trending`)
   // ===========================================================================
   @visibleForTesting
+  void seedTrackMetadataForTesting(
+    TrackMetadata? track, {
+    List<String>? folders,
+    String? selectedFolder,
+    List<LyricsCandidate>? lyricsCandidates,
+    LyricsCandidate? selectedLyricsCandidate,
+  }) {
+    _trackMetadata = track;
+    if (folders != null && folders.isNotEmpty) {
+      _availableFolders = folders;
+    }
+    if (selectedFolder != null) {
+      _selectedFolder = selectedFolder;
+    }
+    if (lyricsCandidates != null) {
+      _lyricsCandidates = lyricsCandidates;
+    }
+    if (selectedLyricsCandidate != null) {
+      _selectedLyricsCandidate = selectedLyricsCandidate;
+    }
+    _state =
+        track == null ? DownloaderState.idle : DownloaderState.readyToDownload;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void seedQueueItemsForTesting(List<DownloadItem> items) {
+    _queueItems
+      ..clear()
+      ..addAll(items);
+    notifyListeners();
+  }
+
+  @visibleForTesting
   void seedDiscoveryCarouselsForTesting({
     List<TrackMetadata>? forYou,
     List<TrackMetadata>? globalTrending,
     List<TrackMetadata>? indonesiaTrending,
+    List<TrackMetadata>? newReleases,
+    List<CuratedPlaylist>? playlists,
     List<String>? seedArtists,
     bool isOffline = false,
   }) {
     _forYouTracks = forYou ?? const [];
     _globalTrendingTracks = globalTrending ?? const [];
     _indonesiaTrendingTracks = indonesiaTrending ?? const [];
+    _newReleasesTracks = newReleases ?? const [];
+    if (playlists != null) {
+      _curatedPlaylists = playlists;
+    }
     _forYouSeedArtists = seedArtists ?? const [];
     _isDiscoveryOffline = isOffline;
     _isLoadingDiscovery = false;
@@ -780,21 +878,22 @@ class DownloaderProvider extends ChangeNotifier {
       artistDisplayNames.putIfAbsent(key, () => rawArtist);
       final plays = playCountResolver?.call(s.filePath) ?? 0;
       final recencyBonus = (20 - i).clamp(1, 20);
-      artistScores[key] = (artistScores[key] ?? 0) + (plays * 15) + recencyBonus;
+      artistScores[key] =
+          (artistScores[key] ?? 0) + (plays * 15) + recencyBonus;
     }
 
     final rankedArtistKeys = artistScores.keys.toList()
       ..sort((a, b) => artistScores[b]!.compareTo(artistScores[a]!));
-    final seedArtists = rankedArtistKeys
-        .take(4)
-        .map((k) => artistDisplayNames[k]!)
-        .toList();
+    final seedArtists =
+        rankedArtistKeys.take(4).map((k) => artistDisplayNames[k]!).toList();
     _forYouSeedArtists = seedArtists;
 
     int offlineSectionErrors = 0;
     List<TrackMetadata> fetchedForYou = _forYouTracks;
     List<TrackMetadata> fetchedGlobal = _globalTrendingTracks;
     List<TrackMetadata> fetchedIndo = _indonesiaTrendingTracks;
+    List<TrackMetadata> fetchedNewReleases = _newReleasesTracks;
+    List<CuratedPlaylist> fetchedPlaylists = _curatedPlaylists;
 
     await Future.wait<void>([
       () async {
@@ -835,19 +934,51 @@ class DownloaderProvider extends ChangeNotifier {
           }
         }
       }(),
+      () async {
+        try {
+          final list = await _metadataService.fetchNewReleasesTracks(
+            limit: 12,
+          );
+          if (list.isNotEmpty) fetchedNewReleases = list;
+        } catch (e) {
+          if (MetadataService.isNetworkOfflineError(e)) {
+            offlineSectionErrors++;
+          }
+        }
+      }(),
+      () async {
+        try {
+          final hydrated = await _metadataService.hydrateDeezerCuratedPlaylists(
+            defaultCuratedPlaylists,
+          );
+          if (hydrated.isNotEmpty) fetchedPlaylists = hydrated;
+        } catch (e) {
+          if (MetadataService.isNetworkOfflineError(e)) {
+            offlineSectionErrors++;
+          }
+        }
+      }(),
     ]);
 
     _forYouTracks = fetchedForYou;
     _globalTrendingTracks = fetchedGlobal;
     _indonesiaTrendingTracks = fetchedIndo;
+    _newReleasesTracks = fetchedNewReleases;
+    _curatedPlaylists = fetchedPlaylists;
 
     final allCarouselTracks = <TrackMetadata>[
       ..._forYouTracks,
       ..._globalTrendingTracks,
       ..._indonesiaTrendingTracks,
+      ..._newReleasesTracks,
     ];
-    if (allCarouselTracks.isNotEmpty) {
-      await _checkDuplicatesForTracks(allCarouselTracks);
+    final hasAnyPlaylistTracks = _curatedPlaylists.any(
+      (p) => p.preloadedTracks.isNotEmpty,
+    );
+    if (allCarouselTracks.isNotEmpty || hasAnyPlaylistTracks) {
+      if (allCarouselTracks.isNotEmpty) {
+        await _checkDuplicatesForTracks(allCarouselTracks);
+      }
       _isDiscoveryOffline = false;
     } else if (offlineSectionErrors > 0) {
       _isDiscoveryOffline = true;
@@ -858,15 +989,174 @@ class DownloaderProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Smart entry point: automatically detects whether [rawInput] is a Spotify
-  /// Album/Playlist link, a Spotify Track link, or a music search query.
+  /// Opens a curated playlist from `Playlists for you`.
+  /// Uses already-hydrated tracks when available for zero-latency opening,
+  /// otherwise fetches from Deezer public playlist API (or Spotify/search fallback)
+  /// and caches the result back onto [_curatedPlaylists].
+  Future<bool> loadCuratedPlaylist(CuratedPlaylist playlist) async {
+    if (isBusy) return false;
+
+    // Fast path: tracks already hydrated by loadDiscoveryCarousels().
+    if (playlist.preloadedTracks.isNotEmpty) {
+      if (_isPreviewPlaying) {
+        unawaited(stopPreviewAudio());
+      }
+      final coverUrl = (playlist.coverUrl?.trim().isNotEmpty == true)
+          ? playlist.coverUrl!.trim()
+          : (playlist.sampleCovers.isNotEmpty
+              ? playlist.sampleCovers.first
+              : playlist.preloadedTracks.first.coverUrl);
+      final collection = SpotifyCollectionResult(
+        title: playlist.title,
+        subtitle: AppStrings.dpCuratedSubtitle(playlist.preloadedTracks.length),
+        coverUrl: coverUrl,
+        collectionType: 'playlist',
+        tracks: playlist.preloadedTracks,
+      );
+      _currentCollection = collection;
+      _errorMessage = null;
+      _isOfflineError = false;
+      _isPrivateOrUnavailableCollectionError = false;
+      _statusBannerDismissed = false;
+      _state = DownloaderState.readyToDownload;
+      _statusMessage = AppStrings.dpTracksFoundInPlaylist(
+        collection.tracks.length,
+        collection.title,
+      );
+      notifyListeners();
+
+      await _checkDuplicatesForTracks(collection.tracks);
+      notifyListeners();
+      return true;
+    }
+
+    _state = DownloaderState.fetchingMetadata;
+    _progress = 0.0;
+    _errorMessage = null;
+    _isOfflineError = false;
+    _isPrivateOrUnavailableCollectionError = false;
+    _statusBannerDismissed = false;
+    _currentCollection = null;
+    _statusMessage = AppStrings.dpOpeningPlaylist(playlist.title);
+    notifyListeners();
+
+    await stopPreviewAudio();
+
+    try {
+      final collectionUrl = playlist.deezerPlaylistId.trim().isNotEmpty
+          ? 'https://www.deezer.com/playlist/${playlist.deezerPlaylistId.trim()}'
+          : playlist.spotifyUrl;
+      final collection = await _metadataService.fetchAlbumOrPlaylist(
+        collectionUrl,
+      );
+      if (collection.tracks.isNotEmpty) {
+        _currentCollection = collection;
+        _updateCachedCuratedPlaylist(playlist.id, collection);
+        await _checkDuplicatesForTracks(collection.tracks);
+        _state = DownloaderState.readyToDownload;
+        _statusMessage = AppStrings.dpTracksFoundInPlaylist(
+          collection.tracks.length,
+          collection.title,
+        );
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      if (MetadataService.isNetworkOfflineError(e)) {
+        _state = DownloaderState.error;
+        _isOfflineError = true;
+        _errorMessage = AppStrings.offlineSubtitle;
+        _statusMessage = AppStrings.offlineTitle;
+        notifyListeners();
+        return false;
+      }
+    }
+
+    // Fallback: resolve curated search tracks for this playlist theme
+    try {
+      final fallbackQuery = switch (playlist.id) {
+        'galau' => 'lagu galau indonesia hits',
+        'top_hits_indo' => 'pop indonesia hits',
+        'viral_hits' => 'viral hits tiktok 2026',
+        'jpop_favorites' => 'yoasobi ado kenshi yonezu',
+        'lofi_chill' => 'chill lofi beats',
+        'todays_top_hits' => 'top global hits',
+        _ => playlist.title,
+      };
+      final tracks = await _metadataService.searchMusicTracks(fallbackQuery);
+      if (tracks.isNotEmpty) {
+        final collection = SpotifyCollectionResult(
+          collectionType: 'playlist',
+          title: playlist.title,
+          subtitle: AppStrings.dpCuratedSubtitle(tracks.length),
+          coverUrl: tracks.first.coverUrl,
+          tracks: tracks,
+        );
+        _currentCollection = collection;
+        _updateCachedCuratedPlaylist(playlist.id, collection);
+        await _checkDuplicatesForTracks(collection.tracks);
+        _state = DownloaderState.readyToDownload;
+        _statusMessage = AppStrings.dpTracksLoadedForPlaylist(
+          collection.tracks.length,
+          playlist.title,
+        );
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      if (MetadataService.isNetworkOfflineError(e)) {
+        _isOfflineError = true;
+      }
+    }
+
+    _state = DownloaderState.error;
+    _errorMessage = AppStrings.dpPlaylistLoadFailed(playlist.title);
+    _statusMessage = _errorMessage!;
+    notifyListeners();
+    return false;
+  }
+
+  void _updateCachedCuratedPlaylist(
+    String playlistId,
+    SpotifyCollectionResult collection,
+  ) {
+    final idx = _curatedPlaylists.indexWhere((p) => p.id == playlistId);
+    if (idx == -1) return;
+    final current = _curatedPlaylists[idx];
+    final distinctCovers = <String>[];
+    final seen = <String>{};
+    for (final t in collection.tracks) {
+      final c = t.coverUrl.trim();
+      if (c.isNotEmpty && seen.add(c)) {
+        distinctCovers.add(c);
+        if (distinctCovers.length >= 4) break;
+      }
+    }
+    final updated = current.copyWith(
+      title: collection.title.isNotEmpty ? collection.title : current.title,
+      songCount: collection.tracks.length,
+      coverUrl: collection.coverUrl.isNotEmpty
+          ? collection.coverUrl
+          : current.coverUrl,
+      sampleCovers:
+          distinctCovers.isNotEmpty ? distinctCovers : current.sampleCovers,
+      preloadedTracks: collection.tracks,
+    );
+    final nextList = List<CuratedPlaylist>.from(_curatedPlaylists);
+    nextList[idx] = updated;
+    _curatedPlaylists = nextList;
+  }
+
+  /// Smart entry point: automatically detects whether [rawInput] is an
+  /// Album/Playlist link (Spotify/Deezer), a Spotify Track link, a YouTube link,
+  /// or a music search query.
   Future<void> submitSmartInput(String rawInput) async {
     final trimmed = rawInput.trim();
     if (trimmed.isEmpty || isBusy) return;
 
     await stopPreviewAudio();
 
-    if (_metadataService.isSpotifyCollectionInput(trimmed)) {
+    if (_metadataService.isCollectionInput(trimmed)) {
       final extractedUrl = _metadataService.extractUrlFromSharedText(trimmed);
       await checkCollection(extractedUrl);
     } else if (_metadataService.isSpotifyInput(trimmed)) {
@@ -895,7 +1185,7 @@ class DownloaderProvider extends ChangeNotifier {
     _setState(
       DownloaderState.searchingCatalog,
       progress: 0.35,
-      message: 'Memuat info...',
+      message: AppStrings.dpLoadingInfo,
     );
 
     try {
@@ -907,7 +1197,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.showingSearchResults,
         progress: 1.0,
-        message: '${results.length} lagu ditemukan',
+        message: AppStrings.dpSongsFoundCount(results.length),
       );
     } catch (e, s) {
       _handleError(e, s);
@@ -932,7 +1222,7 @@ class DownloaderProvider extends ChangeNotifier {
     _setState(
       DownloaderState.fetchingLyrics,
       progress: 0.70,
-      message: 'Mengambil lirik...',
+      message: AppStrings.dpFetchingLyrics,
     );
 
     try {
@@ -957,7 +1247,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.readyToDownload,
         progress: 1.0,
-        message: 'Siap disimpan ke $_selectedFolder',
+        message: AppStrings.dpReadyToSaveToFolder(_selectedFolder),
       );
     } catch (e, s) {
       _handleError(e, s);
@@ -976,7 +1266,7 @@ class DownloaderProvider extends ChangeNotifier {
     _setState(
       DownloaderState.showingSearchResults,
       progress: 1.0,
-      message: '${_searchResults.length} lagu ditemukan',
+      message: AppStrings.dpSongsFoundCount(_searchResults.length),
     );
   }
 
@@ -1056,7 +1346,7 @@ class DownloaderProvider extends ChangeNotifier {
     _setState(
       DownloaderState.fetchingMetadata,
       progress: 0.2,
-      message: 'Memuat info...',
+      message: AppStrings.dpLoadingInfo,
     );
 
     try {
@@ -1067,7 +1357,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.fetchingLyrics,
         progress: 0.75,
-        message: 'Mengambil lirik...',
+        message: AppStrings.dpFetchingLyrics,
       );
 
       final lyricsResponse = await _lyricsService.fetchLyricsWithCandidates(
@@ -1091,7 +1381,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.readyToDownload,
         progress: 1.0,
-        message: 'Siap disimpan ke $_selectedFolder',
+        message: AppStrings.dpReadyToSaveToFolder(_selectedFolder),
       );
     } catch (e, s) {
       _handleError(e, s);
@@ -1117,7 +1407,7 @@ class DownloaderProvider extends ChangeNotifier {
     _setState(
       DownloaderState.fetchingMetadata,
       progress: 0.25,
-      message: 'Memuat info YouTube...',
+      message: AppStrings.dpLoadingYoutubeInfo,
     );
 
     try {
@@ -1128,7 +1418,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.fetchingLyrics,
         progress: 0.75,
-        message: 'Mengambil lirik...',
+        message: AppStrings.dpFetchingLyrics,
       );
 
       final lyricsResponse = await _lyricsService.fetchLyricsWithCandidates(
@@ -1152,7 +1442,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.readyToDownload,
         progress: 1.0,
-        message: 'Siap disimpan ke $_selectedFolder',
+        message: AppStrings.dpReadyToSaveToFolder(_selectedFolder),
       );
     } catch (e, s) {
       _handleError(e, s);
@@ -1179,7 +1469,7 @@ class DownloaderProvider extends ChangeNotifier {
     _setState(
       DownloaderState.fetchingMetadata,
       progress: 0.35,
-      message: 'Memuat info...',
+      message: AppStrings.dpLoadingInfo,
     );
 
     try {
@@ -1191,7 +1481,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.readyToDownload,
         progress: 1.0,
-        message: '${collection.tracks.length} lagu dimuat',
+        message: AppStrings.dpSongsLoadedCount(collection.tracks.length),
       );
     } catch (e, s) {
       _currentCollection = null;
@@ -1250,8 +1540,8 @@ class DownloaderProvider extends ChangeNotifier {
             status: DownloadItemStatus.completed,
             progress: 1.0,
             statusDetail: playlistId != null
-                ? 'Sudah ada di HP • ditautkan ke playlist'
-                : 'Sudah ada di HP • dilewati',
+                ? AppStrings.dpAlreadyOnDeviceLinked
+                : AppStrings.dpAlreadyOnDeviceSkipped,
             savedFilePath: existing,
             createdAt: DateTime.now(),
             preferSyncedLyrics: true,
@@ -1266,7 +1556,7 @@ class DownloaderProvider extends ChangeNotifier {
         targetFolderName: targetFolder,
         status: DownloadItemStatus.queued,
         progress: 0.0,
-        statusDetail: 'Dalam antrean',
+        statusDetail: AppStrings.dpInQueue,
         createdAt: DateTime.now(),
         preferSyncedLyrics: true,
         targetPlaylistId: playlistId,
@@ -1328,7 +1618,7 @@ class DownloaderProvider extends ChangeNotifier {
       _setState(
         DownloaderState.fetchingLyrics,
         progress: 0.08,
-        message: 'Mengambil lirik...',
+        message: AppStrings.dpFetchingLyrics,
       );
 
       TrackMetadata workingMeta = currentMeta;
@@ -1344,15 +1634,16 @@ class DownloaderProvider extends ChangeNotifier {
         DownloaderState.downloadingAudio,
         progress: 0.20,
         message: isHiResFlacSelected
-            ? 'Mencari sumber Hi-Res FLAC...'
-            : 'Mengunduh lagu...',
+            ? AppStrings.dpSearchingHiRes
+            : AppStrings.dpDownloadingSong,
       );
 
       String outputPath;
-      String completedDetail = 'Selesai';
+      String completedDetail = AppStrings.dpDone;
 
       if (isHiResFlacSelected) {
-        final hiResResult = await _hiResAddonService.resolveAndDownloadHiResFlac(
+        final hiResResult =
+            await _hiResAddonService.resolveAndDownloadHiResFlac(
           workingMeta,
           enabledHiResAddons,
           onProgress: (subProgress, statusMsg) {
@@ -1369,7 +1660,7 @@ class DownloaderProvider extends ChangeNotifier {
           _setState(
             DownloaderState.taggingAudio,
             progress: 0.80,
-            message: 'Menyimpan Hi-Res FLAC...',
+            message: AppStrings.dpSavingHiRes,
           );
           outputPath = await _taggingService.tagFlacAudio(
             rawFlacFile: hiResResult.flacFile,
@@ -1381,17 +1672,18 @@ class DownloaderProvider extends ChangeNotifier {
               _setState(
                 DownloaderState.taggingAudio,
                 progress: overall,
-                message: 'Menyimpan Hi-Res FLAC...',
+                message: AppStrings.dpSavingHiRes,
               );
             },
           );
-          completedDetail = 'Selesai • Hi-Res FLAC (${hiResResult.addonSource.name})';
+          completedDetail =
+              AppStrings.dpDoneHiRes(hiResResult.addonSource.name);
         } else {
           // Smart Fallback to YouTube MP3 320 kbps
           _setState(
             DownloaderState.downloadingAudio,
             progress: 0.24,
-            message: 'Hi-Res tidak tersedia, fallback ke MP3 320 kbps...',
+            message: AppStrings.dpHiResFallbackToMp3,
           );
           final rawAudioFile = await _audioService.downloadBestAudioStream(
             workingMeta,
@@ -1400,14 +1692,14 @@ class DownloaderProvider extends ChangeNotifier {
               _setState(
                 DownloaderState.downloadingAudio,
                 progress: overall,
-                message: 'Mengunduh fallback MP3 320 kbps...',
+                message: AppStrings.dpDownloadingFallbackMp3,
               );
             },
           );
           _setState(
             DownloaderState.taggingAudio,
             progress: 0.80,
-            message: 'Menyimpan fallback MP3 320 kbps...',
+            message: AppStrings.dpSavingFallbackMp3,
           );
           outputPath = await _taggingService.convertAndTagAudio(
             rawAudioFile: rawAudioFile,
@@ -1420,11 +1712,11 @@ class DownloaderProvider extends ChangeNotifier {
               _setState(
                 DownloaderState.taggingAudio,
                 progress: overall,
-                message: 'Menyimpan fallback MP3 320 kbps...',
+                message: AppStrings.dpSavingFallbackMp3,
               );
             },
           );
-          completedDetail = 'Selesai (Fallback MP3 320 kbps)';
+          completedDetail = AppStrings.dpDoneFallbackMp3;
         }
       } else {
         final rawAudioFile = await _audioService.downloadBestAudioStream(
@@ -1434,7 +1726,7 @@ class DownloaderProvider extends ChangeNotifier {
             _setState(
               DownloaderState.downloadingAudio,
               progress: overall,
-              message: 'Mengunduh lagu...',
+              message: AppStrings.dpDownloadingSong,
             );
           },
         );
@@ -1442,7 +1734,7 @@ class DownloaderProvider extends ChangeNotifier {
         _setState(
           DownloaderState.taggingAudio,
           progress: 0.80,
-          message: 'Menyimpan...',
+          message: AppStrings.dpSaving,
         );
 
         outputPath = await _taggingService.convertAndTagAudio(
@@ -1456,7 +1748,7 @@ class DownloaderProvider extends ChangeNotifier {
             _setState(
               DownloaderState.taggingAudio,
               progress: overall,
-              message: 'Menyimpan...',
+              message: AppStrings.dpSaving,
             );
           },
         );
@@ -1513,7 +1805,7 @@ class DownloaderProvider extends ChangeNotifier {
       targetFolderName: targetFolder,
       status: DownloadItemStatus.queued,
       progress: 0.0,
-      statusDetail: 'Dalam antrean',
+      statusDetail: AppStrings.dpInQueue,
       createdAt: DateTime.now(),
       preferSyncedLyrics: preferSynced ?? _preferSyncedLyrics,
     );
@@ -1542,7 +1834,7 @@ class DownloaderProvider extends ChangeNotifier {
           currentItem.id,
           status: DownloadItemStatus.downloading,
           progress: 0.08,
-          detail: 'Mengambil lirik...',
+          detail: AppStrings.dpFetchingLyrics,
         );
 
         try {
@@ -1555,7 +1847,7 @@ class DownloaderProvider extends ChangeNotifier {
           }
 
           String savedPath;
-          String completedDetail = 'Selesai';
+          String completedDetail = AppStrings.dpDone;
 
           if (isHiResFlacSelected) {
             final hiResResult =
@@ -1577,7 +1869,7 @@ class DownloaderProvider extends ChangeNotifier {
                 currentItem.id,
                 status: DownloadItemStatus.tagging,
                 progress: 0.78,
-                detail: 'Menyimpan Hi-Res FLAC...',
+                detail: AppStrings.dpSavingHiRes,
               );
               savedPath = await _taggingService.tagFlacAudio(
                 rawFlacFile: hiResResult.flacFile,
@@ -1589,12 +1881,12 @@ class DownloaderProvider extends ChangeNotifier {
                     currentItem.id,
                     status: DownloadItemStatus.tagging,
                     progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
-                    detail: 'Menyimpan Hi-Res FLAC...',
+                    detail: AppStrings.dpSavingHiRes,
                   );
                 },
               );
               completedDetail =
-                  'Selesai • Hi-Res FLAC (${hiResResult.addonSource.name})';
+                  AppStrings.dpDoneHiRes(hiResResult.addonSource.name);
             } else {
               // Smart Fallback to YouTube MP3 320 kbps
               final rawFile = await _audioService.downloadBestAudioStream(
@@ -1604,7 +1896,7 @@ class DownloaderProvider extends ChangeNotifier {
                     currentItem.id,
                     status: DownloadItemStatus.downloading,
                     progress: 0.16 + (sub.clamp(0.0, 1.0) * 0.58),
-                    detail: 'Mengunduh fallback MP3 320 kbps...',
+                    detail: AppStrings.dpDownloadingFallbackMp3,
                   );
                 },
               );
@@ -1612,7 +1904,7 @@ class DownloaderProvider extends ChangeNotifier {
                 currentItem.id,
                 status: DownloadItemStatus.tagging,
                 progress: 0.78,
-                detail: 'Menyimpan fallback MP3 320 kbps...',
+                detail: AppStrings.dpSavingFallbackMp3,
               );
               savedPath = await _taggingService.convertAndTagAudio(
                 rawAudioFile: rawFile,
@@ -1625,11 +1917,11 @@ class DownloaderProvider extends ChangeNotifier {
                     currentItem.id,
                     status: DownloadItemStatus.tagging,
                     progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
-                    detail: 'Menyimpan fallback MP3 320 kbps...',
+                    detail: AppStrings.dpSavingFallbackMp3,
                   );
                 },
               );
-              completedDetail = 'Selesai (Fallback MP3 320 kbps)';
+              completedDetail = AppStrings.dpDoneFallbackMp3;
             }
           } else {
             final rawFile = await _audioService.downloadBestAudioStream(
@@ -1639,7 +1931,7 @@ class DownloaderProvider extends ChangeNotifier {
                   currentItem.id,
                   status: DownloadItemStatus.downloading,
                   progress: 0.12 + (sub.clamp(0.0, 1.0) * 0.62),
-                  detail: 'Mengunduh lagu...',
+                  detail: AppStrings.dpDownloadingSong,
                 );
               },
             );
@@ -1648,7 +1940,7 @@ class DownloaderProvider extends ChangeNotifier {
               currentItem.id,
               status: DownloadItemStatus.tagging,
               progress: 0.78,
-              detail: 'Menyimpan...',
+              detail: AppStrings.dpSaving,
             );
 
             savedPath = await _taggingService.convertAndTagAudio(
@@ -1662,7 +1954,7 @@ class DownloaderProvider extends ChangeNotifier {
                   currentItem.id,
                   status: DownloadItemStatus.tagging,
                   progress: 0.78 + (sub.clamp(0.0, 1.0) * 0.21),
-                  detail: 'Menyimpan...',
+                  detail: AppStrings.dpSaving,
                 );
               },
             );
@@ -1694,7 +1986,7 @@ class DownloaderProvider extends ChangeNotifier {
             currentItem.id,
             status: DownloadItemStatus.failed,
             progress: 0.0,
-            detail: 'Gagal',
+            detail: AppStrings.failedLabel,
             errorMessage: e.toString(),
           );
         }
@@ -1747,15 +2039,16 @@ class DownloaderProvider extends ChangeNotifier {
   }) async {
     final idx = _queueItems.indexWhere((e) => e.id == itemId);
     if (idx == -1) {
-      throw Exception('Item riwayat unduhan tidak ditemukan.');
+      throw Exception(AppStrings.dpHistoryItemNotFound);
     }
     final item = _queueItems[idx];
     final currentPath = item.savedFilePath;
     if (currentPath == null || currentPath.isEmpty) {
-      throw Exception('Path file MP3 lokal tidak tersedia.');
+      throw Exception(AppStrings.dpLocalMp3PathUnavailable);
     }
 
-    final oldKey = item.metadata.sanitizedFileName.toLowerCase();
+    final oldMp3Key = item.metadata.sanitizedFileName.toLowerCase();
+    final oldFlacKey = item.metadata.sanitizedFlacFileName.toLowerCase();
     final trimmedLyrics = lyricsText.trim();
     final hasLrcTimestamps =
         RegExp(r'\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]').hasMatch(trimmedLyrics);
@@ -1799,14 +2092,17 @@ class DownloaderProvider extends ChangeNotifier {
 
     final snapshot = await onBeforeFileMutation?.call(currentPath);
 
-    final newPath = await _taggingService.retagExistingMp3(
+    final newPath = await _taggingService.retagExistingAudio(
       filePath: currentPath,
       updatedMetadata: updatedMeta,
       preferSyncedLyrics: effectivePreferSynced,
     );
 
-    _duplicateFolderMap.remove(oldKey);
+    _duplicateFolderMap.remove(oldMp3Key);
+    _duplicateFolderMap.remove(oldFlacKey);
     _duplicateFolderMap[updatedMeta.sanitizedFileName.toLowerCase()] =
+        item.targetFolderName;
+    _duplicateFolderMap[updatedMeta.sanitizedFlacFileName.toLowerCase()] =
         item.targetFolderName;
     await _refreshFolderCountsOnly();
 
@@ -1814,7 +2110,7 @@ class DownloaderProvider extends ChangeNotifier {
       metadata: updatedMeta,
       savedFilePath: newPath,
       preferSyncedLyrics: effectivePreferSynced,
-      statusDetail: 'Selesai',
+      statusDetail: AppStrings.dpDone,
     );
     if (_savedFilePath == currentPath) {
       _savedFilePath = newPath;
@@ -1839,12 +2135,12 @@ class DownloaderProvider extends ChangeNotifier {
   }) async {
     final idx = _queueItems.indexWhere((e) => e.id == itemId);
     if (idx == -1) {
-      throw Exception('Item unduhan tidak ditemukan.');
+      throw Exception(AppStrings.dpDownloadItemNotFound);
     }
     final item = _queueItems[idx];
     final currentPath = item.savedFilePath;
     if (currentPath == null || currentPath.isEmpty) {
-      throw Exception('File tidak tersedia.');
+      throw Exception(AppStrings.dpFileUnavailable);
     }
 
     final snapshot = await onBeforeFileMutation?.call(currentPath);
@@ -1856,17 +2152,19 @@ class DownloaderProvider extends ChangeNotifier {
 
     _duplicateFolderMap[item.metadata.sanitizedFileName.toLowerCase()] =
         newFolderName;
+    _duplicateFolderMap[item.metadata.sanitizedFlacFileName.toLowerCase()] =
+        newFolderName;
     await _refreshFolderCountsOnly();
 
     _queueItems[idx] = item.copyWith(
       targetFolderName: newFolderName,
       savedFilePath: movedPath,
-      statusDetail: 'Selesai',
+      statusDetail: AppStrings.dpDone,
     );
 
     if (_savedFilePath == currentPath) {
       _savedFilePath = movedPath;
-      _statusMessage = 'Selesai';
+      _statusMessage = AppStrings.dpDone;
     }
 
     await onFileMutated?.call(
@@ -1889,15 +2187,19 @@ class DownloaderProvider extends ChangeNotifier {
   }
 
   Future<void> _checkDuplicatesForTracks(List<TrackMetadata> tracks) async {
+    if (tracks.isEmpty) return;
     try {
       final folders = await _folderService.listAvailableFolders();
       _availableFolders = folders;
-      for (final t in tracks) {
-        final foundFolder = await _folderService.findDuplicateFolder(
-          t.sanitizedFileName,
-          folders,
-        );
-        final key = t.sanitizedFileName.toLowerCase();
+      final fileNames =
+          tracks.map((t) => t.sanitizedFileName).toList(growable: false);
+      final batchMatches = await _folderService.findDuplicateFoldersBatch(
+        fileNames,
+        folders,
+      );
+      for (final fileName in fileNames) {
+        final key = fileName.toLowerCase();
+        final foundFolder = batchMatches[key];
         if (foundFolder != null) {
           _duplicateFolderMap[key] = foundFolder;
         } else {
@@ -1936,23 +2238,19 @@ class DownloaderProvider extends ChangeNotifier {
     _isOfflineError = isOffline;
     _statusBannerDismissed = false;
 
-    final cleanMsg = error
-        .toString()
-        .replaceFirst(RegExp(r'^Exception:\s*'), '')
-        .trim();
+    final cleanMsg =
+        error.toString().replaceFirst(RegExp(r'^Exception:\s*'), '').trim();
     _state = DownloaderState.error;
     if (isOffline) {
       _errorMessage = AppStrings.offlineSubtitle;
       _statusMessage = AppStrings.offlineTitle;
     } else {
-      _errorMessage = cleanMsg.isNotEmpty
-          ? cleanMsg
-          : (AppStrings.isIndonesian
-              ? 'Terjadi kesalahan yang tidak diketahui.'
-              : 'An unknown error occurred.');
+      _errorMessage =
+          cleanMsg.isNotEmpty ? cleanMsg : AppStrings.dpUnknownError;
       _statusMessage = _errorMessage!;
     }
-    debugPrint('[AUTO_E2E] ERROR (offline=$isOffline): $_errorMessage\n$stackTrace');
+    debugPrint(
+        '[AUTO_E2E] ERROR (offline=$isOffline): $_errorMessage\n$stackTrace');
     notifyListeners();
 
     // Auto-dismiss transient bottom error banner after 5 seconds

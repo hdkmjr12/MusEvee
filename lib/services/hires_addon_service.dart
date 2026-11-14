@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/track_metadata.dart';
 import '../providers/settings_provider.dart';
+import '../utils/app_strings.dart';
+import 'romaji_service.dart';
 
 /// Result of a successful Hi-Res Lossless (`.flac`) download from an add-on source.
 class HiResDownloadResult {
@@ -141,7 +143,8 @@ class HiResAddonService {
             if (decoded is List) {
               final subModules = parseIndexCatalogModules(decoded);
               return AddonInspectionResult(
-                updatedSource: source.copyWith(isHealthy: subModules.isNotEmpty),
+                updatedSource:
+                    source.copyWith(isHealthy: subModules.isNotEmpty),
                 expandedSubModules: subModules,
               );
             }
@@ -204,7 +207,12 @@ class HiResAddonService {
     if (decoded is List) {
       rawItems.addAll(decoded);
     } else if (decoded is Map) {
-      for (final key in const <String>['modules', 'addons', 'sources', 'items']) {
+      for (final key in const <String>[
+        'modules',
+        'addons',
+        'sources',
+        'items'
+      ]) {
         final val = decoded[key];
         if (val is List) {
           rawItems.addAll(val);
@@ -239,7 +247,8 @@ class HiResAddonService {
             .trim();
         var cleaned = SettingsProvider.normalizeAddonUrl(rawUrl);
         if (cleaned.toLowerCase().endsWith('/manifest.json')) {
-          cleaned = cleaned.substring(0, cleaned.length - '/manifest.json'.length);
+          cleaned =
+              cleaned.substring(0, cleaned.length - '/manifest.json'.length);
         }
         if (cleaned.isEmpty || !seenUrls.add(cleaned.toLowerCase())) continue;
 
@@ -279,7 +288,8 @@ class HiResAddonService {
     Map<dynamic, dynamic> manifest,
     bool isHealthy,
   ) {
-    final name = (manifest['name'] ?? manifest['title'] ?? '').toString().trim();
+    final name =
+        (manifest['name'] ?? manifest['title'] ?? '').toString().trim();
     final version = (manifest['version'] ?? '').toString().trim();
     final allowDl = manifest['allowDownloads'] ?? manifest['downloadsAllowed'];
     final downloadsAllowed = allowDl == null
@@ -336,7 +346,10 @@ class HiResAddonService {
 
       onProgress?.call(
         0.05,
-        'Mencari Hi-Res FLAC di ${addon.name} (${i + 1}/${activeList.length})...',
+        AppStrings.tr(
+          'Mencari Hi-Res FLAC di ${addon.name} (${i + 1}/${activeList.length})...',
+          'Searching Hi-Res FLAC on ${addon.name} (${i + 1}/${activeList.length})...',
+        ),
       );
 
       try {
@@ -433,9 +446,25 @@ class HiResAddonService {
     String baseUrl,
     TrackMetadata track,
   ) async {
+    final rawArtistTitle = '${track.artist} ${track.title}'.trim();
+    final primaryArtist = track.artist
+        .split(RegExp(r'\s*(?:,|&|/|×|;|\bfeat\.?\b|\bft\.?\b)\s*',
+            caseSensitive: false))
+        .first
+        .trim();
+    final cleanTitle =
+        track.title.replaceAll(RegExp(r'\s*[\(\[].*?[\)\]]'), '').trim();
+    final cleanArtistTitle = '$primaryArtist $cleanTitle'.trim();
+
     final queries = <String>[
-      '${track.artist} ${track.title}'.trim(),
+      if (rawArtistTitle.isNotEmpty) rawArtistTitle,
+      if (cleanArtistTitle.isNotEmpty && cleanArtistTitle != rawArtistTitle)
+        cleanArtistTitle,
       if (track.title.trim().isNotEmpty) track.title.trim(),
+      if (primaryArtist.isNotEmpty &&
+          primaryArtist != rawArtistTitle &&
+          primaryArtist != track.title.trim())
+        primaryArtist,
     ];
 
     for (final q in queries) {
@@ -472,8 +501,7 @@ class HiResAddonService {
         if (bestMap != null && bestScore >= 55) {
           final trackId =
               (bestMap['trackId'] ?? bestMap['id'] ?? '').toString().trim();
-          final recordingId =
-              (bestMap['recordingId'] ?? '').toString().trim();
+          final recordingId = (bestMap['recordingId'] ?? '').toString().trim();
           final isrc = (bestMap['isrc'] ?? '').toString().trim();
           final urls = <String>[
             if (trackId.isNotEmpty) '$baseUrl/track/$trackId',
@@ -531,8 +559,8 @@ class HiResAddonService {
           final directUrl = _extractDirectAudioUrlFromMap(decoded, baseUrl);
           if (directUrl != null) {
             return _ResolvedStreamCandidate(
-              trackId: (decoded['id'] ?? decoded['trackId'] ?? 'direct')
-                  .toString(),
+              trackId:
+                  (decoded['id'] ?? decoded['trackId'] ?? 'direct').toString(),
               streamUrls: <String>[directUrl],
             );
           }
@@ -626,8 +654,8 @@ class HiResAddonService {
           } else if (contentType.contains('application/json') ||
               contentType.contains('text/plain')) {
             final text = await streamed.stream.bytesToString().timeout(
-              requestTimeout,
-            );
+                  requestTimeout,
+                );
             if (text.trimLeft().startsWith('{')) {
               final map = jsonDecode(text);
               if (map is Map) {
@@ -700,14 +728,105 @@ class HiResAddonService {
     return null;
   }
 
-  /// Scores how closely a candidate JSON track matches [target] (`0..150`).
+  static final RegExp _kanaRegex = RegExp(r'[\u3040-\u30ff]');
+  static final RegExp _kanjiRegex = RegExp(r'[\u3400-\u4dbf\u4e00-\u9fff]');
+  static final RegExp _artistSplitRegex = RegExp(
+    r'\s*(?:,|&|/|×|;|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bwith\b)\s*',
+    caseSensitive: false,
+  );
+
+  static String _normalizeWithKanaRomaji(
+    String raw, {
+    bool stripFeat = false,
+  }) {
+    final converted =
+        _kanaRegex.hasMatch(raw) ? RomajiService.convertKanaToRomaji(raw) : raw;
+    return TrackMetadata.normalizeTrackSegment(
+      converted,
+      stripFeat: stripFeat,
+    );
+  }
+
+  /// Reduces an ASCII / kana-romanized word sequence to its Japanese-loanword
+  /// phonetic consonant skeleton (e.g. `"propose"` -> `"prps"`, `"プロポーズ"` /
+  /// `"puropozu"` -> `"prps"`).
+  static String _loanwordPhoneticSkeleton(String raw) {
+    final romaji =
+        _kanaRegex.hasMatch(raw) ? RomajiService.convertKanaToRomaji(raw) : raw;
+    var s = romaji.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (s.isEmpty) return '';
+
+    if (s.startsWith('kn')) s = s.substring(1);
+    if (s.startsWith('wr')) s = s.substring(1);
+    s = s
+        .replaceAll('ph', 'f')
+        .replaceAll('qu', 'k')
+        .replaceAll('gh', '')
+        .replaceAll('sh', 's')
+        .replaceAll('th', 's')
+        .replaceAll('wh', 'w')
+        .replaceAll('ck', 'k')
+        .replaceAll(RegExp(r'c(?=[eiy])'), 's')
+        .replaceAll('c', 'k')
+        .replaceAll('v', 'b')
+        .replaceAll('l', 'r')
+        .replaceAll('z', 's');
+
+    // Strip vowels so Japanese epenthetic vowels (pu-ro-po-zu) align with English (propose)
+    s = s.replaceAll(RegExp(r'[aeiouy]'), '');
+    // Collapse consecutive duplicate consonants (e.g. "ss" -> "s")
+    s = s.replaceAllMapped(RegExp(r'(.)\1+'), (m) => m.group(1)!);
+    return s;
+  }
+
+  static List<String> _normalizedArtistTokens(String rawArtist) {
+    final tokens = <String>{};
+    void addVariant(String part) {
+      final norm = TrackMetadata.normalizeTrackSegment(part, stripFeat: false);
+      if (norm.isNotEmpty) tokens.add(norm);
+      final romajiNorm = _normalizeWithKanaRomaji(part, stripFeat: false);
+      if (romajiNorm.isNotEmpty) tokens.add(romajiNorm);
+    }
+
+    addVariant(rawArtist);
+    for (final part in rawArtist.split(_artistSplitRegex)) {
+      final cleaned = part.trim();
+      if (cleaned.isNotEmpty) {
+        addVariant(cleaned);
+      }
+    }
+    return tokens.toList(growable: false);
+  }
+
+  static bool _artistsMatch(String targetArtist, String candArtist) {
+    final targetTokens = _normalizedArtistTokens(targetArtist);
+    final candTokens = _normalizedArtistTokens(candArtist);
+    for (final t in targetTokens) {
+      for (final c in candTokens) {
+        if (t == c) return true;
+        final shorterLen = t.length < c.length ? t.length : c.length;
+        if (shorterLen >= 4 && (c.contains(t) || t.contains(c))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static bool _isUnknownArtistLabel(String normArtist) {
+    return normArtist.isEmpty ||
+        normArtist.startsWith('unknownartist') ||
+        normArtist.startsWith('variousartists') ||
+        normArtist.startsWith('spotifyartist');
+  }
+
+  /// Scores how closely a candidate JSON track matches [target] (`0..220`).
   static int scoreCandidateTrack(
     TrackMetadata target,
     Map<dynamic, dynamic> candidate,
   ) {
-    final candTitle = (candidate['title'] ?? candidate['name'] ?? '')
-        .toString()
-        .trim();
+    final candTitle =
+        (candidate['title'] ?? candidate['name'] ?? '').toString().trim();
     if (candTitle.isEmpty) return 0;
 
     String candArtist = '';
@@ -731,42 +850,27 @@ class HiResAddonService {
       }
     }
 
-    final normTargetTitle = TrackMetadata.normalizeTrackSegment(
-      target.title,
-      stripFeat: true,
-    );
-    final normCandTitle = TrackMetadata.normalizeTrackSegment(
-      candTitle,
-      stripFeat: true,
-    );
-    if (normTargetTitle.isEmpty || normCandTitle.isEmpty) return 0;
+    final targetIsrc = (target.isrc ?? '').trim().toUpperCase();
+    final candIsrc = (candidate['isrc'] ?? '').toString().trim().toUpperCase();
+    final bool isIsrcMatch =
+        targetIsrc.isNotEmpty && candIsrc.isNotEmpty && targetIsrc == candIsrc;
 
-    int score = 0;
-    if (normTargetTitle == normCandTitle) {
-      score += 65;
-    } else if (normCandTitle.contains(normTargetTitle) ||
-        normTargetTitle.contains(normCandTitle)) {
-      score += 45;
-    } else {
-      return 0;
-    }
-
-    // Penalize unwanted Live / Karaoke / Instrumental variants if target is studio track
+    // Immediately reject non-vocal / backing versions when target is a normal vocal track
     final targetLower = target.title.toLowerCase();
     final candLower = candTitle.toLowerCase();
-    for (final qualifier in const <String>[
-      'live',
-      'karaoke',
+    for (final hardRejectQualifier in const <String>[
       'instrumental',
-      'sped up',
-      'slowed',
+      'karaoke',
+      'off vocal',
+      'backing track',
     ]) {
-      if (candLower.contains(qualifier) && !targetLower.contains(qualifier)) {
-        score -= 25;
+      if (candLower.contains(hardRejectQualifier) &&
+          !targetLower.contains(hardRejectQualifier)) {
+        return 0;
       }
     }
 
-    // Artist match
+    // Strict Artist Verification: never accept a cover / original by an unrelated singer
     final normTargetArtist = TrackMetadata.normalizeTrackSegment(
       target.artist,
       stripFeat: true,
@@ -775,14 +879,96 @@ class HiResAddonService {
       candArtist,
       stripFeat: true,
     );
-    if (normTargetArtist.isNotEmpty && normCandArtist.isNotEmpty) {
-      if (normTargetArtist == normCandArtist ||
-          candArtist.toLowerCase().contains(target.artist.toLowerCase()) ||
-          normCandArtist.contains(normTargetArtist) ||
-          normTargetArtist.contains(normCandArtist)) {
-        score += 35;
+    final hasKnownTargetArtist = !_isUnknownArtistLabel(normTargetArtist);
+    final hasKnownCandArtist = !_isUnknownArtistLabel(normCandArtist);
+    final artistMatched = hasKnownTargetArtist &&
+        hasKnownCandArtist &&
+        _artistsMatch(target.artist, candArtist);
+
+    if (hasKnownTargetArtist &&
+        hasKnownCandArtist &&
+        !artistMatched &&
+        !isIsrcMatch) {
+      // Only allow mismatched-script artists when one is Kanji and the other is Latin
+      // (e.g. "米津玄師" vs "Kenshi Yonezu") with strict penalty; otherwise reject 0.
+      final targetHasKanji = _kanjiRegex.hasMatch(target.artist);
+      final candHasKanji = _kanjiRegex.hasMatch(candArtist);
+      if (targetHasKanji == candHasKanji) {
+        return 0;
+      }
+    }
+
+    final normTargetTitle = TrackMetadata.normalizeTrackSegment(
+      target.title,
+      stripFeat: true,
+    );
+    final normCandTitle = TrackMetadata.normalizeTrackSegment(
+      candTitle,
+      stripFeat: true,
+    );
+    final romajiTargetTitle = _normalizeWithKanaRomaji(
+      target.title,
+      stripFeat: true,
+    );
+    final romajiCandTitle = _normalizeWithKanaRomaji(
+      candTitle,
+      stripFeat: true,
+    );
+    if (normTargetTitle.isEmpty || normCandTitle.isEmpty) return 0;
+
+    int score = 0;
+    if (isIsrcMatch) {
+      score += 120;
+    } else if (normTargetTitle == normCandTitle ||
+        (romajiTargetTitle.isNotEmpty &&
+            romajiTargetTitle == romajiCandTitle)) {
+      score += 65;
+    } else {
+      final shorterNormLen = normCandTitle.length < normTargetTitle.length
+          ? normCandTitle.length
+          : normTargetTitle.length;
+      if (shorterNormLen >= 3 &&
+          (normCandTitle.contains(normTargetTitle) ||
+              normTargetTitle.contains(normCandTitle) ||
+              romajiCandTitle.contains(romajiTargetTitle) ||
+              romajiTargetTitle.contains(romajiCandTitle))) {
+        score += 45;
+      } else if (artistMatched &&
+          (_kanaRegex.hasMatch(target.title) !=
+              _kanaRegex.hasMatch(candTitle))) {
+        // Cross-script Japanese Katakana/Hiragana loanword matching when the artist is verified
+        // (e.g. target "propose" by 9Lana vs Monochrome "プロポーズ" by 9Lana).
+        final skelTarget = _loanwordPhoneticSkeleton(target.title);
+        final skelCand = _loanwordPhoneticSkeleton(candTitle);
+        if (skelTarget.length >= 3 && skelCand == skelTarget) {
+          score += 55;
+        } else {
+          return 0;
+        }
       } else {
-        score -= 15;
+        return 0;
+      }
+    }
+
+    // Penalize unwanted Live / Sped up / Slowed / Cover / Remix variants if target is studio track
+    for (final qualifier in const <String>[
+      'live',
+      'sped up',
+      'slowed',
+      'cover',
+      'remix',
+      'acoustic',
+    ]) {
+      if (candLower.contains(qualifier) && !targetLower.contains(qualifier)) {
+        score -= 35;
+      }
+    }
+
+    if (hasKnownTargetArtist && hasKnownCandArtist) {
+      if (artistMatched) {
+        score += 40;
+      } else if (!isIsrcMatch) {
+        score -= 40;
       }
     }
 
@@ -798,7 +984,7 @@ class HiResAddonService {
       } else if (diff <= 12) {
         score += 10;
       } else if (diff > 35) {
-        score -= 25;
+        score -= 40;
       }
     }
 
@@ -910,8 +1096,8 @@ class HiResAddonService {
         http.StreamedResponse streamed;
         try {
           streamed = await _httpClient.send(req).timeout(
-            const Duration(seconds: 12),
-          );
+                const Duration(seconds: 12),
+              );
         } catch (_) {
           if (verifiedHeader && resumeCount < maxResumeAttempts) {
             resumeCount++;
@@ -1016,13 +1202,21 @@ class HiResAddonService {
                   (expectedTotalBytes / (1024 * 1024)).toStringAsFixed(1);
               onProgress?.call(
                 frac,
-                'Mengunduh Hi-Res FLAC ($mb / $totalMb MB) • ${addon.name}',
+                AppStrings.svcDownloadingHiResProgress(
+                  mb,
+                  totalMb,
+                  addon.name,
+                ),
               );
             } else {
               final mb = (receivedBytes / (1024 * 1024)).toStringAsFixed(1);
               onProgress?.call(
                 0.5,
-                'Mengunduh Hi-Res FLAC ($mb MB) • ${addon.name}',
+                AppStrings.svcDownloadingHiResProgress(
+                  mb,
+                  null,
+                  addon.name,
+                ),
               );
             }
           }

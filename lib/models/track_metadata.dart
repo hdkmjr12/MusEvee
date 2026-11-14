@@ -10,6 +10,7 @@ class TrackMetadata {
   final String? plainLyrics;
   final String? previewAudioUrl;
   final String? preferredYoutubeVideoId;
+  final String? isrc;
 
   const TrackMetadata({
     required this.spotifyUrl,
@@ -23,6 +24,7 @@ class TrackMetadata {
     this.plainLyrics,
     this.previewAudioUrl,
     this.preferredYoutubeVideoId,
+    this.isrc,
   });
 
   TrackMetadata copyWith({
@@ -37,6 +39,7 @@ class TrackMetadata {
     String? plainLyrics,
     String? previewAudioUrl,
     String? preferredYoutubeVideoId,
+    String? isrc,
     bool clearSyncedLyrics = false,
     bool clearPreferredYoutubeVideoId = false,
   }) {
@@ -55,6 +58,7 @@ class TrackMetadata {
       preferredYoutubeVideoId: clearPreferredYoutubeVideoId
           ? null
           : (preferredYoutubeVideoId ?? this.preferredYoutubeVideoId),
+      isrc: isrc ?? this.isrc,
     );
   }
 
@@ -152,7 +156,7 @@ class TrackMetadata {
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    return cleaned.isEmpty ? 'SpotMeta_Track' : cleaned;
+    return cleaned.isEmpty ? 'MusEvee_Track' : cleaned;
   }
 
   String get sanitizedFileName => '$sanitizedBaseName.mp3';
