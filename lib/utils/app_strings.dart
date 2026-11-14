@@ -865,4 +865,75 @@ class AppStrings {
   static String get editorCancelButton => isIndonesian ? 'Batal' : 'Cancel';
 
   static String get editorSaveButton => isIndonesian ? 'Simpan' : 'Save';
+
+  static String unsupportedTagEditFormat(
+    String formatLabel, [
+    BuildContext? context,
+  ]) =>
+      tr(
+        'Edit tag langsung saat ini hanya mendukung MP3 & FLAC (file $formatLabel bersifat baca-saja).',
+        'Direct tag editing currently supports MP3 & FLAC only ($formatLabel files are read-only).',
+        context,
+      );
+
+  static String romajiOfflineKanjiNotice([BuildContext? context]) => tr(
+        'Mode offline: Hiragana/Katakana dikonversi, sebagian Kanji memakai cache lokal atau tetap asli.',
+        'Offline mode: Hiragana/Katakana converted; uncached Kanji remain unchanged.',
+        context,
+      );
+
+  static String sleepTimerTitle([BuildContext? context]) =>
+      tr('Pengatur Waktu Tidur', 'Sleep Timer', context);
+
+  static String sleepTimerSubtitleOff([BuildContext? context]) => tr(
+        'Hentikan pemutaran otomatis setelah waktu habis',
+        'Pause playback automatically when timer ends',
+        context,
+      );
+
+  static String sleepTimerMinutes(int mins, [BuildContext? context]) =>
+      tr('$mins menit', '$mins min', context);
+
+  static String sleepTimerEndOfTrack([BuildContext? context]) =>
+      tr('Akhir lagu ini', 'End of current track', context);
+
+  static String sleepTimerCancel([BuildContext? context]) =>
+      tr('Matikan Pengatur Waktu', 'Turn Off Timer', context);
+
+  static String sleepTimerActiveMinutes(
+    String mmss, [
+    BuildContext? context,
+  ]) =>
+      tr('Berhenti dalam $mmss', 'Stops in $mmss', context);
+
+  static String sleepTimerActiveEndOfTrack([BuildContext? context]) =>
+      tr('Berhenti setelah lagu ini', 'Stops after current track', context);
+
+  static String sleepTimerSetMinutesSnack(
+    int mins, [
+    BuildContext? context,
+  ]) =>
+      tr(
+        'Pemutaran akan berhenti otomatis dalam $mins menit.',
+        'Playback will pause automatically in $mins minutes.',
+        context,
+      );
+
+  static String sleepTimerSetEndOfTrackSnack([BuildContext? context]) => tr(
+        'Pemutaran akan berhenti setelah lagu ini selesai.',
+        'Playback will pause after the current track finishes.',
+        context,
+      );
+
+  static String sleepTimerCancelledSnack([BuildContext? context]) => tr(
+        'Pengatur waktu tidur dimatikan.',
+        'Sleep timer turned off.',
+        context,
+      );
+
+  static String sleepTimerExpiredSnack([BuildContext? context]) => tr(
+        'Pengatur waktu tidur selesai — musik dijeda.',
+        'Sleep timer ended — playback paused.',
+        context,
+      );
 }

@@ -1,3 +1,4 @@
+import '../services/folder_service.dart';
 import 'track_metadata.dart';
 
 enum DownloadItemStatus {
@@ -43,7 +44,17 @@ class DownloadItem {
       (savedFilePath?.trim().toLowerCase().endsWith('.flac') ?? false) ||
       statusDetail.toUpperCase().contains('FLAC');
 
-  String get audioFormatLabel => isFlac ? 'FLAC' : 'MP3';
+  String get audioFormatLabel {
+    final path = savedFilePath;
+    if (path != null && path.trim().isNotEmpty) {
+      final ext = FolderService.extractAudioExtension(path);
+      if (ext.isNotEmpty) return ext.toUpperCase();
+    }
+    return isFlac ? 'FLAC' : 'MP3';
+  }
+
+  bool get supportsDirectTagEditing =>
+      audioFormatLabel == 'MP3' || audioFormatLabel == 'FLAC';
 
   DownloadItem copyWith({
     TrackMetadata? metadata,

@@ -274,6 +274,12 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
           _lyricsController.text = romanizedPlain;
         });
       }
+      if (widget.provider.romajiService.lastConversionLeftUnconvertedKanji &&
+          mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppStrings.romajiOfflineKanjiNotice(context))),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isConvertingRomaji = false);
@@ -361,6 +367,13 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final isLocalOrHistory =
         widget.localSong != null || widget.historyItem != null;
+    final bool canDirectEditTags =
+        (widget.localSong?.supportsDirectTagEditing ?? true) &&
+            (widget.historyItem?.supportsDirectTagEditing ?? true);
+    final String? readOnlyFormatLabel = !canDirectEditTags
+        ? (widget.localSong?.audioFormatLabel ??
+            widget.historyItem?.audioFormatLabel)
+        : null;
     final hairline = palette.hairline;
 
     return SafeArea(
@@ -464,6 +477,45 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                 ],
               ),
               const SizedBox(height: 14),
+              if (!canDirectEditTags && readOnlyFormatLabel != null) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: palette.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: MusEveePalette.amber.withValues(alpha: 0.45),
+                      width: 0.9,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 16,
+                        color: MusEveePalette.amber,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          AppStrings.unsupportedTagEditFormat(
+                            readOnlyFormatLabel,
+                            context,
+                          ),
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: palette.textPrimary,
+                            fontSize: 11.5,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               _buildField(
                 controller: _titleController,
@@ -787,7 +839,7 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                     flex: 2,
                     child: MographSpringTap(
                       pressedScale: 0.97,
-                      enabled: !_isSaving,
+                      enabled: !_isSaving && canDirectEditTags,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           elevation: 0,
@@ -798,7 +850,8 @@ class _TagEditorSheetState extends State<TagEditorSheet> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        onPressed: _isSaving ? null : _saveChanges,
+                        onPressed:
+                            (_isSaving || !canDirectEditTags) ? null : _saveChanges,
                         icon: _isSaving
                             ? SizedBox(
                                 width: 16,

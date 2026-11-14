@@ -6,6 +6,27 @@ Seluruh riwayat perubahan penting pada proyek **MusEvee** (nama resmi dan perman
 
 ---
 
+## [v4.9 — Hardening Ketahanan Pemutar Offline: Service Engine, Headset Pause, Wake Lock, Sleep Timer, Simetri 7 Format, & Cache Romaji Offline] — 2026-11-14 (Pemutaran Latar Belakang Tahan Swipe Recents, Auto-Pause Headset Terputus, `PARTIAL_WAKE_LOCK`, Sleep Timer, Simetri `.m4a`/`.wav`/`.ogg`/`.aac`/`.opus`, & Cache Persisten Romaji)
+
+### Diubah & Ditambahkan
+- **`android/app/src/main/kotlin/com/example/spotmeta_downloader/MusEveeAudioEngine.kt`, `MusEveeMediaNotifier.kt`, `MainActivity.kt`, & `android/app/src/main/AndroidManifest.xml` (Engine Pemutar Berbasis Service & Proteksi Hardware Offline):**
+  - Memindahkan engine audio lokal (`MediaPlayer`, `LoudnessEnhancer`, `AudioFocusRequest`, posisi ticker, serta salinan antrean native `QueueTrack`) ke singleton aplikasi `MusEveeAudioEngine` dengan izin `WAKE_LOCK` (`player.setWakeMode(..., PARTIAL_WAKE_LOCK)`) dan `android:stopWithTask="false"` pada `MusEveePlaybackService`.
+  - Pemutaran dan progres antrean tetap berlanjut otonom di background service saat aplikasi disapu dari *Recent Apps* dalam kondisi memutar, serta berhenti bersih jika sedang dijeda; `syncWithNativePlaybackSnapshot()` memulihkan posisi, lagu aktif, volume/pre-amp, `sessionId`, dan Sleep Timer saat UI dibuka kembali.
+  - Mendaftarkan `BroadcastReceiver` untuk `AudioManager.ACTION_AUDIO_BECOMING_NOISY` agar pemutaran otomatis dijeda ketika headset kabel, USB DAC, atau perangkat Bluetooth terputus.
+- **`lib/providers/local_music_provider.dart`, `lib/screens/home_screen.dart`, `lib/widgets/now_playing_view.dart`, & `lib/utils/app_strings.dart` (Sleep Timer):**
+  - Menambahkan Sleep Timer pada grup `Audio` menu `...` dan pill countdown di top-bar `NowPlayingView` dengan preset `15`, `30`, `45`, `60` menit, mode *Akhir lagu ini* (`End of current track`), hitung mundur real-time, serta tombol matikan.
+- **`lib/services/folder_service.dart`, `lib/models/local_song.dart`, `lib/models/download_item.dart`, `lib/services/tagging_service.dart`, & `lib/widgets/tag_editor_sheet.dart` (Simetri 7 Format Audio & Guard Tag Non-Destruktif):**
+  - Memperluas helper `FolderService` dan properti format `LocalSong`/`DownloadItem` (`audioFormatLabel`, `supportsDirectTagEditing`) untuk mencakup 7 format lokal yang dipindai native (`.mp3`, `.flac`, `.m4a`, `.wav`, `.ogg`, `.aac`, `.opus`).
+  - Menambahkan guard `TaggingException` di `TaggingService` dan mode baca-saja aman di `TagEditorSheet` bagi file non-MP3/FLAC agar tidak menimpa kontainer dengan tag ID3/FLAC yang salah.
+- **`lib/services/romaji_service.dart`, `MainActivity.kt`, `lib/providers/local_music_provider.dart`, `lib/widgets/now_playing_view.dart`, & `lib/widgets/tag_editor_sheet.dart` (Cache Romaji Offline & Umpan Balik Kanji):**
+  - Menambahkan cache LRU persisten `musevee_romaji_cache_v1.json` (turut dibackup ke `/storage/emulated/0/Music/.musevee_state/`) sehingga lagu ber-Kanji yang pernah dikonversi tetap instan 100% offline, konversi lokal Hiragana/Katakana tidak mengalami retry jaringan sia-sia pada `SocketException`, dan UI memberi tahu jika sebagian Kanji belum ter-cache saat perangkat offline.
+- **`test/offline_usability_test.dart`:**
+  - Menambahkan 6 suite pengujian komprehensif (kontrak AndroidManifest & Kotlin, simetri 7 format & guard tag, cache disk `RomajiService` offline/online, kontrol Sleep Timer & pemulihan snapshot `LocalMusicProvider`, read-only `TagEditorSheet` M4A, serta UI Sleep Timer pada `NowPlayingView`).
+- **`.github/workflows/build_apk.yml` (Stabilisasi CI Flutter `3.47.9`):**
+  - Mem-pin `flutter-version: '3.47.9'` pada `subosito/flutter-action@v2` agar runner Linux CI menggunakan SDK Flutter/Dart terverifikasi yang sama dengan environment lokal (mencegah regresi auto-upgrade ke Flutter `3.50.0` yang dirilis setelah build sukses sebelumnya).
+
+---
+
 ## [v4.9 — Format-Aware MP3/FLAC, Terminologi Metadata Netral, Splash Startup Native Light/Dark, & Pembersihan Assets] — 2026-11-14 (Deteksi Format MP3/FLAC, Sinkronisasi Duplikat `.flac`, Label `Tag Audio`/`Cover Tertanam`/`Lirik Tertanam`, Splash Polos Android `#F7F8FA`/`#0E1014`, & Hygiene `assets/`)
 
 ### Diubah & Ditambahkan

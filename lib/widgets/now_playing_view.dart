@@ -3397,6 +3397,57 @@ class NowPlayingViewState extends State<NowPlayingView>
               ),
             ),
 
+            // Centered Sleep Timer pill when active (tappable to inspect or cancel)
+            if (localProvider.hasActiveSleepTimer)
+              Flexible(
+                child: MographSpringTap(
+                  pressedScale: 0.92,
+                  child: InkWell(
+                    key: const ValueKey<String>('now_playing_sleep_pill'),
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _showSleepTimerSheet(
+                      context: context,
+                      localProvider: localProvider,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.surfaceSubtle,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: palette.hairline, width: 0.8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.bedtime_outlined,
+                            size: 13.5,
+                            color: palette.nowPlayingPrimary,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            localProvider.isSleepAfterCurrentTrack
+                                ? AppStrings.sleepTimerEndOfTrack(context)
+                                : localProvider.remainingSleepTimerFormatted,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: palette.nowPlayingPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
             // Top-right: Favorite Heart (red when active, pale gray outline when inactive)
             Tooltip(
               message: AppStrings.tr('Favorit', 'Favorite', context),
@@ -8755,38 +8806,12 @@ class NowPlayingViewState extends State<NowPlayingView>
                                           palette.nowPlayingOnPrimary,
                                       onChanged: (nextVal) async {
                                         Navigator.of(ctx).pop();
-                                        final ok = await lp.setRomajiForSong(
-                                          currentSong,
-                                          nextVal,
-                                          includeMetadata: true,
-                                          persistToFile: true,
+                                        await _handleOverflowRomajiToggle(
+                                          context: context,
+                                          lp: lp,
+                                          song: currentSong,
+                                          enable: nextVal,
                                         );
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                ok
-                                                    ? (nextVal
-                                                        ? AppStrings.tr(
-                                                            'Tag & lirik berhasil dikonversi ke Romaji.',
-                                                            'Tags & lyrics converted to Romaji.',
-                                                            context,
-                                                          )
-                                                        : AppStrings.tr(
-                                                            'Lirik dikembalikan ke teks asli.',
-                                                            'Lyrics restored to original script.',
-                                                            context,
-                                                          ))
-                                                    : AppStrings.tr(
-                                                        'Gagal menyimpan perubahan Romaji ke file ${currentSong.audioFormatLabel}.',
-                                                        'Failed to save Romaji changes to ${currentSong.audioFormatLabel} file.',
-                                                        context,
-                                                      ),
-                                              ),
-                                            ),
-                                          );
-                                        }
                                       },
                                     )
                                   : null,
@@ -8798,40 +8823,13 @@ class NowPlayingViewState extends State<NowPlayingView>
                                           lp.isRomajiEnabledForSong(
                                         currentSong.filePath,
                                       );
-                                      final nextVal = !wasRomaji;
                                       Navigator.of(ctx).pop();
-                                      final ok = await lp.setRomajiForSong(
-                                        currentSong,
-                                        nextVal,
-                                        includeMetadata: true,
-                                        persistToFile: true,
+                                      await _handleOverflowRomajiToggle(
+                                        context: context,
+                                        lp: lp,
+                                        song: currentSong,
+                                        enable: !wasRomaji,
                                       );
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              ok
-                                                  ? (nextVal
-                                                      ? AppStrings.tr(
-                                                          'Tag & lirik berhasil dikonversi ke Romaji.',
-                                                          'Tags & lyrics converted to Romaji.',
-                                                          context,
-                                                        )
-                                                      : AppStrings.tr(
-                                                          'Lirik dikembalikan ke teks asli.',
-                                                          'Lyrics restored to original script.',
-                                                          context,
-                                                        ))
-                                                  : AppStrings.tr(
-                                                      'Gagal menyimpan perubahan Romaji ke file ${currentSong.audioFormatLabel}.',
-                                                      'Failed to save Romaji changes to ${currentSong.audioFormatLabel} file.',
-                                                      context,
-                                                    ),
-                                            ),
-                                          ),
-                                        );
-                                      }
                                     },
                             ),
                             _buildFontSizeStepperTile(
@@ -8942,6 +8940,48 @@ class NowPlayingViewState extends State<NowPlayingView>
                             _buildMenuGroupHeader(
                               palette: palette,
                               title: 'Audio',
+                            ),
+                            KeyedSubtree(
+                              key: const ValueKey<String>(
+                                'overflow_sleep_timer_tile',
+                              ),
+                              child: _buildMenuTile(
+                                palette: palette,
+                                icon: Icons.bedtime_outlined,
+                                title: AppStrings.sleepTimerTitle(ctx),
+                                subtitle: lp.isSleepAfterCurrentTrack
+                                    ? AppStrings.sleepTimerActiveEndOfTrack(ctx)
+                                    : (lp.hasActiveSleepTimer
+                                        ? AppStrings.sleepTimerActiveMinutes(
+                                            lp.remainingSleepTimerFormatted,
+                                            ctx,
+                                          )
+                                        : AppStrings.sleepTimerSubtitleOff(
+                                            ctx,
+                                          )),
+                                trailing: lp.hasActiveSleepTimer
+                                    ? Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: palette.nowPlayingPrimary,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.chevron_right_rounded,
+                                        size: 18,
+                                        color: palette.nowPlayingSecondary,
+                                      ),
+                                enabled: true,
+                                onTap: () {
+                                  Navigator.of(ctx).pop();
+                                  _showSleepTimerSheet(
+                                    context: context,
+                                    localProvider: lp,
+                                  );
+                                },
+                              ),
                             ),
                             _buildMenuTile(
                               palette: palette,
@@ -9133,6 +9173,278 @@ class NowPlayingViewState extends State<NowPlayingView>
                         ),
                       ),
                     ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _handleOverflowRomajiToggle({
+    required BuildContext context,
+    required LocalMusicProvider lp,
+    required LocalSong song,
+    required bool enable,
+  }) async {
+    final ok = await lp.setRomajiForSong(
+      song,
+      enable,
+      includeMetadata: true,
+      persistToFile: true,
+    );
+    if (!context.mounted) return;
+    final String msg;
+    if (!ok) {
+      msg = AppStrings.tr(
+        'Gagal menyimpan perubahan Romaji ke file ${song.audioFormatLabel}.',
+        'Failed to save Romaji changes to ${song.audioFormatLabel} file.',
+        context,
+      );
+    } else if (!enable) {
+      msg = AppStrings.tr(
+        'Lirik dikembalikan ke teks asli.',
+        'Lyrics restored to original script.',
+        context,
+      );
+    } else if (lp.lastRomajiLeftUnconvertedKanji) {
+      msg = AppStrings.romajiOfflineKanjiNotice(context);
+    } else {
+      msg = AppStrings.tr(
+        'Tag & lirik berhasil dikonversi ke Romaji.',
+        'Tags & lyrics converted to Romaji.',
+        context,
+      );
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
+  }
+
+  void _showSleepTimerSheet({
+    required BuildContext context,
+    required LocalMusicProvider localProvider,
+  }) {
+    final palette = context.palette;
+    const presetMinutes = <int>[15, 30, 45, 60];
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: palette.nowPlayingBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetCtx) {
+        return AnimatedBuilder(
+          animation: localProvider,
+          builder: (ctx, _) {
+            final lp = localProvider;
+            final remText = lp.isSleepAfterCurrentTrack
+                ? AppStrings.sleepTimerActiveEndOfTrack(ctx)
+                : (lp.hasActiveSleepTimer
+                    ? AppStrings.sleepTimerActiveMinutes(
+                        lp.remainingSleepTimerFormatted,
+                        ctx,
+                      )
+                    : AppStrings.sleepTimerSubtitleOff(ctx));
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: palette.nowPlayingInactiveIcon,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.bedtime_outlined,
+                          size: 20,
+                          color: palette.nowPlayingPrimary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                AppStrings.sleepTimerTitle(ctx),
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: palette.nowPlayingPrimary,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                remText,
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  color: palette.nowPlayingSecondary,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final mins in presetMinutes)
+                          MographSpringTap(
+                            pressedScale: 0.94,
+                            child: OutlinedButton(
+                              key: ValueKey<String>(
+                                'sleep_timer_preset_$mins',
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: palette.surfaceSubtle,
+                                foregroundColor: palette.nowPlayingPrimary,
+                                side: BorderSide(
+                                  color: palette.hairline,
+                                  width: 0.8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                              ),
+                              onPressed: () async {
+                                Navigator.of(ctx).pop();
+                                await lp.startSleepTimer(
+                                  Duration(minutes: mins),
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        AppStrings.sleepTimerSetMinutesSnack(
+                                          mins,
+                                          context,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Text(
+                                AppStrings.sleepTimerMinutes(mins, ctx),
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    MographSpringTap(
+                      pressedScale: 0.97,
+                      child: OutlinedButton.icon(
+                        key: const ValueKey<String>('sleep_timer_end_of_track'),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: lp.isSleepAfterCurrentTrack
+                              ? palette.nowPlayingPrimary
+                              : palette.surfaceSubtle,
+                          foregroundColor: lp.isSleepAfterCurrentTrack
+                              ? palette.nowPlayingOnPrimary
+                              : palette.nowPlayingPrimary,
+                          side: BorderSide(
+                            color: lp.isSleepAfterCurrentTrack
+                                ? palette.nowPlayingPrimary
+                                : palette.hairline,
+                            width: 0.8,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          minimumSize: const Size(0, 44),
+                        ),
+                        onPressed: () async {
+                          Navigator.of(ctx).pop();
+                          await lp.setSleepAfterCurrentTrack();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  AppStrings.sleepTimerSetEndOfTrackSnack(
+                                    context,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.skip_next_rounded, size: 18),
+                        label: Text(
+                          AppStrings.sleepTimerEndOfTrack(ctx),
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (lp.hasActiveSleepTimer) ...[
+                      const SizedBox(height: 8),
+                      MographSpringTap(
+                        pressedScale: 0.97,
+                        child: TextButton(
+                          key: const ValueKey<String>('sleep_timer_turn_off'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: MusEveePalette.error,
+                            minimumSize: const Size(0, 42),
+                          ),
+                          onPressed: () async {
+                            Navigator.of(ctx).pop();
+                            await lp.cancelSleepTimer();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    AppStrings.sleepTimerCancelledSnack(
+                                      context,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          child: Text(
+                            AppStrings.sleepTimerCancel(ctx),
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

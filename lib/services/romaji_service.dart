@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/track_metadata.dart';
 
 /// Represents a single parsed line of lyrics split into its optional LRC
@@ -36,17 +38,102 @@ class _ProcessedLyricLine {
 
 class RomajiService {
   final Dio _dio;
+  final File? _injectedCacheFile;
 
   static const int _batchConcurrency = 8;
+  static const String _cacheFileName = 'musevee_romaji_cache_v1.json';
+  static const int _maxDiskCacheEntries = 6000;
 
-  RomajiService({Dio? dio})
-      : _dio = dio ??
+  final Map<String, String> _diskSegmentCache = <String, String>{};
+  bool _diskCacheLoaded = false;
+  bool _diskCacheDirty = false;
+  bool _lastConversionLeftUnconvertedKanji = false;
+
+  bool get lastConversionLeftUnconvertedKanji =>
+      _lastConversionLeftUnconvertedKanji;
+
+  @visibleForTesting
+  int get cachedSegmentCount => _diskSegmentCache.length;
+
+  RomajiService({Dio? dio, File? cacheFile})
+      : _injectedCacheFile = cacheFile,
+        _dio = dio ??
             Dio(
               BaseOptions(
                 connectTimeout: const Duration(seconds: 8),
                 receiveTimeout: const Duration(seconds: 8),
               ),
             );
+
+  Future<File?> _resolveCacheFile() async {
+    if (_injectedCacheFile != null) return _injectedCacheFile;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      return File('${dir.path}${Platform.pathSeparator}$_cacheFileName');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> ensureDiskCacheLoaded() async {
+    if (_diskCacheLoaded) return;
+    _diskCacheLoaded = true;
+    try {
+      final file = await _resolveCacheFile();
+      if (file == null || !await file.exists()) return;
+      final raw = await file.readAsString();
+      if (raw.trim().isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        decoded.forEach((key, value) {
+          final k = key?.toString().trim() ?? '';
+          final v = value?.toString().trim() ?? '';
+          if (k.isNotEmpty && v.isNotEmpty && !containsKanji(v)) {
+            _diskSegmentCache[k] = v;
+          }
+        });
+      }
+    } catch (_) {
+      // Ignore corrupt/missing cache gracefully so offline Kana conversion works.
+    }
+  }
+
+  Future<void> _persistDiskCacheIfNeeded() async {
+    if (!_diskCacheDirty) return;
+    _diskCacheDirty = false;
+    try {
+      final file = await _resolveCacheFile();
+      if (file == null) return;
+      while (_diskSegmentCache.length > _maxDiskCacheEntries) {
+        _diskSegmentCache.remove(_diskSegmentCache.keys.first);
+      }
+      if (!await file.parent.exists()) {
+        await file.parent.create(recursive: true);
+      }
+      await file.writeAsString(jsonEncode(_diskSegmentCache), flush: true);
+    } catch (_) {
+      // Disk write errors should never crash offline romanization.
+    }
+  }
+
+  @visibleForTesting
+  Future<void> seedOfflineSegmentCacheForTesting(
+    Map<String, String> entries, {
+    bool persist = true,
+  }) async {
+    await ensureDiskCacheLoaded();
+    for (final e in entries.entries) {
+      final k = e.key.trim();
+      final v = e.value.trim();
+      if (k.isNotEmpty && v.isNotEmpty && !containsKanji(v)) {
+        _diskSegmentCache[k] = v;
+        _diskCacheDirty = true;
+      }
+    }
+    if (persist) {
+      await _persistDiskCacheIfNeeded();
+    }
+  }
 
   static final RegExp _japaneseRegex = RegExp(
     r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]',
@@ -319,11 +406,20 @@ class RomajiService {
   }
 
   /// Queries Google Translate's `dt=rm` morphological romanization endpoint
-  /// for a single Japanese segment with automatic retry so Kanji never leaks.
+  /// for a single Japanese segment with automatic retry and persistent offline
+  /// segment caching so previously converted Kanji songs stay 100% offline-ready.
   Future<String> _fetchRomajiSegmentFromApi(String segment) async {
     final trimmed = segment.trim();
     if (trimmed.isEmpty || !containsJapanese(trimmed)) {
       return trimmed;
+    }
+
+    await ensureDiskCacheLoaded();
+    final cached = _diskSegmentCache.remove(trimmed);
+    if (cached != null && !containsKanji(cached)) {
+      // Re-insert to keep LRU recency.
+      _diskSegmentCache[trimmed] = cached;
+      return cached;
     }
 
     for (int attempt = 0; attempt < 3; attempt++) {
@@ -359,7 +455,12 @@ class RomajiService {
             final joined = romajiParts.join(' ').trim();
             final converted = convertKanaToRomaji(joined);
             if (!containsKanji(converted)) {
-              return cleanRomajiLine(converted);
+              final clean = cleanRomajiLine(converted);
+              if (clean.isNotEmpty) {
+                _diskSegmentCache[trimmed] = clean;
+                _diskCacheDirty = true;
+              }
+              return clean;
             }
           }
         }
@@ -367,6 +468,12 @@ class RomajiService {
         debugPrint(
           '[ROMAJI] Attempt ${attempt + 1} gagal untuk "$trimmed": $e',
         );
+        if (e is SocketException ||
+            (e is DioException &&
+                (e.type == DioExceptionType.connectionError ||
+                    e.error is SocketException))) {
+          break;
+        }
       }
 
       if (attempt < 2) {
@@ -374,38 +481,44 @@ class RomajiService {
       }
     }
 
-    // Offline fallback if network is unreachable
+    // Offline fallback if network is unreachable (Hiragana/Katakana convert 100% locally)
     return cleanRomajiLine(convertKanaToRomaji(trimmed));
   }
 
   /// Romanizes a single line of text (without timestamps), preserving any
   /// English phrases in parentheses or inline Latin words while converting all
-  /// Japanese Kanji + Kana phrases via `dt=rm`.
+  /// Japanese Kanji + Kana phrases via cached/online `dt=rm` + offline Kana.
   Future<String> romanizeText(String text) async {
+    _lastConversionLeftUnconvertedKanji = false;
     final trimmed = text.trim();
     if (trimmed.isEmpty || !containsJapanese(trimmed)) {
       return text;
     }
 
+    await ensureDiskCacheLoaded();
     final matches = _japaneseSegmentRegex.allMatches(trimmed).toList();
+    String output;
     if (matches.isEmpty) {
-      return cleanRomajiLine(await _fetchRomajiSegmentFromApi(trimmed));
-    }
-
-    final segmentMap = <String, String>{};
-    for (final m in matches) {
-      final seg = m.group(0)!;
-      if (!segmentMap.containsKey(seg)) {
-        segmentMap[seg] = await _fetchRomajiSegmentFromApi(seg);
+      output = cleanRomajiLine(await _fetchRomajiSegmentFromApi(trimmed));
+    } else {
+      final segmentMap = <String, String>{};
+      for (final m in matches) {
+        final seg = m.group(0)!;
+        if (!segmentMap.containsKey(seg)) {
+          segmentMap[seg] = await _fetchRomajiSegmentFromApi(seg);
+        }
       }
+
+      final replaced = trimmed.replaceAllMapped(_japaneseSegmentRegex, (m) {
+        final seg = m.group(0)!;
+        return segmentMap[seg] ?? seg;
+      });
+      output = cleanRomajiLine(replaced);
     }
 
-    final replaced = trimmed.replaceAllMapped(_japaneseSegmentRegex, (m) {
-      final seg = m.group(0)!;
-      return segmentMap[seg] ?? seg;
-    });
-
-    return cleanRomajiLine(replaced);
+    await _persistDiskCacheIfNeeded();
+    _lastConversionLeftUnconvertedKanji = containsKanji(output);
+    return output;
   }
 
   /// Strips inline Hiragana/Katakana furigana readings immediately attached to
@@ -482,12 +595,15 @@ class RomajiService {
   /// while strictly isolating and preserving `[mm:ss.xx]` timestamps and
   /// deduplicating bilingual Kanji + Romaji lines.
   Future<String> romanizeLyrics(String rawLyrics) async {
+    _lastConversionLeftUnconvertedKanji = false;
     if (rawLyrics.trim().isEmpty) {
       return rawLyrics;
     }
     if (!containsJapanese(rawLyrics)) {
       return deduplicateRomajiLyrics(rawLyrics);
     }
+
+    await ensureDiskCacheLoaded();
 
     final normalizedInput =
         rawLyrics.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
@@ -604,7 +720,10 @@ class RomajiService {
 
     // 4. Deduplicate consecutive bilingual or duplicate Romaji lines
     final deduplicated = _deduplicateBilingualLines(processedLines);
-    return _formatProcessedLines(deduplicated);
+    final formatted = _formatProcessedLines(deduplicated);
+    await _persistDiskCacheIfNeeded();
+    _lastConversionLeftUnconvertedKanji = containsKanji(formatted);
+    return formatted;
   }
 
   /// Normalizes a Romaji/Latin lyric string for bilingual duplicate comparison:
@@ -1034,11 +1153,14 @@ class RomajiService {
       }
     }
 
-    return metadata.copyWith(
+    final out = metadata.copyWith(
       title: newTitle,
       artist: newArtist,
       album: newAlbum,
     );
+    _lastConversionLeftUnconvertedKanji =
+        containsKanji(newTitle) || containsKanji(newArtist) || containsKanji(newAlbum);
+    return out;
   }
 
   /// Synchronizes and converts both `syncedLyrics` and `plainLyrics` of [metadata]
@@ -1046,20 +1168,25 @@ class RomajiService {
   /// preservation and `plainLyrics` is derived directly by stripping timestamps
   /// (avoiding double API calls).
   Future<TrackMetadata> romanizeTrackLyrics(TrackMetadata metadata) async {
+    _lastConversionLeftUnconvertedKanji = false;
     if (metadata.hasSyncedLyrics) {
       final romanizedSynced = await romanizeLyrics(metadata.syncedLyrics!);
       final romanizedPlain = stripTimestamps(romanizedSynced);
-      return metadata.copyWith(
+      final out = metadata.copyWith(
         syncedLyrics: romanizedSynced,
         plainLyrics: romanizedPlain,
       );
+      _lastConversionLeftUnconvertedKanji = containsKanji(romanizedSynced);
+      return out;
     }
 
     if (metadata.hasPlainLyrics) {
       final romanizedPlain = await romanizeLyrics(metadata.plainLyrics!);
-      return metadata.copyWith(
+      final out = metadata.copyWith(
         plainLyrics: romanizedPlain,
       );
+      _lastConversionLeftUnconvertedKanji = containsKanji(romanizedPlain);
+      return out;
     }
 
     return metadata;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -271,6 +272,8 @@ class LocalMusicProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sleepCountdownTimer?.cancel();
+    _sleepCountdownTimer = null;
     progressNotifier.dispose();
     activeLyricIndexNotifier.dispose();
     super.dispose();
@@ -302,6 +305,12 @@ class LocalMusicProvider extends ChangeNotifier {
   double _preAmpGainDb = 0.0;
   MusicoletPlayMode _playMode = MusicoletPlayMode.repeatAll;
   bool _isShuffle = false;
+
+  // Offline Sleep Timer & Romaji Offline Kanji Feedback State
+  DateTime? _sleepTimerDeadline;
+  bool _sleepAfterCurrentTrack = false;
+  Timer? _sleepCountdownTimer;
+  bool _lastRomajiLeftUnconvertedKanji = false;
 
   String _allocateQueueId() => 'qe_${_nextQueueEntryCounter++}';
 
@@ -873,6 +882,32 @@ class LocalMusicProvider extends ChangeNotifier {
     return s != null && isRomajiEnabledForSong(s.filePath);
   }
 
+  bool get lastRomajiLeftUnconvertedKanji => _lastRomajiLeftUnconvertedKanji;
+
+  bool get hasActiveSleepTimer =>
+      _sleepAfterCurrentTrack || _sleepTimerDeadline != null;
+
+  bool get isSleepAfterCurrentTrack => _sleepAfterCurrentTrack;
+
+  Duration? get remainingSleepTimer {
+    final deadline = _sleepTimerDeadline;
+    if (deadline == null) return null;
+    final diff = deadline.difference(DateTime.now());
+    if (diff.isNegative || diff.inMilliseconds <= 0) {
+      return Duration.zero;
+    }
+    return diff;
+  }
+
+  String get remainingSleepTimerFormatted {
+    final rem = remainingSleepTimer;
+    if (rem == null) return '';
+    final totalSecs = rem.inSeconds.clamp(0, 86400);
+    final mins = (totalSecs ~/ 60).toString().padLeft(2, '0');
+    final secs = (totalSecs % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
   /// Single document-level synced lyrics source consumed by ALL views:
   /// - Home 3-line column (`_buildLeftLyricsColumn`)
   /// - Fluid morph (`_buildFluidMorphLyricsScene`)
@@ -961,23 +996,29 @@ class LocalMusicProvider extends ChangeNotifier {
     await _loadPlaylists();
     await checkPermissionsStatus();
     final hydrated = await _loadLibraryAndSessionCache();
-    if (hydrated) {
-      _syncProgressNotifiers();
-      notifyListeners();
-      _notifyExternalSync();
-      if (currentSong != null) {
-        _loadCurrentSongDetailsAndCoverOnDemand(
-          currentSong!,
-          _playbackSessionId,
-        );
+    final restoredFromNative = await syncWithNativePlaybackSnapshot();
+    if (!restoredFromNative) {
+      if (hydrated) {
+        _syncProgressNotifiers();
+        notifyListeners();
+        _notifyExternalSync();
+        if (currentSong != null) {
+          _loadCurrentSongDetailsAndCoverOnDemand(
+            currentSong!,
+            _playbackSessionId,
+          );
+        }
+      } else {
+        notifyListeners();
       }
+      await setVolume(1.0);
     } else {
-      notifyListeners();
+      _notifyExternalSync();
     }
-    await setVolume(1.0);
+    await _syncNativePlaybackQueue();
     await refreshLibrary(
       requestPermission: true,
-      silentBackground: hydrated,
+      silentBackground: hydrated || restoredFromNative,
     );
     await checkPermissionsStatus();
   }
@@ -1959,6 +2000,8 @@ class LocalMusicProvider extends ChangeNotifier {
         _isPlaying = false;
         _hasPreparedNative = false;
         notifyListeners();
+      } else {
+        unawaited(_syncNativePlaybackQueue());
       }
     } catch (_) {
       if (Platform.isAndroid && sessionId == _playbackSessionId) {
@@ -2031,6 +2074,18 @@ class LocalMusicProvider extends ChangeNotifier {
     if (_queueEntries.isEmpty) return;
 
     if (fromAutoComplete) {
+      if (_sleepAfterCurrentTrack) {
+        _sleepAfterCurrentTrack = false;
+        _sleepTimerDeadline = null;
+        _sleepCountdownTimer?.cancel();
+        _sleepCountdownTimer = null;
+        _isPlaying = false;
+        _positionMs = 0;
+        _syncProgressNotifiers();
+        notifyListeners();
+        _savePlayerSession();
+        return;
+      }
       if (_playMode == MusicoletPlayMode.playSingleStop) {
         // Musicolet `1→`: stop cleanly after finishing current track
         _isPlaying = false;
@@ -2109,6 +2164,7 @@ class LocalMusicProvider extends ChangeNotifier {
     }
     notifyListeners();
     _savePlayerSession();
+    unawaited(_syncNativePlaybackQueue());
   }
 
   void removeFromQueue(int index) {
@@ -2152,6 +2208,7 @@ class LocalMusicProvider extends ChangeNotifier {
     _syncProgressNotifiers();
     notifyListeners();
     _savePlayerSession();
+    unawaited(_syncNativePlaybackQueue());
   }
 
   void reorderQueueItem(int oldIndex, int newIndex) {
@@ -2171,6 +2228,7 @@ class LocalMusicProvider extends ChangeNotifier {
     }
     notifyListeners();
     _savePlayerSession();
+    unawaited(_syncNativePlaybackQueue());
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
@@ -2195,6 +2253,7 @@ class LocalMusicProvider extends ChangeNotifier {
     _syncProgressNotifiers();
     notifyListeners();
     _savePlayerSession();
+    unawaited(_syncNativePlaybackQueue());
   }
 
   // ===========================================================================
@@ -2217,6 +2276,7 @@ class LocalMusicProvider extends ChangeNotifier {
     }
     notifyListeners();
     _savePlayerSession();
+    unawaited(_syncNativePlaybackQueue());
   }
 
   void toggleShuffle() {
@@ -2259,6 +2319,207 @@ class LocalMusicProvider extends ChangeNotifier {
     }
     notifyListeners();
     _savePlayerSession();
+    unawaited(_syncNativePlaybackQueue());
+  }
+
+  void _ensureSleepCountdownTicker() {
+    _sleepCountdownTimer?.cancel();
+    _sleepCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final rem = remainingSleepTimer;
+      if (rem == null) {
+        _sleepCountdownTimer?.cancel();
+        _sleepCountdownTimer = null;
+        return;
+      }
+      if (rem == Duration.zero) {
+        _sleepCountdownTimer?.cancel();
+        _sleepCountdownTimer = null;
+        _sleepTimerDeadline = null;
+        _sleepAfterCurrentTrack = false;
+        if (_isPlaying) {
+          _isPlaying = false;
+          _syncProgressNotifiers();
+          _savePlayerSession();
+          if (_shouldInvokeNativeChannel) {
+            unawaited(
+              _systemChannel
+                  .invokeMethod<bool>('localPause')
+                  .catchError((_) => null),
+            );
+          }
+        }
+        notifyListeners();
+        return;
+      }
+      notifyListeners();
+    });
+  }
+
+  Future<void> startSleepTimer(Duration duration) async {
+    if (duration <= Duration.zero) {
+      await cancelSleepTimer();
+      return;
+    }
+    _sleepAfterCurrentTrack = false;
+    _sleepTimerDeadline = DateTime.now().add(duration);
+    _ensureSleepCountdownTicker();
+    notifyListeners();
+    if (_shouldInvokeNativeChannel) {
+      try {
+        await _systemChannel.invokeMethod<bool>('setSleepTimer', {
+          'durationMs': duration.inMilliseconds,
+          'afterCurrentTrack': false,
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> setSleepAfterCurrentTrack() async {
+    _sleepCountdownTimer?.cancel();
+    _sleepCountdownTimer = null;
+    _sleepTimerDeadline = null;
+    _sleepAfterCurrentTrack = true;
+    notifyListeners();
+    if (_shouldInvokeNativeChannel) {
+      try {
+        await _systemChannel.invokeMethod<bool>('setSleepTimer', {
+          'durationMs': 0,
+          'afterCurrentTrack': true,
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> cancelSleepTimer() async {
+    _sleepCountdownTimer?.cancel();
+    _sleepCountdownTimer = null;
+    _sleepTimerDeadline = null;
+    _sleepAfterCurrentTrack = false;
+    notifyListeners();
+    if (_shouldInvokeNativeChannel) {
+      try {
+        await _systemChannel.invokeMethod<bool>('cancelSleepTimer');
+      } catch (_) {}
+    }
+  }
+
+  void handleNativeSleepTimerExpired() {
+    _sleepCountdownTimer?.cancel();
+    _sleepCountdownTimer = null;
+    _sleepTimerDeadline = null;
+    _sleepAfterCurrentTrack = false;
+    _isPlaying = false;
+    _syncProgressNotifiers();
+    notifyListeners();
+    _savePlayerSession();
+  }
+
+  Future<void> _syncNativePlaybackQueue() async {
+    if (!_shouldInvokeNativeChannel) return;
+    try {
+      await _systemChannel.invokeMethod<bool>('syncNativePlaybackQueue', {
+        'tracks': _queueEntries
+            .map(
+              (e) => {
+                'path': e.song.filePath,
+                'title': e.song.title,
+                'artist': e.song.artist,
+                'album': e.song.album,
+                'coverPath': e.song.coverFilePath,
+                'durationMs': e.song.durationMs,
+              },
+            )
+            .toList(growable: false),
+        'currentIndex': _currentIndex,
+        'playModeIndex': _playMode.index,
+      });
+    } catch (_) {}
+  }
+
+  Future<bool> syncWithNativePlaybackSnapshot() async {
+    if (!_shouldInvokeNativeChannel) return false;
+    try {
+      final snap = await _systemChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'getNativePlaybackSnapshot',
+      );
+      if (snap == null || snap['hasActiveTrack'] != true) {
+        return false;
+      }
+
+      final activePath = (snap['path'] as String?)?.trim() ?? '';
+      if (activePath.isEmpty) return false;
+
+      final isPlayingNow = snap['isPlaying'] == true;
+      final posMs = (snap['positionMs'] as num?)?.toInt() ?? 0;
+      final durMs = (snap['durationMs'] as num?)?.toInt() ?? 0;
+      final snapSessionId = (snap['sessionId'] as num?)?.toInt() ?? 0;
+      final snapVol = (snap['volume'] as num?)?.toDouble();
+      final snapPreAmpDb = (snap['preAmpDb'] as num?)?.toDouble();
+      final sleepAfterTrack = snap['sleepAfterCurrentTrack'] == true;
+      final sleepRemMs = (snap['sleepRemainingMs'] as num?)?.toInt() ?? 0;
+
+      final prevPath = currentSong?.filePath;
+      int matchIdx =
+          _queueEntries.indexWhere((e) => e.song.filePath == activePath);
+      if (matchIdx == -1) {
+        final libIdx = _allSongs.indexWhere((s) => s.filePath == activePath);
+        if (libIdx != -1) {
+          final song = _allSongs[libIdx];
+          final entry = QueueEntry(queueId: _allocateQueueId(), song: song);
+          _queueEntries.add(entry);
+          _originalQueueEntries.add(entry);
+          matchIdx = _queueEntries.length - 1;
+        }
+      }
+
+      if (matchIdx >= 0) {
+        _currentIndex = matchIdx;
+      }
+      if (snapSessionId > 0) {
+        _playbackSessionId = snapSessionId;
+      }
+      _isPlaying = isPlayingNow;
+      _hasPreparedNative = true;
+      if (posMs >= 0) _positionMs = posMs;
+      if (durMs > 0) _durationMs = durMs;
+      if (snapVol != null) _volume = snapVol.clamp(0.0, 1.0);
+      if (snapPreAmpDb != null) {
+        _preAmpGainDb = snapPreAmpDb.clamp(0.0, 12.0);
+      }
+
+      if (sleepAfterTrack) {
+        _sleepCountdownTimer?.cancel();
+        _sleepCountdownTimer = null;
+        _sleepTimerDeadline = null;
+        _sleepAfterCurrentTrack = true;
+      } else if (sleepRemMs > 0) {
+        _sleepAfterCurrentTrack = false;
+        _sleepTimerDeadline =
+            DateTime.now().add(Duration(milliseconds: sleepRemMs));
+        _ensureSleepCountdownTicker();
+      } else {
+        _sleepCountdownTimer?.cancel();
+        _sleepCountdownTimer = null;
+        _sleepTimerDeadline = null;
+        _sleepAfterCurrentTrack = false;
+      }
+
+      _syncProgressNotifiers();
+      notifyListeners();
+
+      if (currentSong != null && currentSong!.filePath != prevPath) {
+        _currentFullCoverBytes = null;
+        _currentFullCoverSongPath = null;
+        _loadCurrentSongDetailsAndCoverOnDemand(
+          currentSong!,
+          _playbackSessionId,
+        );
+      }
+      await _syncNativePlaybackQueue();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   void setShowLyricsOverlay(bool visible) {
@@ -2587,9 +2848,11 @@ class LocalMusicProvider extends ChangeNotifier {
 
     if (existing != null &&
         (existing.originalUslt == currentUslt ||
-            existing.romanizedUslt == currentUslt)) {
+            existing.romanizedUslt == currentUslt) &&
+        !RomajiService.containsKanji(existing.romanizedUslt)) {
       if (!includeMetadata ||
           !RomajiService.containsJapanese(existing.romanizedTitle)) {
+        _lastRomajiLeftUnconvertedKanji = false;
         return existing;
       }
     }
@@ -2671,6 +2934,12 @@ class LocalMusicProvider extends ChangeNotifier {
       romanizedPlainLines: romanizedPlainLines,
     );
     _lyricsDocumentCacheByPath[path] = built;
+    _lastRomajiLeftUnconvertedKanji =
+        _romajiService.lastConversionLeftUnconvertedKanji ||
+            RomajiService.containsKanji(romanizedUslt) ||
+            (includeMetadata &&
+                (RomajiService.containsKanji(meta.title) ||
+                    RomajiService.containsKanji(meta.artist)));
     return built;
   }
 
@@ -2687,6 +2956,7 @@ class LocalMusicProvider extends ChangeNotifier {
     bool persistToFile = false,
   }) async {
     if (_isProcessingLocalTag) return false;
+    _lastRomajiLeftUnconvertedKanji = false;
 
     if (!enabled) {
       final path = song.filePath;
@@ -2701,7 +2971,9 @@ class LocalMusicProvider extends ChangeNotifier {
           usltLyrics: cachedDoc.originalUslt,
         );
         _replaceSongInMemoryCaches(restoredSong);
-        if (persistToFile && _shouldInvokeNativeChannel) {
+        if (persistToFile &&
+            _shouldInvokeNativeChannel &&
+            restoredSong.supportsDirectTagEditing) {
           try {
             await retagLocalSong(
               song: restoredSong,
@@ -2748,7 +3020,9 @@ class LocalMusicProvider extends ChangeNotifier {
       _replaceSongInMemoryCaches(updatedSong);
       _isProcessingLocalTag = false;
 
-      if (persistToFile && _shouldInvokeNativeChannel) {
+      if (persistToFile &&
+          _shouldInvokeNativeChannel &&
+          hydratedSong.supportsDirectTagEditing) {
         await retagLocalSong(
           song: hydratedSong,
           title: updatedSong.title,

@@ -1,3 +1,4 @@
+import '../services/folder_service.dart';
 import 'track_metadata.dart';
 
 class SyncedLyricEntry {
@@ -226,11 +227,20 @@ class LocalSong {
     );
   }
 
-  bool get isFlac =>
-      filePath.trim().toLowerCase().endsWith('.flac') ||
-      fileName.trim().toLowerCase().endsWith('.flac');
+  String get audioExtension {
+    final byPath = FolderService.extractAudioExtension(filePath);
+    if (byPath.isNotEmpty) return byPath;
+    final byName = FolderService.extractAudioExtension(fileName);
+    if (byName.isNotEmpty) return byName;
+    return 'mp3';
+  }
 
-  String get audioFormatLabel => isFlac ? 'FLAC' : 'MP3';
+  bool get isFlac => audioExtension == 'flac';
+
+  bool get supportsDirectTagEditing =>
+      audioExtension == 'mp3' || audioExtension == 'flac';
+
+  String get audioFormatLabel => audioExtension.toUpperCase();
 
   bool get hasCover =>
       coverFilePath != null && coverFilePath!.trim().isNotEmpty;

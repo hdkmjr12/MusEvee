@@ -1,6 +1,4 @@
 package com.example.spotmeta_downloader
-
-import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -34,7 +32,7 @@ import java.util.Locale
  * queue stays the single source of truth.
  */
 class MusEveeMediaNotifier(
-    private val activity: Activity,
+    private val appContext: Context,
     private val onAction: (action: String, positionMs: Long) -> Unit
 ) {
     companion object {
@@ -47,7 +45,6 @@ class MusEveeMediaNotifier(
         const val ACTION_STOP = "com.example.spotmeta_downloader.media.STOP"
     }
 
-    private val appContext: Context = activity.applicationContext
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -142,7 +139,7 @@ class MusEveeMediaNotifier(
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
     private fun contentIntent(): PendingIntent {
-        val intent = Intent(appContext, activity.javaClass).apply {
+        val intent = Intent(appContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         return PendingIntent.getActivity(appContext, 0, intent, pendingFlags())
@@ -499,6 +496,12 @@ class MusEveePlaybackService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (MusEveeAudioEngine.isActivelyPlaying()) {
+            // Keep playback alive in foreground service when user swipes Recents away.
+            super.onTaskRemoved(rootIntent)
+            return
+        }
+        MusEveeAudioEngine.stopLocalAudio(notifyFlutter = false, abandonFocus = true)
         detachForeground(removeNotification = true)
         stopSelf()
         super.onTaskRemoved(rootIntent)

@@ -299,21 +299,40 @@ class FolderService {
     }
   }
 
-  /// Returns `true` if [pathOrName] ends with `.mp3` or `.flac` (case-insensitive).
-  static bool isSupportedAudioFilePath(String pathOrName) {
-    final lower = pathOrName.trim().toLowerCase();
-    return lower.endsWith('.mp3') || lower.endsWith('.flac');
+  /// Supported offline & downloader audio file extensions (lowercase, without dot).
+  static const List<String> supportedAudioExtensions = [
+    'mp3',
+    'flac',
+    'm4a',
+    'wav',
+    'ogg',
+    'aac',
+    'opus',
+  ];
+
+  /// Returns the normalized lowercase audio extension (without dot) when
+  /// [pathOrName] ends with one of [supportedAudioExtensions], or `''`.
+  static String extractAudioExtension(String pathOrName) {
+    final trimmed = pathOrName.trim().toLowerCase();
+    for (final ext in supportedAudioExtensions) {
+      if (trimmed.endsWith('.$ext')) {
+        return ext;
+      }
+    }
+    return '';
   }
 
-  /// Strips `.mp3` or `.flac` extension from [fileName] (case-insensitive).
+  /// Returns `true` if [pathOrName] ends with a supported audio extension
+  /// (`mp3`, `flac`, `m4a`, `wav`, `ogg`, `aac`, `opus`, case-insensitive).
+  static bool isSupportedAudioFilePath(String pathOrName) =>
+      extractAudioExtension(pathOrName).isNotEmpty;
+
+  /// Strips a supported audio extension from [fileName] (case-insensitive).
   static String stripAudioExtension(String fileName) {
     final trimmed = fileName.trim();
-    final lower = trimmed.toLowerCase();
-    if (lower.endsWith('.flac')) {
-      return trimmed.substring(0, trimmed.length - 5);
-    }
-    if (lower.endsWith('.mp3')) {
-      return trimmed.substring(0, trimmed.length - 4);
+    final ext = extractAudioExtension(trimmed);
+    if (ext.isNotEmpty) {
+      return trimmed.substring(0, trimmed.length - ext.length - 1);
     }
     return trimmed;
   }

@@ -17,7 +17,6 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.MediaScannerConnection
 import android.media.audiofx.AudioEffect
-import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -47,19 +46,6 @@ class MainActivity : FlutterActivity() {
     private var currentPreviewUrl: String? = null
     private var previewFocusRequest: AudioFocusRequest? = null
 
-    // Primary Local Music MediaPlayer (Musicolet player engine)
-    private var localPlayer: MediaPlayer? = null
-    private var currentLocalPath: String? = null
-    private var currentLocalSessionId: Int = 0
-    private var isLocalPrepared: Boolean = false
-    private var currentNormalizedVolume: Float = 1.0f
-    private var currentPreAmpGainMb: Int = 0
-    private var loudnessEnhancer: LoudnessEnhancer? = null
-    private var localFocusRequest: AudioFocusRequest? = null
-    private var resumeLocalOnFocusGain: Boolean = false
-    private var resumeLocalAfterPreview: Boolean = false
-    private var mediaNotifier: MusEveeMediaNotifier? = null
-
     // Android 11-15 Scoped Storage, All Files Access & Notification permission tracking
     private val reqAllFilesAccess = 2101
     private val reqDeleteMedia = 2102
@@ -86,83 +72,12 @@ class MainActivity : FlutterActivity() {
             .build()
     }
 
-    private val localAudioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        // Ignore self-inflicted transient loss while our own 30s preview is active
-        if (previewPlayer != null) return@OnAudioFocusChangeListener
-
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                resumeLocalOnFocusGain = false
-                resumeLocalAfterPreview = false
-                pauseLocalAudioInternal(abandonFocus = true)
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                val wasPlaying = try {
-                    isLocalPrepared && localPlayer?.isPlaying == true
-                } catch (_: Exception) {
-                    false
-                }
-                if (wasPlaying) {
-                    resumeLocalOnFocusGain = true
-                    pauseLocalAudioInternal(abandonFocus = false)
-                }
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                try {
-                    val duckGain = (currentNormalizedVolume * 0.25f).coerceIn(0f, 1f)
-                    localPlayer?.setVolume(duckGain, duckGain)
-                } catch (_: Exception) {
-                }
-            }
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                try {
-                    val gain = currentNormalizedVolume.coerceIn(0f, 1f)
-                    localPlayer?.setVolume(gain, gain)
-                } catch (_: Exception) {
-                }
-                if (resumeLocalOnFocusGain && previewPlayer == null) {
-                    resumeLocalOnFocusGain = false
-                    resumeLocalAudio()
-                }
-            }
-        }
-    }
-
     private val previewAudioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                resumeLocalAfterPreview = false
+                MusEveeAudioEngine.clearResumeAfterPreviewFlag()
                 stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
-            }
-        }
-    }
-
-    private val positionTicker = object : Runnable {
-        override fun run() {
-            val mp = localPlayer
-            val activeSession = currentLocalSessionId
-            val activePath = currentLocalPath
-            if (mp != null && isLocalPrepared) {
-                try {
-                    if (mp.isPlaying) {
-                        val pos = mp.currentPosition
-                        val dur = mp.duration
-                        methodChannel?.invokeMethod(
-                            "onLocalPosition",
-                            mapOf(
-                                "positionMs" to pos,
-                                "durationMs" to dur,
-                                "isPlaying" to true,
-                                "path" to activePath,
-                                "sessionId" to activeSession
-                            )
-                        )
-                        mainHandler.postDelayed(this, 200L)
-                        return
-                    }
-                } catch (_: Exception) {
-                }
             }
         }
     }
@@ -173,11 +88,7 @@ class MainActivity : FlutterActivity() {
         ioExecutor.execute {
             migrateAndCleanupStorageFootprint()
         }
-        mediaNotifier = MusEveeMediaNotifier(this) { action, positionMs ->
-            mainHandler.post {
-                handleMediaNotificationAction(action, positionMs)
-            }
-        }
+        MusEveeAudioEngine.init(applicationContext)
         extractSharedTextFromIntent(intent)
     }
 
@@ -190,6 +101,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
         methodChannel = channel
+        MusEveeAudioEngine.attachMethodChannel(applicationContext, channel)
 
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -290,7 +202,8 @@ class MainActivity : FlutterActivity() {
                     } else {
                         // Pause local player gently so 30s preview doesn't overlap,
                         // and remember if it was playing so we resume after preview ends.
-                        pauseLocalAudioForPreview()
+                        MusEveeAudioEngine.isPreviewActive = true
+                        MusEveeAudioEngine.pauseLocalAudioForPreview()
                         playPreviewAudio(url, result)
                     }
                 }
@@ -308,7 +221,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 // =============================================================
-                // MUSICOLET LOCAL AUDIO PLAYER ENGINE
+                // MUSICOLET LOCAL AUDIO PLAYER ENGINE (DELEGATED TO ENGINE)
                 // =============================================================
                 "localPlayFile" -> {
                     val path = call.argument<String>("path")?.trim()
@@ -321,16 +234,16 @@ class MainActivity : FlutterActivity() {
                     val durationMs = (call.argument<Number>("durationMs")?.toLong()) ?: 0L
                     val requestedVolume = (call.argument<Number>("volume")?.toFloat()) ?: 1.0f
                     val requestedPreAmpDb = call.argument<Number>("preAmpDb")?.toDouble()
-                    currentNormalizedVolume = requestedVolume.coerceIn(0f, 1f)
+                    MusEveeAudioEngine.setNormalizedVolume(requestedVolume)
                     if (requestedPreAmpDb != null) {
-                        currentPreAmpGainMb = Math.round(
-                            requestedPreAmpDb.coerceIn(0.0, 12.0) * 100.0
-                        ).toInt()
+                        MusEveeAudioEngine.setPreAmpGainDb(requestedPreAmpDb)
                     }
                     if (path.isNullOrEmpty()) {
                         result.success(false)
                     } else {
-                        playLocalAudioFile(
+                        stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
+                        val started = MusEveeAudioEngine.playLocalAudioFile(
+                            context = applicationContext,
                             path = path,
                             startPositionMs = startPositionMs,
                             requestedSessionId = sessionId,
@@ -338,9 +251,9 @@ class MainActivity : FlutterActivity() {
                             artist = artist,
                             album = album,
                             coverPath = coverPath,
-                            durationMs = durationMs,
-                            result = result
+                            durationMs = durationMs
                         )
+                        result.success(started)
                     }
                 }
                 "updateMediaNotification" -> {
@@ -349,67 +262,91 @@ class MainActivity : FlutterActivity() {
                     val album = call.argument<String>("album")?.trim().orEmpty()
                     val coverPath = call.argument<String>("coverPath")?.trim()
                     val durationMs = (call.argument<Number>("durationMs")?.toLong()) ?: 0L
-                    mediaNotifier?.updateMetadata(
-                        newTitle = title,
-                        newArtist = artist,
-                        newAlbum = album,
+                    MusEveeAudioEngine.updateMediaNotification(
+                        context = applicationContext,
+                        title = title,
+                        artist = artist,
+                        album = album,
                         coverPath = coverPath,
-                        newDurationMs = durationMs
+                        durationMs = durationMs
                     )
-                    val mp = localPlayer
-                    val playing = try {
-                        isLocalPrepared && mp?.isPlaying == true
-                    } catch (_: Exception) {
-                        false
-                    }
-                    val pos = try {
-                        if (isLocalPrepared && mp != null) mp.currentPosition.toLong() else 0L
-                    } catch (_: Exception) {
-                        0L
-                    }
-                    mediaNotifier?.updatePlaybackState(playing, pos)
                     result.success(true)
                 }
                 "localPause" -> {
-                    pauseLocalAudioByUser()
+                    MusEveeAudioEngine.pauseLocalAudioByUser()
                     result.success(true)
                 }
                 "localResume" -> {
-                    val resumed = resumeLocalAudio()
+                    stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
+                    val resumed = MusEveeAudioEngine.resumeLocalAudio()
                     result.success(resumed)
                 }
                 "localSeekTo" -> {
                     val positionMs = call.argument<Int>("positionMs") ?: 0
-                    val ok = seekLocalAudio(positionMs)
+                    val ok = MusEveeAudioEngine.seekLocalAudio(positionMs)
                     result.success(ok)
                 }
                 "localStop" -> {
-                    stopLocalAudio(notifyFlutter = true, abandonFocus = true)
+                    MusEveeAudioEngine.stopLocalAudio(notifyFlutter = true, abandonFocus = true)
                     result.success(true)
                 }
                 "getVolume" -> {
-                    result.success(currentNormalizedVolume.coerceIn(0f, 1f).toDouble())
+                    result.success(MusEveeAudioEngine.getNormalizedVolume())
                 }
                 "setVolume" -> {
                     val normalized = (call.argument<Double>("volume") ?: 1.0).coerceIn(0.0, 1.0)
-                    currentNormalizedVolume = normalized.toFloat()
-                    try {
-                        val gain = currentNormalizedVolume.coerceIn(0f, 1f)
-                        localPlayer?.setVolume(gain, gain)
-                    } catch (_: Exception) {
-                    }
+                    MusEveeAudioEngine.setNormalizedVolume(normalized.toFloat())
                     result.success(true)
                 }
                 "setPreAmpGainDb" -> {
                     val gainDb = (call.argument<Number>("gainDb")?.toDouble() ?: 0.0)
                         .coerceIn(0.0, 12.0)
-                    currentPreAmpGainMb = Math.round(gainDb * 100.0).toInt()
-                    localPlayer?.let { applyLoudnessEnhancerToPlayer(it) }
+                    MusEveeAudioEngine.setPreAmpGainDb(gainDb)
                     result.success(true)
                 }
                 "openEqualizer" -> {
                     val opened = launchSystemEqualizer()
                     result.success(opened)
+                }
+                "syncNativePlaybackQueue" -> {
+                    val rawTracks = call.argument<List<Map<String, Any?>>>("tracks").orEmpty()
+                    val currentIndex = call.argument<Int>("currentIndex") ?: -1
+                    val playModeIndex = call.argument<Int>("playModeIndex") ?: 0
+                    val parsedTracks = rawTracks.mapNotNull { item ->
+                        val p = (item["path"] as? String)?.trim()
+                        if (p.isNullOrEmpty()) return@mapNotNull null
+                        MusEveeAudioEngine.QueueTrack(
+                            path = p,
+                            title = (item["title"] as? String)?.trim().orEmpty(),
+                            artist = (item["artist"] as? String)?.trim().orEmpty(),
+                            album = (item["album"] as? String)?.trim().orEmpty(),
+                            coverPath = (item["coverPath"] as? String)?.trim(),
+                            durationMs = (item["durationMs"] as? Number)?.toLong() ?: 0L
+                        )
+                    }
+                    MusEveeAudioEngine.syncQueue(
+                        items = parsedTracks,
+                        currentIdx = currentIndex,
+                        modeIndex = playModeIndex
+                    )
+                    result.success(true)
+                }
+                "getNativePlaybackSnapshot" -> {
+                    result.success(MusEveeAudioEngine.getPlaybackSnapshot())
+                }
+                "setSleepTimer" -> {
+                    val durationMs = (call.argument<Number>("durationMs")?.toLong()) ?: 0L
+                    val afterCurrentTrack = call.argument<Boolean>("afterCurrentTrack") ?: false
+                    MusEveeAudioEngine.setSleepTimer(
+                        context = applicationContext,
+                        durationMs = durationMs,
+                        afterCurrentTrack = afterCurrentTrack
+                    )
+                    result.success(true)
+                }
+                "cancelSleepTimer" -> {
+                    MusEveeAudioEngine.cancelSleepTimer()
+                    result.success(true)
                 }
 
                 // =============================================================
@@ -511,48 +448,8 @@ class MainActivity : FlutterActivity() {
     }
 
     // =========================================================================
-    // AUDIO FOCUS HELPERS (LOCAL PLAYER + 30s PREVIEW)
+    // AUDIO FOCUS HELPERS (30s Preview; local focus lives in MusEveeAudioEngine)
     // =========================================================================
-    @Suppress("DEPRECATION")
-    private fun requestLocalAudioFocus(): Boolean {
-        val audioManager =
-            applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                ?: return true
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val req = localFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(playbackAudioAttributes)
-                    .setWillPauseWhenDucked(false)
-                    .setOnAudioFocusChangeListener(localAudioFocusListener, mainHandler)
-                    .build()
-                    .also { localFocusRequest = it }
-                audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            } else {
-                audioManager.requestAudioFocus(
-                    localAudioFocusListener,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            }
-        } catch (_: Exception) {
-            true
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun abandonLocalAudioFocus() {
-        val audioManager =
-            applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                localFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-            } else {
-                audioManager.abandonAudioFocus(localAudioFocusListener)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
     @Suppress("DEPRECATION")
     private fun requestPreviewAudioFocus(): Boolean {
         val audioManager =
@@ -599,6 +496,7 @@ class MainActivity : FlutterActivity() {
     private fun playPreviewAudio(url: String, result: MethodChannel.Result) {
         try {
             stopPreviewAudio(notifyFlutter = false, allowResumeLocal = false)
+            MusEveeAudioEngine.isPreviewActive = true
             requestPreviewAudioFocus()
             currentPreviewUrl = url
 
@@ -646,6 +544,7 @@ class MainActivity : FlutterActivity() {
         val player = previewPlayer
         previewPlayer = null
         currentPreviewUrl = null
+        MusEveeAudioEngine.isPreviewActive = false
         if (player != null) {
             try {
                 if (player.isPlaying) {
@@ -666,357 +565,17 @@ class MainActivity : FlutterActivity() {
                 mapOf("isPlaying" to false, "url" to null)
             )
         }
-        if (allowResumeLocal && resumeLocalAfterPreview) {
-            resumeLocalAfterPreview = false
-            resumeLocalAudio()
-        }
-    }
-
-    // =========================================================================
-    // LOCAL MUSIC PLAYER ENGINE IMPLEMENTATION
-    // =========================================================================
-    private fun playLocalAudioFile(
-        path: String,
-        startPositionMs: Int,
-        requestedSessionId: Int,
-        title: String?,
-        artist: String?,
-        album: String?,
-        coverPath: String?,
-        durationMs: Long,
-        result: MethodChannel.Result
-    ) {
-        val file = File(path)
-        if (!file.exists()) {
-            result.success(false)
-            return
-        }
-
-        resumeLocalAfterPreview = false
-        resumeLocalOnFocusGain = false
-        stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
-        stopLocalAudio(notifyFlutter = false, abandonFocus = false)
-
-        val resolvedTitle = if (!title.isNullOrBlank()) title else file.nameWithoutExtension
-        val resolvedArtist = if (!artist.isNullOrBlank()) artist else "MusEvee"
-        val resolvedAlbum = album.orEmpty()
-        mediaNotifier?.updateMetadata(
-            newTitle = resolvedTitle,
-            newArtist = resolvedArtist,
-            newAlbum = resolvedAlbum,
-            coverPath = coverPath,
-            newDurationMs = durationMs
-        )
-
-        val capturedSessionId = if (requestedSessionId > 0) {
-            requestedSessionId
+        if (allowResumeLocal) {
+            MusEveeAudioEngine.resumeLocalAfterPreviewIfNeeded()
         } else {
-            currentLocalSessionId + 1
-        }
-        currentLocalSessionId = capturedSessionId
-        val capturedPath = path
-
-        try {
-            requestLocalAudioFocus()
-            val player = MediaPlayer()
-            localPlayer = player
-            currentLocalPath = capturedPath
-            isLocalPrepared = false
-
-            player.setAudioAttributes(playbackAudioAttributes)
-            val gain = currentNormalizedVolume.coerceIn(0f, 1f)
-            player.setVolume(gain, gain)
-            player.setDataSource(capturedPath)
-            player.setOnPreparedListener { mp ->
-                if (mp !== localPlayer || capturedSessionId != currentLocalSessionId) {
-                    return@setOnPreparedListener
-                }
-                isLocalPrepared = true
-                try {
-                    val preparedGain = currentNormalizedVolume.coerceIn(0f, 1f)
-                    mp.setVolume(preparedGain, preparedGain)
-                    applyLoudnessEnhancerToPlayer(mp)
-                    if (startPositionMs > 0 && startPositionMs < mp.duration) {
-                        mp.seekTo(startPositionMs)
-                    }
-                    mp.start()
-                    mediaNotifier?.updateDuration(mp.duration.toLong())
-                    notifyLocalPlayerState(isPlaying = true)
-                    startPositionTicker()
-                } catch (_: Exception) {
-                    stopLocalAudio(notifyFlutter = true, abandonFocus = true)
-                }
-            }
-            player.setOnCompletionListener { mp ->
-                if (mp !== localPlayer ||
-                    capturedSessionId != currentLocalSessionId ||
-                    !isLocalPrepared
-                ) {
-                    return@setOnCompletionListener
-                }
-                stopPositionTicker()
-                val dur = try {
-                    mp.duration
-                } catch (_: Exception) {
-                    0
-                }
-                methodChannel?.invokeMethod(
-                    "onLocalTrackCompleted",
-                    mapOf(
-                        "path" to capturedPath,
-                        "sessionId" to capturedSessionId,
-                        "durationMs" to dur
-                    )
-                )
-            }
-            player.setOnErrorListener { mp, _, _ ->
-                if (mp === localPlayer && capturedSessionId == currentLocalSessionId) {
-                    stopLocalAudio(notifyFlutter = true, abandonFocus = true)
-                }
-                true
-            }
-            player.prepareAsync()
-            result.success(true)
-        } catch (_: Exception) {
-            stopLocalAudio(notifyFlutter = true, abandonFocus = true)
-            result.success(false)
-        }
-    }
-
-    private fun pauseLocalAudioForPreview() {
-        val mp = localPlayer ?: return
-        try {
-            if (isLocalPrepared && mp.isPlaying) {
-                resumeLocalAfterPreview = true
-                mp.pause()
-                stopPositionTicker()
-                notifyLocalPlayerState(isPlaying = false)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun pauseLocalAudioByUser() {
-        resumeLocalOnFocusGain = false
-        resumeLocalAfterPreview = false
-        pauseLocalAudioInternal(abandonFocus = true)
-    }
-
-    private fun pauseLocalAudioInternal(abandonFocus: Boolean) {
-        val mp = localPlayer ?: return
-        try {
-            if (isLocalPrepared && mp.isPlaying) {
-                mp.pause()
-            }
-        } catch (_: Exception) {
-        }
-        stopPositionTicker()
-        if (abandonFocus) {
-            abandonLocalAudioFocus()
-        }
-        notifyLocalPlayerState(isPlaying = false)
-    }
-
-    private fun resumeLocalAudio(): Boolean {
-        val mp = localPlayer ?: return false
-        if (!isLocalPrepared) return false
-        return try {
-            resumeLocalAfterPreview = false
-            stopPreviewAudio(notifyFlutter = true, allowResumeLocal = false)
-            requestLocalAudioFocus()
-            val gain = currentNormalizedVolume.coerceIn(0f, 1f)
-            mp.setVolume(gain, gain)
-            applyLoudnessEnhancerToPlayer(mp)
-            if (!mp.isPlaying) {
-                mp.start()
-            }
-            notifyLocalPlayerState(isPlaying = true)
-            startPositionTicker()
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun seekLocalAudio(positionMs: Int): Boolean {
-        val mp = localPlayer ?: return false
-        if (!isLocalPrepared) return false
-        return try {
-            val dur = mp.duration
-            val clamped = if (dur > 0) positionMs.coerceIn(0, dur) else positionMs.coerceAtLeast(0)
-            mp.seekTo(clamped)
-            mediaNotifier?.updatePlaybackState(mp.isPlaying, clamped.toLong())
-            methodChannel?.invokeMethod(
-                "onLocalPosition",
-                mapOf(
-                    "positionMs" to clamped,
-                    "durationMs" to dur,
-                    "isPlaying" to mp.isPlaying,
-                    "path" to currentLocalPath,
-                    "sessionId" to currentLocalSessionId
-                )
-            )
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun stopLocalAudio(notifyFlutter: Boolean, abandonFocus: Boolean = true) {
-        stopPositionTicker()
-        if (notifyFlutter) {
-            resumeLocalOnFocusGain = false
-            resumeLocalAfterPreview = false
-        }
-        val mp = localPlayer
-        localPlayer = null
-        isLocalPrepared = false
-        val prevPath = currentLocalPath
-        val prevSession = currentLocalSessionId
-        currentLocalPath = null
-        releaseLoudnessEnhancer()
-        if (mp != null) {
-            try {
-                if (mp.isPlaying) {
-                    mp.stop()
-                }
-            } catch (_: Exception) {
-            }
-            try {
-                mp.reset()
-                mp.release()
-            } catch (_: Exception) {
-            }
-        }
-        if (abandonFocus) {
-            abandonLocalAudioFocus()
-        }
-        if (notifyFlutter) {
-            mediaNotifier?.clear()
-            methodChannel?.invokeMethod(
-                "onLocalPlayerState",
-                mapOf(
-                    "isPlaying" to false,
-                    "path" to prevPath,
-                    "sessionId" to prevSession,
-                    "positionMs" to 0,
-                    "durationMs" to 0,
-                    "audioSessionId" to 0
-                )
-            )
-        }
-    }
-
-    private fun notifyLocalPlayerState(isPlaying: Boolean) {
-        val mp = localPlayer
-        val pos = try {
-            if (mp != null && isLocalPrepared) mp.currentPosition else 0
-        } catch (_: Exception) {
-            0
-        }
-        val dur = try {
-            if (mp != null && isLocalPrepared) mp.duration else 0
-        } catch (_: Exception) {
-            0
-        }
-        val sessionId = try {
-            mp?.audioSessionId ?: 0
-        } catch (_: Exception) {
-            0
-        }
-        if (dur > 0) {
-            mediaNotifier?.updateDuration(dur.toLong())
-        }
-        mediaNotifier?.updatePlaybackState(isPlaying, pos.toLong())
-        methodChannel?.invokeMethod(
-            "onLocalPlayerState",
-            mapOf(
-                "isPlaying" to isPlaying,
-                "path" to currentLocalPath,
-                "sessionId" to currentLocalSessionId,
-                "positionMs" to pos,
-                "durationMs" to dur,
-                "audioSessionId" to sessionId
-            )
-        )
-    }
-
-    private fun startPositionTicker() {
-        mainHandler.removeCallbacks(positionTicker)
-        mainHandler.post(positionTicker)
-    }
-
-    private fun stopPositionTicker() {
-        mainHandler.removeCallbacks(positionTicker)
-    }
-
-    private fun handleMediaNotificationAction(action: String, positionMs: Long) {
-        when (action) {
-            "pause" -> pauseLocalAudioByUser()
-            "play" -> {
-                if (!resumeLocalAudio()) {
-                    methodChannel?.invokeMethod(
-                        "onMediaNotificationAction",
-                        mapOf("action" to "play", "positionMs" to 0)
-                    )
-                }
-            }
-            "seek" -> {
-                seekLocalAudio(positionMs.toInt())
-            }
-            "next", "previous" -> {
-                methodChannel?.invokeMethod(
-                    "onMediaNotificationAction",
-                    mapOf("action" to action, "positionMs" to 0)
-                )
-            }
-            "stop" -> {
-                stopLocalAudio(notifyFlutter = true, abandonFocus = true)
-            }
-        }
-    }
-
-    private fun releaseLoudnessEnhancer() {
-        val enhancer = loudnessEnhancer
-        loudnessEnhancer = null
-        if (enhancer != null) {
-            try {
-                enhancer.enabled = false
-            } catch (_: Exception) {
-            }
-            try {
-                enhancer.release()
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    private fun applyLoudnessEnhancerToPlayer(mp: MediaPlayer) {
-        if (currentPreAmpGainMb <= 0) {
-            // Keep default 0.0 dB playback 100% bit-pure and unattenuated (no DSP limiter)
-            releaseLoudnessEnhancer()
-            return
-        }
-        try {
-            val sessionId = mp.audioSessionId
-            if (sessionId <= 0) return
-            releaseLoudnessEnhancer()
-            val enhancer = LoudnessEnhancer(sessionId)
-            enhancer.setTargetGain(currentPreAmpGainMb)
-            enhancer.enabled = true
-            loudnessEnhancer = enhancer
-        } catch (_: Exception) {
+            MusEveeAudioEngine.clearResumeAfterPreviewFlag()
         }
     }
 
     @Suppress("DEPRECATION")
     private fun launchSystemEqualizer(): Boolean {
         return try {
-            val sessionId = try {
-                localPlayer?.audioSessionId ?: 0
-            } catch (_: Exception) {
-                0
-            }
+            val sessionId = MusEveeAudioEngine.getCurrentAudioSessionId()
             val eqIntent = Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
                 putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
@@ -2440,9 +1999,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun deleteMediaFileNonInteractive(path: String): Boolean {
-        if (currentLocalPath == path) {
-            stopLocalAudio(notifyFlutter = false, abandonFocus = true)
-        }
+        MusEveeAudioEngine.stopLocalAudioIfPath(path)
         val targetFile = File(path)
         if (!targetFile.exists()) {
             purgeMediaStoreRow(path)
@@ -2474,9 +2031,7 @@ class MainActivity : FlutterActivity() {
         result: MethodChannel.Result
     ) {
         // Layer 1: Release MediaPlayer file lock if this track is currently loaded
-        if (currentLocalPath == path) {
-            stopLocalAudio(notifyFlutter = false, abandonFocus = true)
-        }
+        MusEveeAudioEngine.stopLocalAudioIfPath(path)
 
         val targetFile = File(path)
         if (!targetFile.exists()) {
@@ -2577,9 +2132,7 @@ class MainActivity : FlutterActivity() {
         allowSystemPrompt: Boolean,
         result: MethodChannel.Result
     ) {
-        if (currentLocalPath == path) {
-            stopLocalAudio(notifyFlutter = false, abandonFocus = true)
-        }
+        MusEveeAudioEngine.stopLocalAudioIfPath(path)
 
         val targetFile = File(path)
         try {
@@ -3012,9 +2565,10 @@ class MainActivity : FlutterActivity() {
         pendingWritePath = null
         pendingWriteBytes = null
         stopPreviewAudio(notifyFlutter = false, allowResumeLocal = false)
-        stopLocalAudio(notifyFlutter = false, abandonFocus = true)
-        mediaNotifier?.release()
-        mediaNotifier = null
+        MusEveeAudioEngine.detachMethodChannel(methodChannel)
+        if (!MusEveeAudioEngine.isActivelyPlaying() && isFinishing) {
+            MusEveeAudioEngine.stopLocalAudio(notifyFlutter = false, abandonFocus = true)
+        }
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -3064,6 +2618,7 @@ class MainActivity : FlutterActivity() {
                 File(appFlutterDir, "musevee_play_stats_v1.json") to File(backupDir, "musevee_play_stats_v1.json"),
                 File(appFlutterDir, "musevee_custom_folders_v1.json") to File(backupDir, "musevee_custom_folders_v1.json"),
                 File(appFlutterDir, "musevee_settings_v1.json") to File(backupDir, "musevee_settings_v1.json"),
+                File(appFlutterDir, "musevee_romaji_cache_v1.json") to File(backupDir, "musevee_romaji_cache_v1.json"),
                 File(appFlutterDir, "last_selected_folder.txt") to File(backupDir, "last_selected_folder.txt"),
                 File(sharedPrefsDir, "FlutterSharedPreferences.xml") to File(backupDir, "FlutterSharedPreferences.xml")
             )

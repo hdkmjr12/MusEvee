@@ -391,9 +391,9 @@ class _HomeScreenState extends State<HomeScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed && mounted) {
-      context.read<LocalMusicProvider>().checkPermissionsStatus(
-            refreshIfNewlyGranted: true,
-          );
+      final lp = context.read<LocalMusicProvider>();
+      lp.checkPermissionsStatus(refreshIfNewlyGranted: true);
+      lp.syncWithNativePlaybackSnapshot();
     }
   }
 
@@ -469,6 +469,17 @@ class _HomeScreenState extends State<HomeScreen>
                   action: action,
                   positionMs: posMs,
                 );
+          }
+          break;
+
+        case 'onSleepTimerExpired':
+          context.read<LocalMusicProvider>().handleNativeSleepTimerExpired();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(AppStrings.sleepTimerExpiredSnack(context)),
+              ),
+            );
           }
           break;
       }

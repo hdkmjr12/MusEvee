@@ -388,11 +388,17 @@ class TaggingService {
     required TrackMetadata updatedMetadata,
     required bool preferSyncedLyrics,
   }) async {
-    if (filePath.trim().toLowerCase().endsWith('.flac')) {
+    final ext = FolderService.extractAudioExtension(filePath);
+    if (ext == 'flac') {
       return _retagExistingFlac(
         filePath: filePath,
         updatedMetadata: updatedMetadata,
         preferSyncedLyrics: preferSyncedLyrics,
+      );
+    }
+    if (ext.isNotEmpty && ext != 'mp3') {
+      throw TaggingException(
+        AppStrings.unsupportedTagEditFormat(ext.toUpperCase()),
       );
     }
 
